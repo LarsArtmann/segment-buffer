@@ -1,0 +1,58 @@
+# cargo-deny configuration — see https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally with:
+#   nix run nixpkgs#cargo-deny -- check
+#
+# Or via the `cargo install cargo-deny && cargo deny check` path.
+
+[advisories]
+# Opt in to the RustSec advisory database.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Treat yanked crates as warnings (not errors) so a stale Cargo.lock does not
+# block CI; release promotions should require a fresh `cargo update`.
+yanked = "warn"
+# Require explicit reasoning for ignore entries — list them with the advisory
+# ID and a brief reason.
+ignore = []
+
+[licenses]
+# Allow these licenses unconditionally. Apache-2.0 and MIT cover the bulk of
+# the dependency tree; the others cover transitive deps that show up.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+]
+# Deny everything not listed above.
+confidence-threshold = 0.93
+
+[bans]
+# Allow multiple versions of a crate (cargo's resolver does this in practice
+# for transitive deps; forbidding it is rarely worth the churn).
+multiple-versions = "warn"
+# Deny explicitly-banned crates.
+deny = [
+    # Add crates that should never appear here. Examples of crates this project
+    # would ban on sight: none currently, but the field is here for future use.
+]
+# Warn on wildcard dependencies (`dep = "*"`); the Cargo.toml uses caret
+# requirements, so this should always pass.
+wildcards = "warn"
+
+[sources]
+# Allow git sources but require them to be in this allow-list (none today).
+allow-git = []
+# Allow the crates.io index URL.
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Deny any registry other than crates.io.
+unknown-registry = "deny"
+# Deny any git source not listed above.
+unknown-git = "deny"

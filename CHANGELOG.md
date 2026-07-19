@@ -7,11 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet — see [0.3.0] below for the most recent release._
-Next work is tracked in [TODO_LIST.md](TODO_LIST.md) (v0.4.0 API batch:
-`SegmentConfig::builder()`, `flush_interval: Duration`, `RecoveryReport`,
-`FlushPolicy`, typed `SegmentError::Io`, possible `SegmentCipher → SegmentAead`
-rename).
+_No changes yet — see [0.4.0] below for the most recent release._
+Next work is tracked in [TODO_LIST.md](TODO_LIST.md).
+
+## [0.4.0] - 2026-07-19
+
+The "API ergonomic + perf" release. Breaking because it removes two
+`SegmentConfig` fields (`max_batch_events`, `flush_interval` — replaced by
+`FlushPolicy`), changes the `SegmentError::Io` variant from tuple to struct,
+and renames the now-private `flush_interval_secs` builder method. On-disk
+format, encryption contract, and trait shape are unchanged.
+
+### Added
+
+- **`SegmentConfig::builder()`** — fluent builder over `Default + setters`.
+  Removes the `Default + field reassignment` workaround every external caller
+  had to use under `#[non_exhaustive]`. Convenience setters: `flush_policy`,
+  `flush_at_batch_size`, `flush_at_interval`, `flush_at_batch_or_interval`,
+  `flush_manually`, `max_size_bytes`, `compression_level`, `cipher`.
+- **`FlushPolicy` enum** (`Batch(usize)` / `Interval(Duration)` /
+  `BatchOrInterval { batch_size, interval }` / `Manual`). Replaces the silent
+  OR-combination of `max_batch_events` + `flush_interval_secs` that callers
+  had no way to disable.
+- **`RecoveryReport` + `SegmentBuffer::open_with_report()`** — returns
+  `(SegmentBuffer<T>, RecoveryReport)` so callers can inspect what recovery
+  found (segment count, head/next seq, disk bytes, removed tmp files)
+  programmatically. `open()` is unchanged and delegates internally.
+- **`for_each_from(start, limit, F)`** lending iterator — the zero-clone
+  counterpart to `read_from`. Benched ~21× faster on 1000 in-memory items
+  (1.2 µs vs 26 µs). Documented deadlock warning: the closure must not
+  re-enter buffer methods while iterating the in-memory tail.
+- **`examples/crash_recovery.rs`** — demonstrates that flushed segments
+  survive a process restart and unflushed ones do not, plus the new
+  `open_with_report` API.
+- **`examples/mpmc.rs`** — 4 writers × 1 reader sharing one
+  `Arc<SegmentBuffer>`, draining via `read_from + delete_acked`.
+- **`.github/workflows/nix.yml`** — CI workflow running
+  `nix flake check`, `nix build .#default`, the test check, and treefmt.
+- **`deny.toml`** — cargo-deny config (advisories, licenses, bans, sources).
+  All four pass green as of release.
+- **`renovate.json`** — weekly dependency updates, with `nix` and
+  `github-actions` enabled alongside `cargo`.
+- **`release.toml`** — cargo-release config (no auto-push; tags via
+  `sign-tag`, hand-curated GitHub releases via `gh`).
+- **Display snapshot test for `SegmentError::Io` with `path: Some(...)`**
+  and a test for `with_path` (the path-attach helper).
+
+### Changed
+
+- **`SegmentConfig` lost `max_batch_events` and `flush_interval`**, replaced
+  by a single `flush_policy: FlushPolicy` field. Migration:
+  ```rust
+  // before
+  SegmentConfig { max_batch_events: 256, flush_interval_secs: 5, ..Default::default() }
+  // after
+  SegmentConfig::builder()
+      .flush_at_batch_or_interval(256, Duration::from_secs(5))
+      .build()
+  ```
+- **`SegmentError::Io` is now a struct variant**:
+  `Io { path: Option<PathBuf>, source: std::io::Error }`. The bare
+  `From<io::Error>` impl preserves `?` ergonomics with `path: None`; the
+  `with_path` helper and direct construction attach path context at
+  high-value call sites (`write_segment`, `read_segment`, `scan_segments`).
+  Display: `"I/O error: {source}"` when `path` is `None`, or
+  `"I/O error for {path}: {source}"` when set.
+- **`approx_disk_bytes` is now `AtomicU64`** outside `BufferInner`.
+  `flush()` no longer re-acquires the mutex just to bump one `u64`;
+  `store_pressure()` loads the atomic without locking at all.
+- **`scan_segments()` results are cached** — invalidated by `flush`,
+  `delete_acked`, `recover`. `read_from` followed by `delete_acked` no
+  longer pays the directory-scan cost twice.
+- **Tracing fields standardized** — every event now carries `path`, `seq`,
+  and `bytes` where they make sense, replacing the inconsistent
+  `head_seq` / `next_seq` / `disk_bytes` / `start` / `end` mix.
+
+### Fixed
+
+- The pre-v0.4.0 `SegmentError::Io` variant dropped path context. Operators
+  saw `"I/O error: ..."` with no file. Now the offending path is carried
+  whenever it is in scope.
 
 ## [0.3.0] - 2026-07-19
 
@@ -153,7 +228,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.0
 [0.3.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.3.0
 [0.2.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.2.0
 [0.1.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.1.0

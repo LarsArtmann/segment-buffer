@@ -112,15 +112,13 @@ You define priority thresholds — see `examples/backpressure.rs`.
 
 ## Status
 
-**v0.3.0** — closes the v0.2.0 semver/honesty debt: `BufferStats` and
-`SegmentConfig` are now `#[non_exhaustive]`, `SegmentBuffer<T>` has a `Debug`
-impl, the `stats()` "cheaper" claim is backed by measured numbers
-(`benches/bench_stats.rs`), and the v0.1.0-vs-v0.2.0 perf delta is captured
-honestly in [docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md](docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md).
-**v0.3.0 is a breaking release** only because of `#[non_exhaustive]` —
-downstream struct-literal construction of `BufferStats`/`SegmentConfig` must
-switch to `Default::default()` + field reassignment. On-disk format, trait
-shape, error types, and encryption contract are unchanged from v0.2.0.
+**v0.4.0** — the "API ergonomic + perf" release. Adds `SegmentConfig::builder()`,
+`FlushPolicy` (replaces the silent-combine of batch + interval), `RecoveryReport`,
+`for_each_from` lending iterator (~21× faster than `read_from` on in-memory
+items), typed `SegmentError::Io { path, source }`, AtomicU64 disk bytes,
+`scan_segments()` cache, plus `crash_recovery` and `mpmc` examples.
+**v0.4.0 is a breaking release** (SegmentConfig field reshuffle + SegmentError::Io
+shape). See [CHANGELOG.md](CHANGELOG.md) for migration notes.
 See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md).
 
 **Performance vs v0.1.0:** a controlled `git worktree` benchmark

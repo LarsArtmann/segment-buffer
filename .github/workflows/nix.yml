@@ -1,0 +1,63 @@
+name: Nix
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  flake-check:
+    name: nix flake check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          # Pin nixpkgs to the same channel the flake uses for eval stability
+          # on CI runners. The flake itself follows nixos-unstable.
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Check that the flake evaluates
+        run: nix flake check --no-build
+
+  build:
+    name: nix build .#default
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: cachix/cachix-action@v15
+        with:
+          name: larsartmann-segment-buffer
+          # Skip push when the token is absent (forks).
+          skipPush: ${{ github.event_name == 'pull_request' }}
+      - name: Build the default package
+        run: nix build .#default --print-build-logs
+
+  test:
+    name: nix build .#checks.x86_64-linux.test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: cachix/cachix-action@v15
+        with:
+          name: larsartmann-segment-buffer
+          skipPush: ${{ github.event_name == 'pull_request' }}
+      - name: Run the test check
+        run: nix build .#checks.x86_64-linux.test --print-build-logs
+
+  fmt:
+    name: nix fmt (treefmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Run treefmt in check mode
+        run: nix fmt -- --fail-on-change

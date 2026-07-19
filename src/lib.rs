@@ -549,7 +549,14 @@ where
         // A new segment file invalidates the directory-scan cache.
         self.invalidate_scan_cache();
 
-        debug!(start_seq, end_seq, count = events.len(), "Flushed segment");
+        debug!(
+            path = self.segment_path(start_seq, end_seq).display().to_string(),
+            seq = start_seq,
+            end_seq,
+            count = events.len(),
+            bytes = compressed_len,
+            "Flushed segment"
+        );
         Ok(())
     }
 
@@ -792,13 +799,18 @@ where
         for seg in &segments {
             if seg.end <= acked_seq {
                 let path = self.segment_path(seg.start, seg.end);
-                if let Ok(meta) = fs::metadata(&path) {
-                    freed_bytes += meta.len();
-                }
+                let file_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                freed_bytes += file_bytes;
                 match fs::remove_file(&path) {
                     Ok(()) => {
                         deleted += 1;
-                        debug!(start = seg.start, end = seg.end, "Deleted acked segment");
+                        debug!(
+                            path = path.display().to_string(),
+                            seq = seg.start,
+                            end_seq = seg.end,
+                            bytes = file_bytes,
+                            "Deleted acked segment"
+                        );
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                     Err(e) => return Err(e.into()),
@@ -828,7 +840,13 @@ where
         }
 
         if deleted > 0 {
-            info!(deleted, freed_bytes, acked_seq, "Deleted acked segments");
+            info!(
+                path = self.dir.display().to_string(),
+                deleted,
+                bytes = freed_bytes,
+                seq = acked_seq,
+                "Deleted acked segments"
+            );
         }
 
         Ok(deleted)
@@ -1107,10 +1125,11 @@ where
         *self.scan_cache.lock() = Some(segments.clone());
 
         info!(
+            path = self.dir.display().to_string(),
             segments = segment_count,
-            head_seq,
-            next_seq,
-            disk_bytes = total_bytes,
+            seq = head_seq,
+            end_seq = next_seq,
+            bytes = total_bytes,
             removed_tmp = removed_tmp_files,
             "Segment buffer recovered"
         );

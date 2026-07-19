@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on Monday"],
+  "labels": ["dependencies"],
+  "assignees": ["LarsArtmann"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "nix": {
+    "enabled": true
+  },
+  "github-actions": {
+    "enabled": true,
+    "schedule": ["before 6am on Monday"]
+  },
+  "cargo": {
+    "enabled": true
+  }
+}
