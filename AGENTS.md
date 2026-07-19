@@ -1,0 +1,115 @@
+# AGENTS.md
+
+Concise, enduring context for working in `segment-buffer`. Read once, internalize.
+
+## What this is
+
+A single-crate **Rust library** (not a binary): `SegmentBuffer<T>` — a durable, bounded, MPMC queue that spills in-memory batches to zstd-compressed CBOR segment files with ack-based deletion and filename-based crash recovery. Generic over `T: Serialize + DeserializeOwned + Clone + Send + 'static`. Extracted from monitor365.
+
+## Commands
+
+The `encryption` feature is **off by default**. Most verification commands must be run **twice** — once without features and once with `--features encryption` — because CI does exactly this (see `.github/workflows/ci.yml`).
+
+```bash
+# Tests (CONTRIBUTING.md canonical command — runs both default + encryption tests)
+cargo test --no-fail-fast --features encryption
+
+# Lint (warnings are hard errors, both in CONTRIBUTING and CI via RUSTFLAGS=-D warnings)
+cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --features encryption -- -D warnings
+cargo fmt --all -- --check
+
+# Examples (each is a separate binary)
+cargo run --example basic_usage
+cargo run --example backpressure
+cargo run --example encrypted --features encryption   # REQUIRES the feature flag
+
+# Benchmarks (criterion, 4 separate targets declared in Cargo.toml)
+cargo bench --bench bench_append
+cargo bench --bench bench_read_from
+cargo bench --bench bench_delete_acked
+cargo bench --bench bench_recover
+
+# Docs (CI builds with the feature so AesGcmCipher is visible)
+cargo doc --no-deps --features encryption
+```
+
+## Feature flags
+
+- `default = []`
+- `encryption` — pulls in `aes-gcm` + `rand`, exposes `AesGcmCipher`. The `SegmentCipher` **trait** is always available; only the AES-256-GCM impl is gated.
+
+**Known false-positive**: `rust-analyzer` will report `unresolved import segment_buffer::AesGcmCipher` in `examples/encrypted.rs` and a "configured out" hint at `src/lib.rs:32`. This is **not a bug** — rust-analyzer doesn't enable the feature. Real builds with `--features encryption` compile cleanly.
+
+## Architecture & data flow
+
+```
+append(item) ─► pending: Vec<T>  (in-memory, inside Mutex)
+                   │
+                   ▼  (batch full OR flush_interval elapsed OR explicit flush())
+            take() pending, compute start_seq/end_seq INSIDE the lock
+                   │
+                   ▼  (lock released)
+            CBOR-serialize  ─►  zstd compress  ─►  [optional cipher.encrypt]
+                   │
+                   ▼
+            write to seg_*.zst.tmp  ─►  sync_all  ─►  rename to seg_*.zst
+                   │
+                   ▼  (lock re-acquired)
+            approx_disk_bytes += len
+```
+
+`read_from(start, limit)` scans on-disk segments first (sorted by `start`), then drains the in-memory pending tail. `delete_acked(seq)` removes every segment whose `end <= seq` and advances `head_seq`.
+
+### Crash recovery (the defining design choice)
+
+**There is no WAL and no metadata database.** State is fully encoded in filenames:
+
+- Pattern: `seg_{start:012}_{end:012}.zst` (12-digit zero-padded, inclusive range)
+- On `open()`: `.tmp` files are deleted (incomplete crash writes), then filenames are parsed to rebuild `head_seq` (min start) and `next_seq` (max end + 1).
+- Atomic durability comes from the tmp → `sync_all` → `rename` sequence in `write_segment`.
+
+If you change the filename format, `parse_segment_filename` and `segment_filename` are the two sides of the contract — both must stay in sync, and existing on-disk files from monitor365 must still parse.
+
+## Critical concurrency invariant
+
+**`start_seq`, `end_seq`, and the sequence number returned by `append()` must all be computed inside the same mutex lock that takes ownership of `pending` / pushes the event.** Do not refactor these into separate lock acquisitions.
+
+This was a real race fixed post-extraction (see CHANGELOG `[0.1.0]` → "Fixed"). The previous code re-read `next_seq` in a second lock and produced corrupted segment filenames under concurrent `append()`.
+
+The `parking_lot::Mutex` is **never held across file I/O** — `flush()` drops it before `write_segment` and re-acquires it only to bump `approx_disk_bytes`. There are no await points; all I/O is synchronous.
+
+## Backpressure / overload policy
+
+The crate **ships no admission policy**. `store_pressure()` returns `approx_disk_bytes / max_size_bytes ∈ [0.0, 1.0]`; `is_overloaded()` is just `> 0.9`. Callers define their own priority thresholds — see `examples/backpressure.rs` for the canonical pattern.
+
+## Encryption on-disk format
+
+`AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]`. This is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `read_segment` rejects ciphertexts shorter than `NONCE_LEN` (12) as `SegmentError::Integrity`.
+
+## Project layout
+
+```
+src/
+  lib.rs       SegmentBuffer, SegmentConfig, segment_filename/parse, recover, write_segment
+  cipher.rs    SegmentCipher trait + AesGcmCipher (feature-gated impl in `mod private`)
+  error.rs     SegmentError (non_exhaustive, thiserror), Result alias
+  tests.rs     `mod tests` — included via `#[cfg(test)] mod tests;` from lib.rs
+examples/      basic_usage, backpressure, encrypted (feature-gated)
+benches/       4 criterion targets, each declared separately in Cargo.toml with `harness = false`
+```
+
+## Code conventions
+
+- `#![warn(missing_docs)]` is on — every public item needs a doc comment.
+- Doc comment style uses `# Errors` and `# Example` sections (see `SegmentBuffer::open`).
+- Tests use `tempfile::TempDir` and a `test_buffer`/`pressure_test_buffer` helper with small `max_batch_events: 4` and `flush_interval_secs: 3600` (effectively disables auto-flush).
+- The top-level doc example is `#![no_run]`-gated.
+- Lint posture is strict: `RUSTFLAGS=-D warnings` plus clippy `-D warnings`.
+
+## CI / MSRV
+
+- Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.85`.
+- **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0.
+- macOS needs `brew install zstd` (CI does this automatically).
+- `Cargo.lock` is gitignored (library crate).
