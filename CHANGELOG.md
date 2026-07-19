@@ -31,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (upstream deprecation). No public API change.
 - **rand 0.8 → 0.9**: `thread_rng()` → `rng()` (upstream rename). No public API
   change.
-- **criterion 0.5 → 0.8** (dev-only): `criterion::black_box` → `std::hint::black_box`
-  (upstream deprecation).
+- **criterion 0.5** (dev-only): switched `criterion::black_box` →
+  `std::hint::black_box` (criterion deprecated the re-export). Kept at 0.5
+  because 0.8 requires rustc 1.86, above the declared MSRV of 1.85.
 - **GitHub Actions**: bumped all workflows to latest major versions
   (`actions/checkout` v4→v7, `actions/upload-artifact` v4→v7,
   `peter-evans/create-pull-request` v6→v8, `cachix/install-nix-action` v27→v31,
