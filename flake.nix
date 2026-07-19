@@ -85,62 +85,64 @@
           );
         in
         {
-          # Reproducible dev shell. mkShell (not mkShellNoCC) because zstd-sys
-          # compiles bundled C and needs a C compiler from stdenv.
-          devShells.default = pkgs.mkShell {
-            packages = with pkgs; [
-              rustc
-              cargo
-              rustfmt
-              clippy
-              rust-analyzer
-              zstd
-              pkg-config
-            ];
-          };
+          devShells = {
+            # Reproducible dev shell. mkShell (not mkShellNoCC) because zstd-sys
+            # compiles bundled C and needs a C compiler from stdenv.
+            default = pkgs.mkShell {
+              packages = with pkgs; [
+                rustc
+                cargo
+                rustfmt
+                clippy
+                rust-analyzer
+                zstd
+                pkg-config
+              ];
+            };
 
-          # Minimal CI shell: just the toolchain.
-          devShells.ci = pkgs.mkShell {
-            packages = with pkgs; [
-              rustc
-              cargo
-              rustfmt
-              clippy
-            ];
-          };
+            # Minimal CI shell: just the toolchain.
+            ci = pkgs.mkShell {
+              packages = with pkgs; [
+                rustc
+                cargo
+                rustfmt
+                clippy
+              ];
+            };
 
-          # MSRV verification shell — pinned Rust 1.85 (the floor declared in
-          # Cargo.toml's `rust-version`). Use this to validate that the crate
-          # actually compiles on its declared MSRV:
-          #
-          #   nix develop .#msrv -c cargo check --all-targets --features encryption
-          #
-          # (Note: `cargo +1.85.0` syntax is rustup-only and does NOT work
-          # inside a Nix shell — use the shell's cargo directly.)
-          devShells.msrv = pkgs.mkShell {
-            packages = [
-              pkgsRust.rust-bin.stable."1.85.0".default
-              pkgs.pkg-config
-              pkgs.zstd
-            ];
-          };
+            # MSRV verification shell — pinned Rust 1.85 (the floor declared in
+            # Cargo.toml's `rust-version`). Use this to validate that the crate
+            # actually compiles on its declared MSRV:
+            #
+            #   nix develop .#msrv -c cargo check --all-targets --features encryption
+            #
+            # (Note: `cargo +1.85.0` syntax is rustup-only and does NOT work
+            # inside a Nix shell — use the shell's cargo directly.)
+            msrv = pkgs.mkShell {
+              packages = [
+                pkgsRust.rust-bin.stable."1.85.0".default
+                pkgs.pkg-config
+                pkgs.zstd
+              ];
+            };
 
-          # Fuzz shell — nightly Rust for libfuzzer-sys / `cargo +nightly fuzz`.
-          # Use this to actually run the fuzz targets:
-          #
-          #   nix develop .#fuzz -c cargo fuzz run fuzz_corrupted_read -- -max_total_time=60
-          devShells.fuzz = pkgs.mkShell {
-            packages = [
-              (pkgsRust.rust-bin.nightly.latest.minimal.override {
-                extensions = [
-                  "rust-src"
-                  "rustc-codegen-cranelift"
-                  "rustc-dev"
-                ];
-              })
-              pkgs.pkg-config
-              pkgs.zstd
-            ];
+            # Fuzz shell — nightly Rust for libfuzzer-sys / `cargo +nightly fuzz`.
+            # Use this to actually run the fuzz targets:
+            #
+            #   nix develop .#fuzz -c cargo fuzz run fuzz_corrupted_read -- -max_total_time=60
+            fuzz = pkgs.mkShell {
+              packages = [
+                (pkgsRust.rust-bin.nightly.latest.minimal.override {
+                  extensions = [
+                    "rust-src"
+                    "rustc-codegen-cranelift"
+                    "rustc-dev"
+                  ];
+                })
+                pkgs.pkg-config
+                pkgs.zstd
+              ];
+            };
           };
 
           packages.default = craneLibMsrv.buildPackage (
