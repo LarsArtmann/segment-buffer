@@ -10,6 +10,8 @@ Real correctness bug fixed, module split landed, missing docs created, reproduci
 
 > **Update 2026-07-19 (commits `e09f84c`, `fe81dd2`, `e15c0b6`):** many §b/§c items resolved in subsequent sessions — the `recover()` lock-across-I/O (§b.4), static `Send+Sync` assertion (§f.11), `#[must_use]` sweep (§f.12), `stats()`/`BufferStats` (§f.22), `len`/`is_empty` (§f.44), typed errors (§b.2), property tests (§f.14). The skill-contract HTML artifacts (§c) and Loom test (§f.16) remain open. Full item-by-item status in [Resolution (2026-07-19)](#resolution-2026-07-19) at the bottom.
 
+> **Correction 2026-07-19 (post-planning-session):** §d.7 below claims "a Crush git hook auto-committed the session work as `522de63`". **Investigation during the v0.3.0 planning session found no such hook exists.** The only Crush hook on this machine is `/home/lars/.config/crush/hooks/commit-diff-context.sh`, which fires *when a commit runs* to inject diff context — it does not stage or commit. Git timestamps confirm every commit was made in-session by the assistant, who then lost track. The lesson is *not* "disable a hook"; it is "run `git status` + `git log` before any closing claim about working-tree state" (now codified as Verification discipline rule 1 in `AGENTS.md`). The §d.7 framing was misattribution, not a real external failure.
+
 ---
 
 ## a) FULLY DONE (verified green: fmt + clippy + 27+2 tests + rustdoc + hermetic nix build)

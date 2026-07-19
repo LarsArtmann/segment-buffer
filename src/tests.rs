@@ -749,3 +749,131 @@ fn wrong_key_cipher_error_carries_source_chain() {
         "CipherError from AES-GCM must expose the AEAD failure via source()"
     );
 }
+
+// =========================================================================
+// Debug impl for SegmentBuffer<T>
+// =========================================================================
+
+#[test]
+fn debug_impl_formats_cleanly() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    buf.append(test_item(0)).unwrap();
+    buf.append(test_item(1)).unwrap();
+    buf.append(test_item(2)).unwrap();
+
+    let rendered = format!("{:?}", buf);
+    // Structural sanity: struct name + path field + every BufferStats field.
+    assert!(
+        rendered.starts_with("SegmentBuffer {"),
+        "expected SegmentBuffer struct prefix, got: {rendered}"
+    );
+    // debug_struct renders field names as bare identifiers (no quotes).
+    assert!(
+        rendered.contains("dir: "),
+        "Debug must expose the dir field, got: {rendered}"
+    );
+    for field in [
+        "pending_count",
+        "latest_sequence",
+        "head_sequence",
+        "next_sequence",
+        "approx_disk_bytes",
+        "max_size_bytes",
+        "store_pressure",
+    ] {
+        assert!(
+            rendered.contains(&format!("{field}: ")),
+            "Debug must expose the `{field}` field, got: {rendered}"
+        );
+    }
+    // pending_count reflects the three appends.
+    assert!(
+        rendered.contains("pending_count: 3"),
+        "expected pending_count: 3, got: {rendered}"
+    );
+}
+
+// =========================================================================
+// Display snapshot tests — lock the format strings so a careless edit
+// (e.g. changing a brace in a `thiserror` attribute) shows up as a test
+// failure instead of silently shifting operator-facing log output.
+// =========================================================================
+
+#[test]
+fn segment_error_io_display_format() {
+    let err = SegmentError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
+    let rendered = format!("{err}");
+    // thiserror: "I/O error: {0}" — the io::Error's Display is its message.
+    assert_eq!(rendered, "I/O error: missing");
+}
+
+#[test]
+fn segment_error_cbor_display_format() {
+    let err = SegmentError::Cbor {
+        phase: "deserialize",
+        path: std::path::PathBuf::from("/var/data/seg_000000000000_000000000000.zst"),
+        message: "unexpected eof".into(),
+    };
+    let rendered = format!("{err}");
+    assert_eq!(
+        rendered,
+        "CBOR deserialize failed for /var/data/seg_000000000000_000000000000.zst: unexpected eof"
+    );
+}
+
+#[test]
+fn segment_error_cipher_display_format() {
+    let err = SegmentError::Cipher {
+        path: std::path::PathBuf::from("/var/data/seg_000000000000_000000000000.zst"),
+        message: "AES-GCM decryption failed".into(),
+    };
+    let rendered = format!("{err}");
+    assert_eq!(
+        rendered,
+        "cipher error for /var/data/seg_000000000000_000000000000.zst: AES-GCM decryption failed"
+    );
+}
+
+#[test]
+fn segment_error_integrity_display_format() {
+    let err = SegmentError::Integrity {
+        path: std::path::PathBuf::from("/var/data/seg_000000000000_000000000000.zst"),
+        reason: "truncated payload",
+    };
+    let rendered = format!("{err}");
+    assert_eq!(
+        rendered,
+        "integrity failure for /var/data/seg_000000000000_000000000000.zst: truncated payload"
+    );
+}
+
+#[test]
+fn cipher_error_msg_display_format() {
+    let err = super::CipherError::msg("key not configured");
+    let rendered = format!("{err}");
+    // msg() preserves the message verbatim; no prefix or decoration.
+    assert_eq!(rendered, "key not configured");
+}
+
+#[test]
+#[cfg(feature = "encryption")]
+fn cipher_error_with_source_display_format() {
+    use std::error::Error as _;
+
+    #[derive(Debug)]
+    struct FakeAead;
+    impl std::fmt::Display for FakeAead {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("aead tag mismatch")
+        }
+    }
+    impl std::error::Error for FakeAead {}
+
+    let err = super::CipherError::with_source("AES-GCM decryption failed", FakeAead);
+    // Display intentionally hides the source chain — the message stands alone.
+    // The underlying cause is reachable only via `Error::source()`.
+    assert_eq!(format!("{err}"), "AES-GCM decryption failed");
+    let src = err.source().expect("with_source must populate source()");
+    assert_eq!(format!("{src}"), "aead tag mismatch");
+}

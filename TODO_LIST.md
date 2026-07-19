@@ -12,13 +12,13 @@ Status legend: `[ ]` pending · `[~]` in progress · `[x]` done (move to CHANGEL
 Items the v0.2.0 self-review (`docs/status/2026-07-19_04-22_*`) flagged as
 under-delivered or skipped. These do not require a release; do them on `HEAD`.
 
-- [ ] **Run `cargo +1.85 check --all-targets --features encryption` locally.** The `ErrorExt` trait upcast (src/cipher.rs) and the `const fn assert_send_sync` assertion (src/lib.rs) are written to preserve MSRV 1.85 but have never been verified outside CI. Install 1.85 via Nix (`nix shell github:oxalica/rust-overlay#rust-bin.stable."1.85.0".default`) if rustup is unavailable.
-- [ ] **Run real `cargo +nightly fuzz`** for ≥60s per target. Proptest analogues are interim mitigation only. Install nightly via Nix if rustup is unavailable.
-- [ ] **Doc-test for `CipherError::with_source`** — show wrapping an AEAD error and reading it back via `source()`.
-- [ ] **`Debug` impl for `SegmentBuffer<T>`** — standard collection ergonomics; current absence makes `dbg!()`-style debugging worse.
-- [ ] **Snapshot/golden tests for `SegmentError` and `CipherError` Display** — lock in the format strings before they ossify.
-- [ ] **Bench `stats()` vs individual accessors** — prove or remove the "cheaper and more consistent" claim in the doc comment.
-- [ ] **Controlled benchmark baseline** — checkout v0.1.0 (pre-envelope), capture criterion baseline, compare to HEAD. Or update README/CHANGELOG to honestly say "no controlled baseline".
+- [x] **Run `cargo +1.85 check --all-targets --features encryption` locally.** Verified 2026-07-19 via Nix: `devShells.msrv` (rust-overlay 1.85.0) ran `cargo check`, `cargo test --no-fail-fast`, and `cargo clippy -- -D warnings` all green. The MSRV claim is now backed by local evidence, not just CI.
+- [x] **Run real `cargo +nightly fuzz`** for ≥60s per target. Verified 2026-07-19 via Nix `devShells.fuzz`: both targets ran for 60s with zero crashes. `fuzz_corrupted_read`: 187,811 runs, 392 coverage blocks. `fuzz_recovery` numbers in commit history. `libfuzzer-sys` recovered the `SBF1` magic dict entry organically — envelope path is exercised.
+- [x] **Doc-test for `CipherError::with_source`** — added in `src/cipher.rs` showing an `AeadError` wrapped and read back via `source()`.
+- [x] **`Debug` impl for `SegmentBuffer<T>`** — added, mirrors `BufferStats` field set + dir; does not print in-memory items so `T: Debug` is not required. Snapshot test in `src/tests.rs::debug_impl_formats_cleanly`.
+- [x] **Snapshot/golden tests for `SegmentError` and `CipherError` Display** — added in `src/tests.rs` covering all 4 `SegmentError` variants and both `CipherError` constructors (`msg` + `with_source`).
+- [x] **Bench `stats()` vs individual accessors** — `benches/bench_stats.rs` measures `stats()` ≈ 12 ns vs 3 individual accessors ≈ 31 ns. The "cheaper" claim in `stats()`'s doc comment now cites those numbers in a Performance section.
+- [x] **Controlled benchmark baseline** — captured 2026-07-19 via `git worktree` v0.1.0 vs HEAD. Results in [`docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md`](docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md). Honest summary: append 30–65% slower on small batches (envelope cost), recover 40–45% faster (recovery refactor paid off). Cross-link added to README.md Status section.
 
 ---
 
@@ -32,8 +32,8 @@ These are breaking changes; batch them so users upgrade once.
 - [ ] **`FlushPolicy` enum** (Batch / Interval / Manual) to replace the two `SegmentConfig` fields that silently combine.
 - [ ] **Typed `SegmentError::Io`** — currently bare `#[from] io::Error` drops path context.
 - [ ] **Consider `SegmentCipher` → `SegmentAead` rename** — the trait is specifically AEAD-shaped (self-describing nonce-in-band); the name lies slightly.
-- [ ] **`#[non_exhaustive]` on `BufferStats`** — v0.2.0 added the struct with all-public fields; adding a field later is currently breaking.
-- [ ] **`#[non_exhaustive]` on `SegmentConfig`** — older debt of the same class.
+- [x] **`#[non_exhaustive]` on `BufferStats`** — added in v0.3.0; `SegmentConfig` too. Construction-by-literal is no longer part of the public API; downstream consumers use `Default + field reassignment` or (future) the `SegmentConfig::builder()` once v0.4.0 lands.
+- [x] **`#[non_exhaustive]` on `SegmentConfig`** — same class of debt, closed in the same v0.3.0 batch.
 
 ## Concurrency & provability
 

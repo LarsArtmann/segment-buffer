@@ -152,7 +152,33 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 ## CI / MSRV
 
 - Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.85`.
-- **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0. Locally, `cargo +1.85 check` has not yet been executed to confirm — the claim currently rests on the CI job.
+- **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0.
+- **Local MSRV verification (verified 2026-07-19):** `nix develop .#msrv -c cargo check --all-targets --features encryption` plus `cargo test --no-fail-fast --features encryption` and `cargo clippy --all-targets --features encryption -- -D warnings` were all run on Rust 1.85.0 via the `rust-overlay`-pinned `devShells.msrv` in `flake.nix`. All three returned exit 0 with no warnings. The MSRV claim is now backed by local evidence, not just CI.
 - **Pre-1.86 trait-upcasting workaround:** `CipherError::source()` uses a private `ErrorExt` trait in `src/cipher.rs` to upcast `Arc<dyn ErrorExt + Send + Sync>` → `&dyn Error` because Rust 1.85 cannot coerce `dyn ErrorExt` to `dyn Error` directly. Once the MSRV moves to 1.86+, this trait can be deleted and `source()` simplified to `self.source.as_deref()` (tracked in TODO_LIST.md under the v0.3.0 batch).
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
+
+## Verification discipline (hard rules)
+
+These rules were installed after three consecutive same-day sessions produced
+self-reviews that claimed success without running the verification gate,
+fabricated working-tree state, and invented baselines. They are non-negotiable
+for any future agent (or human) working in this repo.
+
+1. **Never describe working-tree state without a fresh `git status` in the same message.** "8 files staged", "working tree clean", "all committed" — all of these require a literal `git status` invocation in the current response. Re-running `git status` costs 100 ms; the cost of being wrong is a misleading commit message, a broken push, or a false release claim.
+2. **Never invent baselines.** Health scores, perf numbers, "was X, now Y", "previously N tests" — if you cannot cite the source of the "previous" value, say "first audit" or "no prior baseline" instead. Numbers without provenance are lies with extra steps.
+3. **Line-number citations are banned.** Cite section names, item text, or commit hashes. Line numbers shift the moment any file above the citation is edited; they rot in the same session that wrote them.
+4. **Run the verification gate before declaring work done.** `cargo fmt --all -- --check` + `cargo clippy --all-targets --features encryption -- -D warnings` + `cargo test --no-fail-fast --features encryption` + `cargo doc --no-deps --features encryption`. Any claim that "tests pass" or "the build is green" must rest on a literal run of these in the current session, with the exit codes captured.
+
+### Session-end checklist
+
+Before writing any closing summary, status report, or "done" claim:
+
+- [ ] `git status` — clean? Or have I explained every modified/untracked file?
+- [ ] `git log --format='%h %ci %s' -10` — do the commits match what I think I did?
+- [ ] Verification gate run with non-zero exit codes captured (see rule 4)?
+- [ ] Every doc claim that says "passes"/"verified"/"green" cites a commit hash or a literal command output in this session?
+- [ ] No fabricated numbers — every "was X / now Y" has a citation or has been rewritten to "first audit" / "no baseline"?
+- [ ] TODO_LIST updated for anything completed or partially completed this session?
+
+If any of these cannot be checked, the closing summary must say so explicitly. "Working tree clean" without `git status` in the same response is a process failure, not a shorthand.

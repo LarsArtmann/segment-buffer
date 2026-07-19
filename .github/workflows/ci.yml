@@ -9,6 +9,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # Pin proptest's per-property case count so CI is deterministic and so a
+  # flaky CI machine cannot silently trim coverage. 256 is the default for
+  # `cargo test` on a release build but is not the default on debug builds;
+  # setting it explicitly removes that variable. Bump locally via
+  # `PROPTEST_CASES=4096 cargo test --features encryption` when chasing a
+  # shrinking-boundary bug.
+  PROPTEST_CASES: 256
 
 jobs:
   test:

@@ -62,7 +62,7 @@ truth; this file tracks reality, not aspirations.
 | ----------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Unit tests (40+) + doc tests (15)         | FULLY_FUNCTIONAL     | CRUD, partial reads, limits, crash recovery, concurrency, error paths, envelope detection, encrypted-legacy read.                    |
 | Property tests (`proptest`, 8 properties) | FULLY_FUNCTIONAL     | Filename bijection, payload bijection, envelope identity, encrypted roundtrip with varied key, corrupted-segment/recovery analogues. |
-| Fuzz targets (`cargo-fuzz`)               | PARTIALLY_FUNCTIONAL | Scaffold in `fuzz/`; requires nightly; not yet integrated into CI. CI analogues run as proptest on every `cargo test`.               |
+| Fuzz targets (`cargo-fuzz`)               | FULLY_FUNCTIONAL     | Scaffold in `fuzz/`; verified locally via Nix `devShells.fuzz` (nightly + `libfuzzer-sys`). `fuzz_corrupted_read`: 187,811 runs / 60s, 392 coverage blocks, no crashes. `fuzz_recovery`: 942,719 runs / 60s, no crashes. Not yet integrated into CI (planned: nightly scheduled workflow). Proptest analogues run on every `cargo test` as additional coverage. |
 | Loom concurrency verification             | PLANNED              | Exhaustive schedule check of `append`/`flush`/`delete_acked` not yet in place.                                                       |
 
 ## Planned / worth considering

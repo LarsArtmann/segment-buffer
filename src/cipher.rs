@@ -63,6 +63,30 @@ impl CipherError {
     /// Use this when wrapping a typed error from an AEAD implementation
     /// (`aes_gcm::Error`, `chacha20poly1305::Error`, …) so the original
     /// failure is not erased behind a `format!`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::CipherError;
+    /// use std::fmt;
+    /// use std::error::Error;
+    ///
+    /// /// A tiny typed error an AEAD crate might expose.
+    /// #[derive(Debug)]
+    /// struct AeadError;
+    /// impl fmt::Display for AeadError {
+    ///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    ///         f.write_str("tag mismatch")
+    ///     }
+    /// }
+    /// impl std::error::Error for AeadError {}
+    ///
+    /// let err = CipherError::with_source("AES-GCM decryption failed", AeadError);
+    /// assert_eq!(err.to_string(), "AES-GCM decryption failed");
+    /// // The underlying cause is preserved via `source()`:
+    /// let src = err.source().expect("source should be set by with_source");
+    /// assert_eq!(src.to_string(), "tag mismatch");
+    /// ```
     pub fn with_source<E>(message: impl fmt::Display, source: E) -> Self
     where
         E: std::error::Error + Send + Sync + 'static,

@@ -10,6 +10,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
+    # rust-overlay gives us pinned MSRV (1.85) and nightly toolchains
+    # alongside whatever nixpkgs' default stable happens to be.
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -26,6 +32,11 @@
           ...
         }:
         let
+          # Extend pkgs with rust-bin from rust-overlay so we can pull pinned
+          # MSRV and nightly toolchains without changing default behavior.
+          # `inputs` is available via closure (flake-parts injects it).
+          pkgsRust = pkgs.extend (import inputs.rust-overlay);
+
           craneLib = inputs.crane.mkLib pkgs;
 
           # Source filtered to Cargo-relevant files for build caching.
@@ -72,6 +83,36 @@
               cargo
               rustfmt
               clippy
+            ];
+          };
+
+          # MSRV verification shell — pinned Rust 1.85 (the floor declared in
+          # Cargo.toml's `rust-version`). Use this to validate that the crate
+          # actually compiles on its declared MSRV:
+          #
+          #   nix develop .#msrv -c cargo check --all-targets --features encryption
+          #
+          # (Note: `cargo +1.85.0` syntax is rustup-only and does NOT work
+          # inside a Nix shell — use the shell's cargo directly.)
+          devShells.msrv = pkgs.mkShell {
+            packages = [
+              pkgsRust.rust-bin.stable."1.85.0".default
+              pkgs.pkg-config
+              pkgs.zstd
+            ];
+          };
+
+          # Fuzz shell — nightly Rust for libfuzzer-sys / `cargo +nightly fuzz`.
+          # Use this to actually run the fuzz targets:
+          #
+          #   nix develop .#fuzz -c cargo fuzz run fuzz_corrupted_read -- -max_total_time=60
+          devShells.fuzz = pkgs.mkShell {
+            packages = [
+              (pkgsRust.rust-bin.nightly.latest.minimal.override {
+                extensions = [ "rust-src" "rustc-codegen-cranelift" "rustc-dev" ];
+              })
+              pkgs.pkg-config
+              pkgs.zstd
             ];
           };
 

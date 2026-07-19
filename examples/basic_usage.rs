@@ -1,5 +1,9 @@
 //! Basic segment-buffer usage: append items, flush, read back, delete acked.
 
+// SegmentConfig is #[non_exhaustive]: Default + field reassignment is the only
+// external construction pattern; accept the clippy lint for that reason.
+#![allow(clippy::field_reassign_with_default)]
+
 use segment_buffer::{SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 
@@ -12,16 +16,13 @@ struct Task {
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let tmp = tempfile::tempdir()?;
 
-    let buffer = SegmentBuffer::<Task>::open(
-        tmp.path(),
-        SegmentConfig {
-            max_batch_events: 256,
-            flush_interval_secs: 5,
-            max_size_bytes: 1024 * 1024,
-            compression_level: 3,
-            cipher: None,
-        },
-    )?;
+    let mut config = SegmentConfig::default();
+    config.max_batch_events = 256;
+    config.flush_interval_secs = 5;
+    config.max_size_bytes = 1024 * 1024;
+    config.compression_level = 3;
+
+    let buffer = SegmentBuffer::<Task>::open(tmp.path(), config)?;
 
     // Append some tasks
     for i in 0..10 {

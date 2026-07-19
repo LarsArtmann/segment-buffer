@@ -7,9 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet — see [0.2.0] below for the most recent release._
-Next work is tracked in [TODO_LIST.md](TODO_LIST.md) (v0.2.0 follow-ups first,
-then the v0.3.0 breaking batch).
+_No changes yet — see [0.3.0] below for the most recent release._
+Next work is tracked in [TODO_LIST.md](TODO_LIST.md) (v0.4.0 API batch:
+`SegmentConfig::builder()`, `flush_interval: Duration`, `RecoveryReport`,
+`FlushPolicy`, typed `SegmentError::Io`, possible `SegmentCipher → SegmentAead`
+rename).
+
+## [0.3.0] - 2026-07-19
+
+This release closes the v0.2.0 semver/honesty debt identified in the
+post-v0.2.0 self-reviews. It is **a breaking release** because
+`BufferStats` and `SegmentConfig` are now `#[non_exhaustive]` — downstream
+code that uses struct literals to construct either type must switch to
+`Default::default()` + field reassignment (or, in v0.4.0, the planned
+`SegmentConfig::builder()`). The break is intentional and minor:
+the on-disk format, the trait shape, the error types, and the encryption
+contract are all unchanged from v0.2.0.
+
+### Added
+
+- **`Debug` impl for `SegmentBuffer<T>`** — mirrors the `BufferStats` field
+  set plus the directory path. Does NOT print in-memory `unflushed` items,
+  so `T: Debug` is not required. Snapshot test in `src/tests.rs`.
+- **`CipherError::with_source` doc-test** — the `source()`-chaining
+  constructor now has a runnable example in its rustdoc.
+- **Display snapshot tests for every `SegmentError` variant and both
+  `CipherError` constructors** (`msg` + `with_source`) — locks the
+  operator-facing format strings so a careless `thiserror`-attribute edit
+  shows up as a test failure rather than silently shifting log output.
+- **`benches/bench_stats.rs`** — criterion micro-bench comparing `stats()`
+  (single lock + 7-field snapshot, ~12 ns) to three individual accessors
+  (~31 ns). The "cheaper" doc claim now cites measured numbers.
+- **`docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md`** — controlled baseline
+  captured via `git worktree v0.1.0 vs HEAD`: append 30–65% slower on small
+  batches (envelope + stats bookkeeping has a per-write cost), recover
+  40–45% faster (recovery refactor paid off). README Status section cites
+  this and the trade-off is honest.
+- **Verification discipline section in `AGENTS.md`** — four hard rules and
+  a session-end checklist, installed after three same-day sessions produced
+  self-reviews that claimed success without running the verification gate,
+  fabricated working-tree state, and invented baselines.
+- **rust-overlay integration in `flake.nix`** with two new devShells:
+  `nix develop .#msrv` (pinned Rust 1.85.0) and `nix develop .#fuzz`
+  (nightly for `cargo-fuzz`). All three MSRV checks (`cargo check`,
+  `cargo test`, `cargo clippy -- -D warnings`) now run locally on the
+  declared MSRV; both fuzz targets now run locally for ≥60s each.
+
+### Changed
+
+- **`BufferStats` and `SegmentConfig` are now `#[non_exhaustive]`** —
+  paying down the v0.2.0-introduced semver debt. Downstream struct-literal
+  construction must switch to `Default::default()` + field reassignment.
+  In-crate construction (tests, examples, benches) is unaffected. This is
+  the breaking change that motivates cutting 0.3.0.
+
+### Fixed
+
+- **Corrected the "auto-staging Crush hook" myth** in the 03-14 and 04-22
+  self-reviews. Investigation during the v0.3.0 planning session found no
+  such hook exists; the only Crush hook is `commit-diff-context.sh`, which
+  fires when a commit runs (to inject diff context) and does not stage or
+  commit. The three sessions' "lost track of working-tree state" was a real
+  pattern, but the *attribution* was wrong — the cause was the assistant
+  not running `git status`/`git log` before claiming state. Now codified as
+  Verification discipline rule 1 in `AGENTS.md`.
+- **`PROPTEST_CASES=256` pinned in CI** — removes a flaky-machine variable
+  and matches the release-build default explicitly.
 
 ## [0.2.0] - 2026-07-19
 
@@ -90,6 +153,7 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.3.0
 [0.2.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.2.0
 [0.1.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.1.0

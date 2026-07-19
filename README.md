@@ -107,16 +107,24 @@ You define priority thresholds — see `examples/backpressure.rs`.
 
 ## Status
 
-**v0.2.0** — extracted from monitor365, fully decoupled, zero monitor365
-dependencies. The v0.2.0 release hardens the format envelope's legacy-detection
-contract (false-positive rate on legacy encrypted files: 2⁻³² → 2⁻⁵⁶), adds
-`stats()`/`BufferStats`/`len`/`is_empty`, makes `CipherError` opaque with
-`source()` chaining, and ships several correctness refinements. See
-[FEATURES.md](FEATURES.md) for the honest capability inventory,
-[ROADMAP.md](ROADMAP.md) for direction, and [CHANGELOG.md](CHANGELOG.md) for
-the full change history. **v0.2.0 is a breaking release** (error-variant
-shapes + `CipherError` field visibility); pin with `=0.1.0` if you need the
-older API.
+**v0.3.0** — closes the v0.2.0 semver/honesty debt: `BufferStats` and
+`SegmentConfig` are now `#[non_exhaustive]`, `SegmentBuffer<T>` has a `Debug`
+impl, the `stats()` "cheaper" claim is backed by measured numbers
+(`benches/bench_stats.rs`), and the v0.1.0-vs-v0.2.0 perf delta is captured
+honestly in [docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md](docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md).
+**v0.3.0 is a breaking release** only because of `#[non_exhaustive]` —
+downstream struct-literal construction of `BufferStats`/`SegmentConfig` must
+switch to `Default::default()` + field reassignment. On-disk format, trait
+shape, error types, and encryption contract are unchanged from v0.2.0.
+See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md).
+
+**Performance vs v0.1.0:** a controlled `git worktree` benchmark
+([docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md](docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md))
+shows append latency up 30–65% on small batches (the envelope + stats bookkeeping
+has a per-write cost) but recovery latency down ~40–45% across the board (the
+v0.2.0 recovery refactor). Net is roughly break-even for large-batch workloads
+and clearly better on cold starts; tiny-batch high-frequency writers may want
+to stay on `=0.1.0` until v0.4.0 hot-path work lands.
 
 ## License
 

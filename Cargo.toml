@@ -1,6 +1,6 @@
 [package]
 name = "segment-buffer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Lars Artmann <lars@larsartmann.com>"]
@@ -52,4 +52,8 @@ harness = false
 
 [[bench]]
 name = "bench_recover"
+harness = false
+
+[[bench]]
+name = "bench_stats"
 harness = false
