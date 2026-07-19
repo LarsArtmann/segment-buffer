@@ -1,0 +1,33 @@
+[package]
+name = "segment-buffer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["Lars Artmann <lars@larsartmann.com>"]
+license = "Apache-2.0"
+description = "Durable bounded queue with zstd+CBOR segment files, ack-based deletion, and crash recovery"
+repository = "https://github.com/LarsArtmann/segment-buffer"
+homepage = "https://github.com/LarsArtmann/segment-buffer"
+documentation = "https://docs.rs/segment-buffer"
+readme = "README.md"
+keywords = ["queue", "disk", "durable", "segment", "buffer"]
+categories = ["data-structures", "filesystem"]
+exclude = ["/target", "/.github", "/fuzz", "/benches"]
+
+[features]
+default = []
+encryption = ["dep:aes-gcm", "dep:rand"]
+
+[dependencies]
+ciborium = "0.2"
+zstd = "0.13"
+parking_lot = "0.12"
+tracing = "0.1"
+thiserror = "2"
+serde = "1"
+aes-gcm = { version = "0.10", optional = true }
+rand = { version = "0.8", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
