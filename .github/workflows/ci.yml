@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: Test + Clippy + Fmt
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable, "1.85"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Install zstd (macos)
+        if: matrix.os == 'macos-latest'
+        run: brew install zstd
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy (default)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (encryption)
+        run: cargo clippy --all-targets --features encryption -- -D warnings
+      - name: Test (default)
+        run: cargo test --no-fail-fast
+      - name: Test (encryption)
+        run: cargo test --no-fail-fast --features encryption
+      - name: Doc build
+        run: cargo doc --no-deps --features encryption
+
+  msrv:
+    name: Verify MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --all-targets --features encryption
