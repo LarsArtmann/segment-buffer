@@ -29,3 +29,18 @@ updates:
       - cargo
     commit-message:
       prefix: "deps"
+
+  # Fuzz workspace (separate Cargo.toml at /fuzz). Tracks libfuzzer-sys and
+  # any fuzz-only deps independently of the main crate.
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - cargo
+      - fuzz
+    commit-message:
+      prefix: "deps(fuzz)"
