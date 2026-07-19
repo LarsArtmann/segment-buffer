@@ -19,7 +19,7 @@ jobs:
       matrix:
         target: [fuzz_corrupted_read, fuzz_recovery]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # cargo-fuzz requires the nightly toolchain (libfuzzer-sys depends on
       # -Z sanitizer options).
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
