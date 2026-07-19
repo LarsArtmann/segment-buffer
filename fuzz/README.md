@@ -18,9 +18,9 @@ cargo +nightly fuzz run fuzz_recovery       -- -max_total_time=60
 
 ## Targets
 
-| Target | Contract |
-| --- | --- |
-| `fuzz_corrupted_read` | After overwriting an on-disk segment with arbitrary bytes, `read_from` returns `Err` and never panics. |
-| `fuzz_recovery` | `SegmentBuffer::open` over a directory containing arbitrary files (valid, corrupt, or mis-named) never panics. |
+| Target                | Contract                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `fuzz_corrupted_read` | After overwriting an on-disk segment with arbitrary bytes, `read_from` returns `Err` and never panics.         |
+| `fuzz_recovery`       | `SegmentBuffer::open` over a directory containing arbitrary files (valid, corrupt, or mis-named) never panics. |
 
 Corpus and crash artifacts are written under `fuzz/<target>/` (gitignored).
