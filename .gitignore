@@ -10,6 +10,10 @@
 result
 result-*
 
+# Fuzz corpus and artifacts (cargo-fuzz)
+fuzz/corpus/
+fuzz/artifacts/
+
 # >>> buildflow-managed (.gitignore) >>>
 # Auto-managed by buildflow. Edit outside these markers; this block is regenerated on `buildflow --fix`.
 

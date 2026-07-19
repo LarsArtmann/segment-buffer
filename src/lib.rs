@@ -31,7 +31,7 @@ mod segment;
 
 #[cfg(feature = "encryption")]
 pub use cipher::AesGcmCipher;
-pub use cipher::SegmentCipher;
+pub use cipher::{CipherError, SegmentCipher};
 pub use error::{Result, SegmentError};
 
 use std::fs;
@@ -120,6 +120,18 @@ where
     /// *contents* are not read until [`read_from`](Self::read_from), so a
     /// corrupted segment does not fail here — it fails when read.
     ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be created or read.
@@ -150,7 +162,24 @@ where
     /// Append an item to the buffer. Assigns the next sequence number and
     /// auto-flushes if the batch threshold or interval is reached.
     ///
-    /// Returns the assigned sequence number.
+    /// Returns the assigned sequence number. The first append returns `0`,
+    /// and the number increments by 1 for each subsequent append.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    ///
+    /// assert_eq!(buf.append(1)?, 0);
+    /// assert_eq!(buf.append(2)?, 1);
+    /// assert_eq!(buf.append(3)?, 2);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn append(&self, event: T) -> Result<u64> {
         let (should_flush, seq) = {
             let mut inner = self.inner.lock();
@@ -172,6 +201,28 @@ where
     }
 
     /// Flush buffered items to a segment file. No-op if nothing is buffered.
+    ///
+    /// Flushing is also triggered automatically by [`append`](Self::append)
+    /// when the batch threshold (`max_batch_events`) or interval
+    /// (`flush_interval_secs`) is reached. Call this explicitly when you need
+    /// durability before a known threshold.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// buf.append(1)?;
+    /// buf.append(2)?;
+    ///
+    /// buf.flush()?; // items now durable on disk
+    /// assert_eq!(buf.pending_count(), 2);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn flush(&self) -> Result<()> {
         let (events, start_seq, end_seq) = {
             let mut inner = self.inner.lock();
@@ -201,6 +252,31 @@ where
     ///
     /// Reads from both on-disk segment files and in-memory pending items.
     /// Items are returned in ascending sequence order.
+    ///
+    /// Passing `limit = 0` returns an empty `Vec` without scanning.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// buf.append(10)?;
+    /// buf.append(20)?;
+    /// buf.append(30)?;
+    /// buf.flush()?;
+    ///
+    /// let items = buf.read_from(0, 100)?;
+    /// assert_eq!(items, vec![10, 20, 30]);
+    ///
+    /// // start_seq skips already-read items:
+    /// let tail = buf.read_from(2, 100)?;
+    /// assert_eq!(tail, vec![30]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn read_from(&self, start_seq: u64, limit: usize) -> Result<Vec<T>> {
         if limit == 0 {
             return Ok(Vec::new());
@@ -258,6 +334,27 @@ where
     /// A segment is deleted when its `end_seq <= acked_seq`. Returns the number
     /// of segment files removed.
     ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// for i in 0..5u64 {
+    ///     buf.append(i)?;
+    /// }
+    /// buf.flush()?;
+    ///
+    /// // Consumer has processed sequence 0..=4; acknowledge them:
+    /// let removed = buf.delete_acked(4)?;
+    /// assert_eq!(removed, 1); // one segment file deleted
+    /// assert_eq!(buf.pending_count(), 0);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
     /// # Limitation
     ///
     /// Acknowledgement only removes **flushed** segment files. Items still held
@@ -312,6 +409,24 @@ where
     }
 
     /// The highest sequence number assigned (or 0 if buffer is empty).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    ///
+    /// assert_eq!(buf.latest_sequence(), 0);
+    /// buf.append(7)?;
+    /// assert_eq!(buf.latest_sequence(), 0);
+    /// buf.append(8)?;
+    /// assert_eq!(buf.latest_sequence(), 1);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn latest_sequence(&self) -> u64 {
         let inner = self.inner.lock();
         if inner.next_seq == 0 {
@@ -322,6 +437,30 @@ where
     }
 
     /// Total items waiting in the buffer (on-disk + in-memory pending).
+    ///
+    /// Equivalent to `latest_sequence() - head_seq + 1` when non-empty, 0 when
+    /// empty. Decreases as [`delete_acked`](Self::delete_acked) removes files.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    ///
+    /// assert_eq!(buf.pending_count(), 0);
+    /// buf.append(1)?;
+    /// buf.append(2)?;
+    /// assert_eq!(buf.pending_count(), 2);
+    /// buf.flush()?;
+    /// assert_eq!(buf.pending_count(), 2); // still pending until acked
+    /// buf.delete_acked(1)?;
+    /// assert_eq!(buf.pending_count(), 0);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn pending_count(&self) -> u64 {
         let inner = self.inner.lock();
         inner.next_seq.saturating_sub(inner.head_seq)
@@ -331,6 +470,22 @@ where
     ///
     /// Use this to implement your own admission/backpressure policy (e.g.
     /// reject low-priority items above 0.90, reject standard items above 0.95).
+    /// Returns 0.0 when `max_size_bytes == 0` (limit disabled).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let mut cfg = SegmentConfig::default();
+    /// cfg.max_size_bytes = 1000; // tiny limit so pressure is observable
+    /// let buf: SegmentBuffer<u64> = SegmentBuffer::open(dir.path(), cfg)?;
+    ///
+    /// assert!(buf.store_pressure() < 0.1);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn store_pressure(&self) -> f32 {
         let inner = self.inner.lock();
         if self.config.max_size_bytes == 0 {
@@ -340,6 +495,22 @@ where
     }
 
     /// True when disk usage exceeds 90% of the configured limit.
+    ///
+    /// Convenience wrapper around `store_pressure() > 0.9`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    ///
+    /// assert!(!buf.is_overloaded());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn is_overloaded(&self) -> bool {
         self.store_pressure() > 0.9
     }
@@ -408,3 +579,6 @@ where
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod property_tests;

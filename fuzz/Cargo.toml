@@ -1,0 +1,23 @@
+[package]
+name = "segment-buffer-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+segment-buffer = { path = ".." }
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+
+[[bin]]
+name = "fuzz_corrupted_read"
+path = "fuzz_targets/fuzz_corrupted_read.rs"
+
+[[bin]]
+name = "fuzz_recovery"
+path = "fuzz_targets/fuzz_recovery.rs"
+
+# Keep the fuzz crate out of the parent workspace so it builds independently
+# (it requires nightly + -Zsanitizer).
+[workspace]

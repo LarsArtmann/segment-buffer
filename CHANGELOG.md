@@ -9,20 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `FEATURES.md` — honest feature inventory by status, the canonical answer to "what does this crate do?".
-- `ROADMAP.md` — long-term direction (async I/O, ChaCha20-Poly1305, pluggable segment store, fuzzing) and explicit non-goals.
+- **Format envelope:** segment files now carry an 8-byte header (`SBF1` magic + 1-byte version + 3-byte reserved), making the on-disk format forward-evolvable without breaking existing readers. Legacy files without the magic are auto-detected and read transparently — existing monitor365 segments keep working with zero migration. The envelope is stripped before decryption, so cipher byte-compatibility is unchanged.
+- **`CipherError` type:** the `SegmentCipher` trait now returns a dedicated lightweight error instead of the full `SegmentError`, so cipher implementations don't need to know about segment paths. The I/O layer enriches it with path context when promoting to `SegmentError::Cipher`.
+- **Property-based tests** (`proptest`): the filename bijection, payload encode/decode bijection, envelope wrap/unwrap identity, and full encrypted write→read roundtrip are now verified on 256 randomly generated cases per `cargo test` run.
+- **Fuzz scaffold** (`cargo +nightly fuzz`): two targets — `fuzz_corrupted_read` (reading bytes-corrupted segments never panics) and `fuzz_recovery` (opening over a directory of arbitrary garbage never panics). See `fuzz/README.md`.
+- `FEATURES.md` — honest feature inventory by status.
+- `ROADMAP.md` — long-term direction and explicit non-goals.
 - `flake.nix` — reproducible devShell with `zstd`, `pkg-config`, and the Rust toolchain (`nix develop`).
-- Shared `benches/support.rs` module consolidating the benchmark `Item`, config, and open helper previously duplicated across all four criterion targets.
+- Shared `benches/support.rs` module consolidating the benchmark helpers previously duplicated across all four criterion targets.
 
 ### Changed
 
-- Extracted `src/segment.rs`: the on-disk format (filename contract, CBOR→zstd→cipher encode/decode pipeline, segment scan, tmp cleanup) now lives in its own module. `SegmentBuffer` focuses purely on in-memory orchestration and locking. No public API change.
+- **Typed errors:** `SegmentError::Cbor`, `Cipher`, and `Integrity` variants now carry structured context (`path: PathBuf`, `phase: &'static str` or `reason: &'static str`) instead of opaque `String` payloads. Operators see exactly which file failed and why, without spelunking through logs. Breaking change to the error enum shape (struct variants instead of tuple variants).
+- Extracted `src/segment.rs`: the on-disk format (filename contract, envelope, CBOR→zstd→cipher encode/decode pipeline, segment scan, tmp cleanup) now lives in its own module. `SegmentBuffer` focuses purely on in-memory orchestration and locking. No public API change.
 - Renamed the private `BufferInner::pending` field to `unflushed` for precision: it holds items not yet written to a segment file, distinct from the public `pending_count()` backlog metric.
-- Crash recovery no longer sorts segments twice or uses guarded `unwrap()`s; the first/last lookup uses explicit pattern matching.
 
 ### Fixed
 
-- `delete_acked(acked_seq)` no longer under-reports `pending_count()` when called while items are still buffered in memory. `head_seq` is now clamped to the in-memory window so the backlog count stays honest even when the ack cannot remove unflushed items (they have no segment file to delete). The limitation that acks only take effect on flushed segments is now documented on the method.
+- `delete_acked(acked_seq)` no longer under-reports `pending_count()` when called while items are still buffered in memory. `head_seq` is now clamped to the in-memory window so the backlog count stays honest even when the ack cannot remove unflushed items.
+- `SegmentBuffer::open` doc corrected: recovery reads filenames only, so it returns `SegmentError::Io` on failure — not `Cbor`/`Integrity` (those surface at `read_from` time).
 
 ## [0.1.0] - 2026-07-19
 

@@ -1,13 +1,39 @@
 //! On-disk segment format: filename layout, encode/decode pipeline, scanning.
 //!
-//! A segment file is named `seg_{start:012}_{end:012}.zst` and contains
-//! CBOR-serialized events, zstd-compressed, and optionally encrypted. This
-//! module owns the byte-level format so that [`crate::SegmentBuffer`] can focus
-//! on in-memory orchestration and locking.
+//! A segment file is named `seg_{start:012}_{end:012}.zst` and contains an
+//! optional envelope header followed by the CBOR-serialized, zstd-compressed,
+//! optionally-encrypted events. This module owns the byte-level format so that
+//! [`crate::SegmentBuffer`] can focus on in-memory orchestration and locking.
+//!
+//! ## Envelope (format evolution)
+//!
+//! Every segment written by this crate is wrapped in an 8-byte envelope:
+//!
+//! ```text
+//! offset  bytes   meaning
+//! ------  -----   -------
+//!   0..4    4     magic: ASCII `SBF1` ("Segment Buffer Format")
+//!   4       1     envelope version (currently 1)
+//!   5..8    3     reserved (all zero; future: checksum type, compression algo…)
+//!   8..           payload (the v1 bytes: zstd(CBOR(events)), optionally encrypted)
+//! ```
+//!
+//! The payload is byte-identical to the legacy v1 format, so the cipher still
+//! sees `[nonce][ciphertext]` exactly as before — the envelope is stripped
+//! before decryption.
+//!
+//! ## Legacy compatibility
+//!
+//! Files without the magic prefix are read as legacy v1 (the original
+//! monitor365 format). This makes the envelope a strictly additive change:
+//! existing segment files keep reading without migration, and new writes are
+//! forward-compatible with future format versions. The probability of a false
+//! positive — a legacy encrypted file whose random 12-byte nonce happens to
+//! begin with `SBF1` — is 2⁻³², negligible.
 //!
 //! The filename format is a load-bearing contract: it is the *only* state used
-//! for crash recovery, and it must stay byte-compatible with existing
-//! monitor365 segment files. See [`filename`] / [`parse_filename`].
+//! for crash recovery, and existing monitor365 filenames must still parse. See
+//! [`filename`] / [`parse_filename`].
 
 use std::fs;
 use std::io::Write;
@@ -29,6 +55,16 @@ const TMP_SUFFIX: &str = ".tmp";
 /// such as AES-256-GCM. Ciphertexts shorter than this cannot be valid.
 const NONCE_LEN: usize = 12;
 
+/// Envelope magic: ASCII `SBF1` ("Segment Buffer Format"). Chosen to be
+/// distinct from the zstd frame magic (`28 B5 2F FD`) and human-readable in a
+/// hex dump.
+const ENVELOPE_MAGIC: [u8; 4] = *b"SBF1";
+/// Current envelope version. Version 1 = the original payload layout
+/// (zstd(CBOR), optionally `[nonce][ciphertext]`).
+const ENVELOPE_VERSION: u8 = 1;
+/// Total envelope length: 4 magic + 1 version + 3 reserved.
+const ENVELOPE_LEN: usize = 8;
+
 /// Inclusive `[start, end]` range of sequence numbers stored in a segment file.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SegmentRange {
@@ -46,7 +82,9 @@ pub(crate) fn filename(start: u64, end: u64) -> String {
 /// Parse `seg_{start:012}_{end:012}.zst` into a [`SegmentRange`].
 ///
 /// Returns `None` for any name that is not a segment file, so callers can use
-/// this to filter directory listings.
+/// this to filter directory listings. Note: the format does not enforce
+/// `start <= end` at the parse level (legacy files in the wild may violate it),
+/// so callers that need the invariant must check.
 pub(crate) fn parse_filename(name: &str) -> Option<SegmentRange> {
     let core = name
         .strip_prefix(SEGMENT_PREFIX)?
@@ -89,45 +127,93 @@ pub(crate) fn clean_tmp(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Encode `events` to bytes: CBOR → zstd → optional encrypt.
+/// Strip the envelope, if present, returning `(version, payload)`.
 ///
-/// This is the inverse of [`decode`].
-fn encode<T: Serialize>(
+/// Returns `(Some(version), payload_after_envelope)` when the magic matches,
+/// `(None, original_bytes)` for legacy v1 files. The payload is what the cipher
+/// and zstd/CBOR layers operate on; it is identical in layout to a v1 file.
+pub(crate) fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
+    if raw.len() >= ENVELOPE_LEN && raw[..ENVELOPE_MAGIC.len()] == ENVELOPE_MAGIC {
+        (Some(raw[ENVELOPE_MAGIC.len()]), &raw[ENVELOPE_LEN..])
+    } else {
+        (None, raw)
+    }
+}
+
+/// Prepend the envelope to `payload`.
+pub(crate) fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(ENVELOPE_LEN + payload.len());
+    out.extend_from_slice(&ENVELOPE_MAGIC);
+    out.push(ENVELOPE_VERSION);
+    // 3 reserved bytes, all zero (future: checksum type, compression algo, …).
+    out.extend_from_slice(&[0u8; ENVELOPE_LEN - ENVELOPE_MAGIC.len() - 1]);
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Encode `events` to the v1 payload bytes: CBOR → zstd → optional encrypt.
+pub(crate) fn encode_payload<T: Serialize>(
     cipher: Option<&dyn SegmentCipher>,
     level: i32,
+    path: &Path,
     events: &[T],
 ) -> Result<Vec<u8>> {
     let mut cbor_buf = Vec::new();
-    ciborium::into_writer(events, &mut cbor_buf)
-        .map_err(|e| SegmentError::Cbor(format!("serialization: {e}")))?;
+    ciborium::into_writer(events, &mut cbor_buf).map_err(|e| SegmentError::Cbor {
+        phase: "serialize",
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
 
     let compressed = zstd::encode_all(cbor_buf.as_slice(), level)?;
 
     match cipher {
-        Some(cipher) => cipher.encrypt(&compressed),
+        Some(cipher) => cipher
+            .encrypt(&compressed)
+            .map_err(|e| SegmentError::Cipher {
+                path: path.to_path_buf(),
+                message: e.0,
+            }),
         None => Ok(compressed),
     }
 }
 
-/// Decode bytes back to events: optional decrypt → zstd → CBOR.
-///
-/// This is the inverse of [`encode`].
-fn decode<T: DeserializeOwned>(cipher: Option<&dyn SegmentCipher>, raw: Vec<u8>) -> Result<Vec<T>> {
-    let compressed = match cipher {
-        Some(cipher) => cipher.decrypt(&raw)?,
-        None => raw,
+/// Decode the v1 payload bytes back to events: optional decrypt → zstd → CBOR.
+pub(crate) fn decode_payload<T: DeserializeOwned>(
+    cipher: Option<&dyn SegmentCipher>,
+    payload: &[u8],
+    path: &Path,
+) -> Result<Vec<T>> {
+    // Decrypt into an owned buffer if a cipher is configured; otherwise borrow.
+    // The `Cow` avoids cloning the (potentially large) plaintext zstd blob.
+    use std::borrow::Cow;
+    let decrypted;
+    let compressed: Cow<[u8]> = match cipher {
+        Some(cipher) => {
+            decrypted = cipher.decrypt(payload).map_err(|e| SegmentError::Cipher {
+                path: path.to_path_buf(),
+                message: e.0,
+            })?;
+            Cow::Owned(decrypted)
+        }
+        None => Cow::Borrowed(payload),
     };
 
-    let cbor_buf = zstd::decode_all(compressed.as_slice())?;
-    ciborium::from_reader(cbor_buf.as_slice())
-        .map_err(|e| SegmentError::Cbor(format!("deserialization: {e}")))
+    let cbor_buf = zstd::decode_all(compressed.as_ref())?;
+    ciborium::from_reader(cbor_buf.as_slice()).map_err(|e| SegmentError::Cbor {
+        phase: "deserialize",
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })
 }
 
 /// Write `events` for `range` to a segment file in `dir`.
 ///
 /// Bytes are written to a `.tmp` sidecar, `sync_all`'d, then atomically renamed
-/// to the final segment path so a crash never leaves a partial segment. Returns
-/// the number of bytes written.
+/// to the final segment path so a crash never leaves a partial segment. The
+/// file is prefixed with the 8-byte [`envelope`](self#envelope-format-evolution)
+/// so the format can evolve without breaking legacy readers. Returns the number
+/// of bytes written (envelope + payload).
 pub(crate) fn write<T: Serialize>(
     dir: &Path,
     cipher: Option<&dyn SegmentCipher>,
@@ -135,9 +221,10 @@ pub(crate) fn write<T: Serialize>(
     range: SegmentRange,
     events: &[T],
 ) -> Result<u64> {
-    let final_bytes = encode(cipher, level, events)?;
     let seg_name = filename(range.start, range.end);
     let seg_path = dir.join(&seg_name);
+    let payload = encode_payload(cipher, level, &seg_path, events)?;
+    let final_bytes = wrap_envelope(&payload);
     let tmp_path = dir.join(format!("{seg_name}{TMP_SUFFIX}"));
 
     {
@@ -152,7 +239,9 @@ pub(crate) fn write<T: Serialize>(
 
 /// Read and decode the segment file for `range` from `dir`.
 ///
-/// Encrypted segments shorter than the AEAD nonce are rejected as
+/// Both enveloped (current) and legacy (pre-envelope, monitor365-compatible)
+/// files are accepted; see the [`envelope`](self#envelope-format-evolution)
+/// section. Encrypted payloads shorter than the AEAD nonce are rejected as
 /// [`SegmentError::Integrity`] with the offending path, before the cipher is
 /// invoked.
 pub(crate) fn read<T: DeserializeOwned>(
@@ -162,14 +251,14 @@ pub(crate) fn read<T: DeserializeOwned>(
 ) -> Result<Vec<T>> {
     let path = dir.join(filename(range.start, range.end));
     let raw = fs::read(&path)?;
+    let (_version, payload) = unwrap_envelope(&raw);
 
-    if cipher.is_some() && raw.len() < NONCE_LEN {
-        return Err(SegmentError::Integrity(format!(
-            "segment {} too small for nonce ({} bytes)",
-            path.display(),
-            raw.len()
-        )));
+    if cipher.is_some() && payload.len() < NONCE_LEN {
+        return Err(SegmentError::Integrity {
+            path,
+            reason: "encrypted payload too small for AEAD nonce",
+        });
     }
 
-    decode(cipher, raw)
+    decode_payload(cipher, payload, &path)
 }

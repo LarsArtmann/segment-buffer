@@ -465,6 +465,63 @@ fn corrupted_zstd_segment_returns_error_not_panic() {
     );
 }
 
+#[test]
+fn legacy_envelopeless_file_still_reads() {
+    use super::segment;
+    // Hand-build a v1-format file (no SBF1 envelope), exactly as monitor365
+    // would have written it: raw zstd(CBOR), no envelope prefix.
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+
+    let items = vec![test_item(7), test_item(8)];
+    let mut cbor = Vec::new();
+    ciborium::into_writer(&items, &mut cbor).unwrap();
+    let raw_v1 = zstd::encode_all(cbor.as_slice(), 3).unwrap();
+
+    let path = dir.join(segment::filename(7, 8));
+    fs::write(&path, &raw_v1).unwrap();
+
+    // Read via the buffer (no cipher). The envelope-less bytes should be
+    // detected as legacy and decoded transparently.
+    let buf = test_buffer(dir);
+    let events: Vec<TestItem> = buf.read_from(7, 100).unwrap();
+    assert_eq!(events.len(), 2, "legacy envelope-less file must still read");
+    assert_eq!(events[0], test_item(7));
+}
+
+#[test]
+fn enveloped_file_roundtrips_and_carries_magic() {
+    use super::segment;
+    const ENVELOPE_MAGIC: &[u8; 4] = b"SBF1";
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let buf = test_buffer(dir);
+
+    buf.append(test_item(1)).unwrap();
+    buf.append(test_item(2)).unwrap();
+    buf.flush().unwrap();
+
+    // The file on disk must start with the SBF1 magic. Sequence numbers are
+    // assigned by the buffer (0-based), so two appends → filename(0, 1).
+    let path = dir.join(segment::filename(0, 1));
+    assert!(path.exists(), "segment file should exist at {path:?}");
+    let bytes = fs::read(&path).unwrap();
+    assert!(
+        bytes.len() >= 8,
+        "enveloped file should be at least header-length"
+    );
+    assert_eq!(
+        &bytes[..4],
+        ENVELOPE_MAGIC,
+        "newly-written segment must carry the SBF1 envelope magic"
+    );
+
+    // And it must round-trip cleanly.
+    let events = buf.read_from(0, 100).unwrap();
+    assert_eq!(events.len(), 2);
+}
+
 // =========================================================================
 // Encryption tests (behind `encryption` feature)
 // =========================================================================

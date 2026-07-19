@@ -32,6 +32,13 @@ cargo bench --bench bench_recover
 
 # Docs (CI builds with the feature so AesGcmCipher is visible)
 cargo doc --no-deps --features encryption
+
+# Property tests (run as part of cargo test, but can be increased)
+cargo test --no-fail-fast --features encryption -- property
+
+# Fuzz (requires nightly; see fuzz/README.md)
+cargo +nightly fuzz run fuzz_corrupted_read -- -max_total_time=60
+cargo +nightly fuzz run fuzz_recovery       -- -max_total_time=60
 ```
 
 ### Nix (reproducible)
@@ -94,22 +101,40 @@ The crate **ships no admission policy**. `store_pressure()` returns `approx_disk
 
 ## Encryption on-disk format
 
-`AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]`. This is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `read_segment` rejects ciphertexts shorter than `NONCE_LEN` (12) as `SegmentError::Integrity`.
+`AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]` as the segment **payload**. This payload is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `segment::read` rejects encrypted payloads shorter than `NONCE_LEN` (12) as `SegmentError::Integrity` with the offending path.
+
+## Segment file envelope (format evolution)
+
+Every segment written by this crate is wrapped in an 8-byte envelope:
+
+```
+offset  bytes  meaning
+  0..4    4    magic: ASCII "SBF1"
+   4      1    envelope version (currently 1)
+  5..8    3    reserved (zero; future: checksum type, compression algo)
+  8..          payload (zstd(CBOR), optionally encrypted — the v1 layout)
+```
+
+On read, the envelope is **auto-detected**: files starting with `SBF1` are unwrapped; files without the magic are treated as legacy v1 (the original monitor365 format). This makes the envelope strictly additive — no migration needed. The cipher always sees the payload (post-envelope-strip), so cipher byte-compatibility is preserved.
+
+If you need to evolve the format (new checksum, new compression, metadata block), bump `ENVELOPE_VERSION` in `src/segment.rs` and branch on the version in `unwrap_envelope`. Do not change the magic.
 
 ## Project layout
 
 ```
 src/
-  lib.rs       SegmentBuffer, SegmentConfig, BufferInner; orchestrates lock + flush policy
-  segment.rs   On-disk format: SegmentRange, filename/parse, encode/decode pipeline, scan, clean_tmp
-  cipher.rs    SegmentCipher trait + AesGcmCipher (feature-gated impl in `mod private`)
-  error.rs     SegmentError (non_exhaustive, thiserror), Result alias
-  tests.rs     `mod tests` — included via `#[cfg(test)] mod tests;` from lib.rs (27 unit + 2 doc tests w/ encryption)
-examples/      basic_usage, backpressure, encrypted (feature-gated)
-benches/       4 criterion targets + shared support.rs (Item/config/open helpers)
-FEATURES.md    Honest capability inventory by status
-ROADMAP.md     Long-term direction and explicit non-goals
-flake.nix      Reproducible devShell (zstd, pkg-config, Rust toolchain)
+  lib.rs           SegmentBuffer, SegmentConfig, BufferInner; orchestrates lock + flush policy
+  segment.rs       On-disk format: envelope, SegmentRange, filename/parse, encode/decode pipeline, scan, clean_tmp
+  cipher.rs        SegmentCipher trait, CipherError, AesGcmCipher (feature-gated impl in `mod private`)
+  error.rs         SegmentError (typed: path + phase + reason), Result alias
+  tests.rs         `mod tests` — 29 unit tests
+  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip (6 properties)
+examples/          basic_usage, backpressure, encrypted (feature-gated)
+benches/           4 criterion targets + shared support.rs
+fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery); requires nightly
+FEATURES.md        Honest capability inventory by status
+ROADMAP.md         Long-term direction and explicit non-goals
+flake.nix          Reproducible devShell (zstd, pkg-config, Rust toolchain)
 ```
 
 The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` (byte-level disk format) is deliberate: the buffer doesn't know how segments are encoded, and the segment module doesn't know about the mutex. `SegmentBuffer`'s private `write_segment`/`read_segment`/`scan_segments`/`segment_path` methods are thin instance-bound wrappers over the stateless `segment::` free functions.
