@@ -2,7 +2,7 @@
 
 Durable bounded queue with zstd+CBOR segment files, ack-based deletion, and filename-based crash recovery.
 
-**Extracted from [monitor365](https://github.com/LarsArtmann/monitor365), proven on 597M+ events.**
+**Extracted from monitor365 (private), proven on 597M+ events.**
 
 ## Why?
 

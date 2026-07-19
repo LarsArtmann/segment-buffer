@@ -168,6 +168,39 @@
               };
             };
           };
+
+          # Reproducible fuzz runners. Each app runs one cargo-fuzz target
+          # under the pinned nightly toolchain for `seconds` (default 60).
+          # Override via:
+          #   nix run .#fuzz-corrupted-read -- 300
+          #   nix run .#fuzz-recovery -- --max-len=4096
+          apps =
+            let
+              mkFuzzApp = target: {
+                type = "app";
+                program = pkgs.writeShellScriptBin "fuzz-${target}" ''
+                  set -euo pipefail
+                  export PATH="${
+                    pkgs.lib.makeBinPath [
+                      (pkgsRust.rust-bin.nightly.latest.minimal.override {
+                        extensions = [ "rust-src" ];
+                      })
+                      pkgs.cargo
+                    ]
+                  }:$PATH"
+                  export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.zstd ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                  # cargo-fuzz needs to be on PATH; expect the caller to have
+                  # installed it once via `cargo install cargo-fuzz`.
+                  export PATH="$HOME/.cargo/bin:$PATH"
+                  cd "$PWD"
+                  exec cargo-fuzz run ${target} -- -max_total_time="''${1:-60}" "''${@:2}"
+                '';
+              };
+            in
+            {
+              fuzz-corrupted-read = mkFuzzApp "fuzz_corrupted_read";
+              fuzz-recovery = mkFuzzApp "fuzz_recovery";
+            };
         };
     };
 }

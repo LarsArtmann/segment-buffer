@@ -1,0 +1,33 @@
+# Lychee configuration — see https://lychee.link/org/configuration
+#
+# Run locally with:
+#   nix run nixpkgs#lychee -- --config .github/lychee.toml '*.md' 'docs/**/*.md' 'fuzz/README.md'
+#
+# Exclusions:
+#   - https://github.com/LarsArtmann/monitor365 — private repo of origin; the
+#     link target is intentionally invisible to anonymous visitors.
+
+# Reasonable timeout for slow CI runners
+timeout = 20
+
+# Retry once on transient network failures
+max_retries = 1
+
+# Accept 200 OK (default); 429 (rate-limited) excluded from failures so
+# a flaky rate-limited host doesn't fail the check
+accept = ["200"]
+
+# Exclude the private monitor365 repo (referenced as text in README.md and
+# CHANGELOG.md but the URL is a 404 to anonymous visitors).
+exclude = [
+  "^https://github\\.com/LarsArtmann/monitor365",
+]
+
+# Exclude localhost / loopback
+exclude_loopback = true
+
+# Exclude private network ranges
+exclude_private = true
+
+# Check mailto: links (default behavior — opt-in instead of opt-out)
+# include_mail = false

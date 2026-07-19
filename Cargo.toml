@@ -17,6 +17,21 @@ exclude = ["/target", "/.github", "/fuzz", "/benches"]
 [features]
 default = []
 encryption = ["dep:aes-gcm", "dep:rand"]
+# Enable `loom` to compile the crate under loom's concurrency model. parking_lot
+# 0.12 detects `--cfg loom` at compile time (no cargo feature needed) and
+# switches its `Mutex<T>` to `loom::sync::Mutex<T>` automatically. Run with:
+#
+#   RUSTFLAGS="--cfg loom" cargo test --features loom --test loom -- --release
+#
+# Loom does NOT model the filesystem, so the loom test only exercises the
+# in-memory append/stats path; flush/delete_acked/recover (which touch disk)
+# stay covered by the stress test `concurrency_4_writers_1_reader_10k_events`.
+loom = []
+
+[lints.rust]
+# `loom` is set via RUSTFLAGS, not Cargo features, so rustc's check-cfg needs
+# to be told it exists to avoid the `unexpected_cfgs` warning under loom runs.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [dependencies]
 ciborium = "0.2"
@@ -33,6 +48,7 @@ tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 proptest = "1"
+loom = "0.7"
 
 [[example]]
 name = "encrypted"

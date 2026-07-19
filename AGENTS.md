@@ -157,6 +157,7 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 - **Pre-1.86 trait-upcasting workaround:** `CipherError::source()` uses a private `ErrorExt` trait in `src/cipher.rs` to upcast `Arc<dyn ErrorExt + Send + Sync>` → `&dyn Error` because Rust 1.85 cannot coerce `dyn ErrorExt` to `dyn Error` directly. Once the MSRV moves to 1.86+, this trait can be deleted and `source()` simplified to `self.source.as_deref()` (tracked in TODO_LIST.md under the v0.3.0 batch).
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
+- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. Covers only the in-memory append + `stats()` snapshot path — loom does not model the filesystem, so `flush`/`delete_acked`/`read_from`/`recover` are covered by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs` instead. Use `--release` — loom's schedule enumeration is slow in debug.
 
 ## Verification discipline (hard rules)
 
