@@ -58,6 +58,12 @@
             nativeBuildInputs = [ pkgs.pkg-config ];
             buildInputs = [ pkgs.zstd ];
             strictDeps = true;
+            # cleanCargoSource strips README.md, but lib.rs uses
+            # include_str!("../README.md") to embed it in rustdoc.
+            # Copy it back in after unpacking.
+            postUnpack = ''
+              cp ${./README.md} "$sourceRoot/README.md"
+            '';
           };
 
           # Build dependencies once (with the encryption feature so aes-gcm and
