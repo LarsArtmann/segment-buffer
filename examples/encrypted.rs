@@ -2,10 +2,6 @@
 //!
 //! Run with: `cargo run --example encrypted --features encryption`
 
-// SegmentConfig is #[non_exhaustive]: Default + field reassignment is the only
-// external construction pattern; accept the clippy lint for that reason.
-#![allow(clippy::field_reassign_with_default)]
-
 use segment_buffer::{AesGcmCipher, SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 
@@ -21,12 +17,12 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let tmp = tempfile::tempdir()?;
 
-    let mut config = SegmentConfig::default();
-    config.max_batch_events = 256;
-    config.flush_interval_secs = 5;
-    config.max_size_bytes = 1024 * 1024;
-    config.compression_level = 3;
-    config.cipher = Some(Box::new(AesGcmCipher::new(&key)));
+    let config = SegmentConfig::builder()
+        .flush_at_batch_or_interval(256, std::time::Duration::from_secs(5))
+        .max_size_bytes(1024 * 1024)
+        .compression_level(3)
+        .cipher(Box::new(AesGcmCipher::new(&key)))
+        .build();
 
     let buffer = SegmentBuffer::<SecretRecord>::open(tmp.path(), config)?;
 

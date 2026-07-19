@@ -41,8 +41,11 @@
 //!     Err(SegmentError::Integrity { path, reason }) => {
 //!         eprintln!("integrity failure on {}: {reason}", path.display());
 //!     }
-//!     Err(SegmentError::Io(e)) => {
-//!         eprintln!("unrelated I/O failure: {e}");
+//!     Err(SegmentError::Io { path, source }) => {
+//!         match path {
+//!             Some(p) => eprintln!("I/O failure on {}: {source}", p.display()),
+//!             None => eprintln!("unrelated I/O failure: {source}"),
+//!         }
 //!     }
 //!     // `SegmentError` is `#[non_exhaustive]`, so a catch-all is required
 //!     // for forward compatibility with future variants.
@@ -58,18 +61,28 @@ use std::path::PathBuf;
 
 /// Errors produced by segment-buffer operations.
 ///
-/// Every non-I/O variant carries the [`path`](Self::Cbor) of the segment file
-/// involved, so an operator can act on the failure without spelunking through
-/// logs.
+/// Every variant carries the [`path`](Self::Cbor) of the segment file
+/// involved (when one is in scope), so an operator can act on the failure
+/// without spelunking through logs.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SegmentError {
     /// Filesystem I/O failure (directory creation, segment read/write, rename, etc.).
     ///
-    /// Kept as a tuple variant with `#[from]` so `?` remains ergonomic at the
-    /// many I/O call sites where per-site context would add noise without value.
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    /// Carries the offending `path` when one is in scope, plus the underlying
+    /// [`std::io::Error`] as `source`. When `?` propagates an `io::Error`
+    /// without context, `path` is `None`; use
+    /// [`with_path`](Self::with_path) (or construct the variant directly) to
+    /// attach the path at high-value call sites.
+    #[error("I/O error{path_clause}: {source}", path_clause = format_path_clause(path))]
+    Io {
+        /// Path of the file the I/O failed on, when known. `None` for
+        /// directory-create or unspecified-path failures.
+        path: Option<PathBuf>,
+        /// The underlying io::Error, reachable via [`std::error::Error::source`].
+        #[source]
+        source: std::io::Error,
+    },
 
     /// CBOR serialization or deserialization of a segment file failed.
     #[error("CBOR {phase} failed for {path}: {message}")]
@@ -101,6 +114,38 @@ pub enum SegmentError {
         /// What failed, in one short phrase.
         reason: &'static str,
     },
+}
+
+impl SegmentError {
+    /// Attach a path to an existing [`SegmentError::Io`] variant. Returns the
+    /// error unchanged for other variants. Useful for upgrading a `?`-propagated
+    /// io::Error to carry path context at a high-value call site.
+    #[must_use = "the upgraded error is meaningless if discarded"]
+    pub fn with_path(self, path: impl Into<PathBuf>) -> Self {
+        match self {
+            SegmentError::Io { path: _, source } => SegmentError::Io {
+                path: Some(path.into()),
+                source,
+            },
+            other => other,
+        }
+    }
+}
+
+impl From<std::io::Error> for SegmentError {
+    fn from(source: std::io::Error) -> Self {
+        SegmentError::Io { path: None, source }
+    }
+}
+
+/// Helper used by the `#[error]` attribute on [`SegmentError::Io`]. Produces
+/// ` for <path.display()>` when `path` is `Some`, or the empty string when
+/// `path` is `None` — so the rendered message has no spurious " for " clause.
+fn format_path_clause(path: &Option<PathBuf>) -> String {
+    match path {
+        Some(p) => format!(" for {}", p.display()),
+        None => String::new(),
+    }
 }
 
 /// Result alias used throughout the crate.

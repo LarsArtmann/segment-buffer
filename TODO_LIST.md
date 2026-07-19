@@ -34,7 +34,7 @@ prototyped + benched before adoption; reject the ones that don't pay rent.
 - [ ] **`RecoveryReport` returned from `open()`** — segments found, bytes, head/next seq, time spent. Today this is logged but not returned.
 - [ ] **`FlushPolicy` enum** (Batch / Interval / Manual) to replace the two `SegmentConfig` fields that silently combine.
 - [ ] **Typed `SegmentError::Io`** — currently bare `#[from] io::Error` drops path context.
-- [ ] **Consider `SegmentCipher` → `SegmentAead` rename** — the trait is specifically AEAD-shaped (self-describing nonce-in-band); the name lies slightly. Decision task: rename, or document the AEAD-only intent and keep the name.
+- [x] **Consider `SegmentCipher` → `SegmentAead` rename** — decision: REJECT. The trait contract is "any stateless self-describing encrypt/decrypt pair", not strictly AEAD. Renaming would narrow a contract the trait does not enforce. The trait doc now has an explicit "Naming" section explaining the choice (and the intent that callers use AEADs in practice). No code change required.
 - [x] **`#[non_exhaustive]` on `BufferStats`** — added in v0.3.0; `SegmentConfig` too. Construction-by-literal is no longer part of the public API; downstream consumers use `Default + field reassignment` or (future) the `SegmentConfig::builder()` once v0.4.0 lands.
 - [x] **`#[non_exhaustive]` on `SegmentConfig`** — same class of debt, closed in the same v0.3.0 batch.
 

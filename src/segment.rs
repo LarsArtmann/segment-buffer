@@ -133,18 +133,20 @@ pub(crate) fn scan(dir: &Path) -> Result<Vec<SegmentRange>> {
 /// Removal of individual files is best-effort (per-file errors are ignored);
 /// only directory-read errors propagate. This mirrors the crash-recovery
 /// contract: a half-written segment must not survive recovery.
-pub(crate) fn clean_tmp(dir: &Path) -> Result<()> {
+pub(crate) fn clean_tmp(dir: &Path) -> Result<usize> {
+    let mut removed = 0usize;
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path
             .file_name()
             .is_some_and(|n| n.to_string_lossy().ends_with(TMP_SUFFIX))
+            && fs::remove_file(&path).is_ok()
         {
-            let _ = fs::remove_file(&path);
+            removed += 1;
         }
     }
-    Ok(())
+    Ok(removed)
 }
 
 /// Reserved bytes at envelope offset `5..8`. Always zero in envelope v1;

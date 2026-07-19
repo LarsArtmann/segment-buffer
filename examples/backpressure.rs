@@ -3,10 +3,6 @@
 //! This example demonstrates how a caller can apply its own priority-based
 //! admission policy using the buffer's store_pressure() metric.
 
-// SegmentConfig is #[non_exhaustive]: Default + field reassignment is the only
-// external construction pattern; accept the clippy lint for that reason.
-#![allow(clippy::field_reassign_with_default)]
-
 use segment_buffer::{SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 
@@ -38,12 +34,13 @@ fn should_accept(priority: Priority, pressure: f32) -> bool {
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let tmp = tempfile::tempdir()?;
 
-    // Small limit so we hit pressure quickly.
-    let mut config = SegmentConfig::default();
-    config.max_batch_events = 100_000; // don't auto-flush; we want to control it
-    config.flush_interval_secs = 3600;
-    config.max_size_bytes = 100_000; // 100 KB
-    config.compression_level = 3;
+    // Small limit so we hit pressure quickly. Use Manual flush so the example
+    // controls exactly when the segment file is written.
+    let config = SegmentConfig::builder()
+        .flush_manually()
+        .max_size_bytes(100_000) // 100 KB
+        .compression_level(3)
+        .build();
 
     let buffer = SegmentBuffer::<Metric>::open(tmp.path(), config)?;
 

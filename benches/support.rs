@@ -27,18 +27,12 @@ pub fn item(n: u64) -> Item {
 /// The shared benchmark config. `max_batch_events` is the only knob that varies
 /// between benchmarks, so it is the single parameter; everything else is pinned
 /// for cross-target consistency.
-///
-/// `SegmentConfig` is `#[non_exhaustive]`, so external consumers (this bench
-/// harness included) must use `Default + field reassignment`. The clippy lint
-/// is accepted here for that reason.
-#[allow(clippy::field_reassign_with_default)]
 pub fn config(max_batch_events: usize) -> SegmentConfig {
-    let mut config = SegmentConfig::default();
-    config.max_batch_events = max_batch_events;
-    config.flush_interval_secs = 3600;
-    config.max_size_bytes = u64::MAX;
-    config.compression_level = 3;
-    config
+    SegmentConfig::builder()
+        .flush_at_batch_size(max_batch_events)
+        .max_size_bytes(u64::MAX)
+        .compression_level(3)
+        .build()
 }
 
 /// Open a buffer in a fresh temp directory using [`config`].

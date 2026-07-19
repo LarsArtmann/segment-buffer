@@ -25,8 +25,7 @@ type TestBuffer = SegmentBuffer<TestItem>;
 /// `max_size_bytes` varies between tests, so it is the single parameter.
 fn test_config(max_size_bytes: u64) -> SegmentConfig {
     SegmentConfig {
-        max_batch_events: 4,
-        flush_interval_secs: 3600,
+        flush_policy: FlushPolicy::Batch(4),
         max_size_bytes,
         compression_level: 3,
         cipher: None,
@@ -420,8 +419,10 @@ fn time_based_auto_flush() {
     let buf: TestBuffer = SegmentBuffer::open(
         tmp.path(),
         SegmentConfig {
-            max_batch_events: 256,
-            flush_interval_secs: 1,
+            flush_policy: FlushPolicy::BatchOrInterval {
+                batch_size: 256,
+                interval: std::time::Duration::from_secs(1),
+            },
             max_size_bytes: 1024 * 1024,
             compression_level: 3,
             cipher: None,
@@ -595,8 +596,7 @@ fn encrypted_buffer(dir: &Path, key: [u8; 32]) -> TestBuffer {
     SegmentBuffer::open(
         dir,
         SegmentConfig {
-            max_batch_events: 4,
-            flush_interval_secs: 3600,
+            flush_policy: FlushPolicy::Batch(4),
             max_size_bytes: 1024 * 1024,
             compression_level: 3,
             cipher: Some(Box::new(AesGcmCipher::new(&key))),
@@ -801,11 +801,42 @@ fn debug_impl_formats_cleanly() {
 // =========================================================================
 
 #[test]
-fn segment_error_io_display_format() {
-    let err = SegmentError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
+fn segment_error_io_display_format_no_path() {
+    // Io constructed from a bare io::Error via `?` has path = None.
+    let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+    let err: SegmentError = io_err.into();
     let rendered = format!("{err}");
-    // thiserror: "I/O error: {0}" — the io::Error's Display is its message.
+    // No " for <path>" clause when path is None.
     assert_eq!(rendered, "I/O error: missing");
+}
+
+#[test]
+fn segment_error_io_display_format_with_path() {
+    // Io constructed with explicit path context renders the path clause.
+    let err = SegmentError::Io {
+        path: Some(std::path::PathBuf::from(
+            "/var/data/seg_000000000000_000000000000.zst",
+        )),
+        source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+    };
+    let rendered = format!("{err}");
+    assert_eq!(
+        rendered,
+        "I/O error for /var/data/seg_000000000000_000000000000.zst: permission denied"
+    );
+}
+
+#[test]
+fn segment_error_io_with_path_attaches_path() {
+    // Upgrade a bare propagated io::Error to carry path context.
+    let io_err: SegmentError =
+        std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "short read").into();
+    let upgraded = io_err.with_path("/tmp/seg_000000000000_000000000000.zst");
+    let rendered = format!("{upgraded}");
+    assert_eq!(
+        rendered,
+        "I/O error for /tmp/seg_000000000000_000000000000.zst: short read"
+    );
 }
 
 #[test]

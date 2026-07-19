@@ -51,26 +51,80 @@ use tracing::{debug, info};
 
 use segment::SegmentRange;
 
+/// When to auto-flush pending items from memory to a segment file.
+///
+/// Passed to [`SegmentConfig`] via its `flush_policy` field. Replaces the
+/// pre-v0.4.0 silent combination of two separate fields (`max_batch_events`
+/// and `flush_interval_secs`) that OR'd together without telling the caller
+/// which trigger fired.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FlushPolicy {
+    /// Flush as soon as `batch_size` items are buffered. No interval trigger.
+    Batch(usize),
+    /// Flush as soon as `interval` has elapsed since the last flush. No batch
+    /// trigger.
+    Interval(std::time::Duration),
+    /// Flush when EITHER `batch_size` items are buffered OR `interval` has
+    /// elapsed since the last flush — whichever fires first. This is the
+    /// pre-v0.4.0 default behavior.
+    BatchOrInterval {
+        /// In-memory item count threshold.
+        batch_size: usize,
+        /// Max time between flushes.
+        interval: std::time::Duration,
+    },
+    /// Never auto-flush. The caller must call [`SegmentBuffer::flush`]
+    /// explicitly to make appends durable. Useful for tests and for callers
+    /// that want absolute control over write amplification.
+    Manual,
+}
+
+impl Default for FlushPolicy {
+    fn default() -> Self {
+        // Matches the pre-v0.4.0 SegmentConfig::default: 256 events or 5s.
+        FlushPolicy::BatchOrInterval {
+            batch_size: 256,
+            interval: std::time::Duration::from_secs(5),
+        }
+    }
+}
+
+impl FlushPolicy {
+    /// Returns `true` when the policy says the buffer should flush now.
+    ///
+    /// `pending_len` is the current length of the in-memory `unflushed` Vec;
+    /// `time_since_last_flush` is `last_flush.elapsed()`.
+    fn should_flush(&self, pending_len: usize, time_since_last_flush: std::time::Duration) -> bool {
+        match self {
+            FlushPolicy::Batch(n) => pending_len >= *n,
+            FlushPolicy::Interval(d) => time_since_last_flush >= *d,
+            FlushPolicy::BatchOrInterval {
+                batch_size,
+                interval,
+            } => pending_len >= *batch_size || time_since_last_flush >= *interval,
+            FlushPolicy::Manual => false,
+        }
+    }
+}
+
 /// Configuration knobs for [`SegmentBuffer`].
 ///
 /// This struct is `#[non_exhaustive]`: new fields may be added in any release
-/// without breaking semver. Construct via [`SegmentConfig::default()`] and then
-/// mutate the public fields you care about:
+/// without breaking semver. Construct via [`SegmentConfig::builder()`] and then
+/// mutate the public fields you care about, or use [`SegmentConfig::default()`]
+/// directly:
 ///
 /// ```
 /// use segment_buffer::SegmentConfig;
 ///
 /// let mut config = SegmentConfig::default();
-/// config.max_batch_events = 64;
-/// config.flush_interval_secs = 1;
+/// config.max_size_bytes = 1024 * 1024;
 /// ```
 #[non_exhaustive]
 pub struct SegmentConfig {
-    /// Max events accumulated in RAM before auto-flush (default: 256).
-    pub max_batch_events: usize,
-    /// Max seconds between flushes. An append after this interval triggers a
-    /// flush even if the batch threshold hasn't been reached (default: 5s).
-    pub flush_interval_secs: u64,
+    /// When to auto-flush pending items. See [`FlushPolicy`] for the options.
+    pub flush_policy: FlushPolicy,
     /// Max total disk usage before the buffer reports overload pressure (default: 10 GB).
     pub max_size_bytes: u64,
     /// zstd compression level (1-22; 3 is fast with a good ratio).
@@ -83,8 +137,7 @@ pub struct SegmentConfig {
 impl std::fmt::Debug for SegmentConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SegmentConfig")
-            .field("max_batch_events", &self.max_batch_events)
-            .field("flush_interval_secs", &self.flush_interval_secs)
+            .field("flush_policy", &self.flush_policy)
             .field("max_size_bytes", &self.max_size_bytes)
             .field("compression_level", &self.compression_level)
             .field("cipher", &self.cipher.as_ref().map(|_| "[set]"))
@@ -95,11 +148,105 @@ impl std::fmt::Debug for SegmentConfig {
 impl Default for SegmentConfig {
     fn default() -> Self {
         Self {
-            max_batch_events: 256,
-            flush_interval_secs: 5,
+            flush_policy: FlushPolicy::default(),
             max_size_bytes: 10 * 1024 * 1024 * 1024,
             compression_level: 3,
             cipher: None,
+        }
+    }
+}
+
+/// Ergonomic builder for [`SegmentConfig`].
+///
+/// `SegmentConfig` is `#[non_exhaustive]`, so direct struct-literal
+/// construction is forbidden outside the crate. The builder is the
+/// recommended way for callers to override one or two fields without
+/// re-typing every default.
+///
+/// ```
+/// use segment_buffer::{FlushPolicy, SegmentConfig};
+/// use std::time::Duration;
+///
+/// let config = SegmentConfig::builder()
+///     .flush_policy(FlushPolicy::Batch(64))
+///     .compression_level(6)
+///     .build();
+/// assert_eq!(config.flush_policy, FlushPolicy::Batch(64));
+/// assert_eq!(config.compression_level, 6);
+/// // Untouched fields fall back to Default.
+/// assert_eq!(config.max_size_bytes, 10 * 1024 * 1024 * 1024);
+/// ```
+#[derive(Debug)]
+pub struct SegmentConfigBuilder {
+    inner: SegmentConfig,
+}
+
+impl SegmentConfigBuilder {
+    /// Override the auto-flush policy. See [`FlushPolicy`] for variants.
+    pub fn flush_policy(mut self, policy: FlushPolicy) -> Self {
+        self.inner.flush_policy = policy;
+        self
+    }
+
+    /// Convenience: install a `FlushPolicy::Batch(batch_size)`.
+    pub fn flush_at_batch_size(self, batch_size: usize) -> Self {
+        self.flush_policy(FlushPolicy::Batch(batch_size))
+    }
+
+    /// Convenience: install a `FlushPolicy::Interval(interval)`.
+    pub fn flush_at_interval(self, interval: std::time::Duration) -> Self {
+        self.flush_policy(FlushPolicy::Interval(interval))
+    }
+
+    /// Convenience: install a `FlushPolicy::BatchOrInterval { .. }` with both
+    /// triggers set.
+    pub fn flush_at_batch_or_interval(
+        self,
+        batch_size: usize,
+        interval: std::time::Duration,
+    ) -> Self {
+        self.flush_policy(FlushPolicy::BatchOrInterval {
+            batch_size,
+            interval,
+        })
+    }
+
+    /// Convenience: install a `FlushPolicy::Manual` (no auto-flush).
+    pub fn flush_manually(self) -> Self {
+        self.flush_policy(FlushPolicy::Manual)
+    }
+
+    /// Override the disk-usage ceiling that triggers `is_overloaded()`.
+    pub fn max_size_bytes(mut self, max_size_bytes: u64) -> Self {
+        self.inner.max_size_bytes = max_size_bytes;
+        self
+    }
+
+    /// Override the zstd compression level (1–22; 3 is fast with a good ratio).
+    pub fn compression_level(mut self, compression_level: i32) -> Self {
+        self.inner.compression_level = compression_level;
+        self
+    }
+
+    /// Install a [`SegmentCipher`] so segment payloads are encrypted at rest.
+    pub fn cipher(mut self, cipher: Box<dyn SegmentCipher>) -> Self {
+        self.inner.cipher = Some(cipher);
+        self
+    }
+
+    /// Materialise the configured [`SegmentConfig`].
+    pub fn build(self) -> SegmentConfig {
+        self.inner
+    }
+}
+
+impl SegmentConfig {
+    /// Begin a builder. Every field starts at [`SegmentConfig::default`];
+    /// chain setter calls to override the ones you care about.
+    #[must_use = "the builder is meaningless if discarded"]
+    pub fn builder() -> SegmentConfigBuilder {
+        SegmentConfigBuilder {
+            inner: SegmentConfig::default(),
         }
     }
 }
@@ -137,6 +284,35 @@ pub struct BufferStats {
     /// `approx_disk_bytes / max_size_bytes`, clamped to `[0.0, 1.0]`.
     /// `0.0` when no limit is configured.
     pub store_pressure: f32,
+}
+
+/// Summary of the recovery scan performed by [`SegmentBuffer::open`].
+///
+/// Returned by [`SegmentBuffer::open_with_report`] for programmatic
+/// introspection. The same data is logged via `tracing` from
+/// [`SegmentBuffer::open`]; this struct is for callers that want to inspect
+/// it without parsing logs.
+///
+/// All fields are snapshots taken during recovery — they may be stale by the
+/// time the caller reads them, because other threads can append/flush/delete
+/// immediately after `open` returns. For a live view, use
+/// [`SegmentBuffer::stats`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RecoveryReport {
+    /// Number of valid segment files found on disk during recovery.
+    pub segment_count: usize,
+    /// Oldest sequence number recovered (the `start` of the first segment),
+    /// or `0` when the directory was empty.
+    pub head_seq: u64,
+    /// Next sequence number that will be assigned by the next
+    /// [`SegmentBuffer::append`] (the `end + 1` of the last segment), or `0`
+    /// when the directory was empty.
+    pub next_seq: u64,
+    /// Total bytes of all recovered segment files (sum of file sizes).
+    pub disk_bytes: u64,
+    /// Number of `.tmp` debris files removed by recovery's cleanup step.
+    pub removed_tmp_files: usize,
 }
 
 struct BufferInner<T> {
@@ -196,6 +372,10 @@ where
     /// *contents* are not read until [`read_from`](Self::read_from), so a
     /// corrupted segment does not fail here — it fails when read.
     ///
+    /// If you need the recovery summary (segments found, bytes, head/next seq)
+    /// programmatically, use [`SegmentBuffer::open_with_report`] instead. The
+    /// same data is logged via `tracing::info!` from this call.
+    ///
     /// # Example
     ///
     /// ```
@@ -212,6 +392,38 @@ where
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be created or read.
     pub fn open(dir: impl Into<PathBuf>, config: SegmentConfig) -> Result<Self> {
+        let (buffer, _report) = Self::open_with_report(dir, config)?;
+        Ok(buffer)
+    }
+
+    /// Like [`SegmentBuffer::open`], but also returns a [`RecoveryReport`]
+    /// describing what the recovery scan found on disk.
+    ///
+    /// Useful for operational dashboards or migration tools that need to know
+    /// the on-disk state without re-scanning.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let (buf, report) =
+    ///     SegmentBuffer::<u64>::open_with_report(dir.path(), SegmentConfig::default())?;
+    /// assert_eq!(report.segment_count, 0); // fresh dir
+    /// assert_eq!(report.head_seq, 0);
+    /// assert_eq!(report.next_seq, 0);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if the directory cannot be created or read.
+    pub fn open_with_report(
+        dir: impl Into<PathBuf>,
+        config: SegmentConfig,
+    ) -> Result<(Self, RecoveryReport)> {
         let dir = dir.into();
         fs::create_dir_all(&dir)?;
 
@@ -227,8 +439,8 @@ where
             }),
         };
 
-        buffer.recover()?;
-        Ok(buffer)
+        let report = buffer.recover()?;
+        Ok((buffer, report))
     }
 
     // -----------------------------------------------------------------------
@@ -263,10 +475,11 @@ where
             inner.next_seq += 1;
             let seq = inner.next_seq - 1;
 
-            let batch_full = inner.unflushed.len() >= self.config.max_batch_events;
-            let interval_elapsed =
-                inner.last_flush.elapsed().as_secs() >= self.config.flush_interval_secs;
-            (batch_full || interval_elapsed, seq)
+            let should_flush = self
+                .config
+                .flush_policy
+                .should_flush(inner.unflushed.len(), inner.last_flush.elapsed());
+            (should_flush, seq)
         };
 
         if should_flush {
@@ -279,9 +492,9 @@ where
     /// Flush buffered items to a segment file. No-op if nothing is buffered.
     ///
     /// Flushing is also triggered automatically by [`append`](Self::append)
-    /// when the batch threshold (`max_batch_events`) or interval
-    /// (`flush_interval_secs`) is reached. Call this explicitly when you need
-    /// durability before a known threshold.
+    /// according to the configured [`FlushPolicy`] (batch threshold, interval,
+    /// both, or manual). Call this explicitly when you need durability before
+    /// a known threshold, or when using [`FlushPolicy::Manual`].
     ///
     /// # Example
     ///
@@ -712,8 +925,8 @@ where
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    fn recover(&self) -> Result<()> {
-        segment::clean_tmp(&self.dir)?;
+    fn recover(&self) -> Result<RecoveryReport> {
+        let removed_tmp_files = segment::clean_tmp(&self.dir)?;
 
         let segments = self.scan_segments()?;
 
@@ -745,13 +958,21 @@ where
             head_seq,
             next_seq,
             disk_bytes = total_bytes,
+            removed_tmp = removed_tmp_files,
             "Segment buffer recovered"
         );
 
-        Ok(())
+        Ok(RecoveryReport {
+            segment_count,
+            head_seq,
+            next_seq,
+            disk_bytes: total_bytes,
+            removed_tmp_files,
+        })
     }
 
     fn write_segment(&self, start: u64, end: u64, events: &[T]) -> Result<u64> {
+        let path = self.segment_path(start, end);
         segment::write(
             &self.dir,
             self.config.cipher.as_deref(),
@@ -759,14 +980,16 @@ where
             SegmentRange::new(start, end),
             events,
         )
+        .map_err(|e| e.with_path(&path))
     }
 
     fn read_segment(&self, seg: SegmentRange) -> Result<Vec<T>> {
-        segment::read(&self.dir, self.config.cipher.as_deref(), seg)
+        let path = self.segment_path(seg.start, seg.end);
+        segment::read(&self.dir, self.config.cipher.as_deref(), seg).map_err(|e| e.with_path(&path))
     }
 
     fn scan_segments(&self) -> Result<Vec<SegmentRange>> {
-        segment::scan(&self.dir)
+        segment::scan(&self.dir).map_err(|e| e.with_path(&self.dir))
     }
 
     fn segment_path(&self, start: u64, end: u64) -> PathBuf {
