@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
 - **CI hang**: `stress_8_writers_2_readers_throughput` and
   `concurrency_4_writers_1_reader_10k_events` used `FlushPolicy::Batch(4)`,
   creating 20 000 and 2 500 segment files respectively. Under parallel test
@@ -22,11 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist. Added `continue-on-error: true` so builds proceed without caching.
 
 ### Added
+
 - **`#[track_caller]`** on `assert_not_reentered` and all 9 public methods that
   call it — re-entrancy panics now point to the user's callback code instead of
   the internal guard function.
 
 ### Changed
+
 - **aes-gcm 0.10 → 0.11**: `Nonce::from_slice` → `Nonce::from` / `try_into`
   (upstream deprecation). No public API change.
 - **rand 0.8 → 0.9**: `thread_rng()` → `rng()` (upstream rename). No public API
@@ -55,7 +58,7 @@ missing domain-language docs).
   part of the semver contract** and may change in any release without a
   major bump. The in-tree fuzz crate enables this feature in `fuzz/Cargo.toml`.
 - **CI `loom` job** — `RUSTFLAGS="--cfg loom" cargo test --features loom
-  --release --test loom` runs on every push and PR. The `#![cfg(loom)]` test
+--release --test loom` runs on every push and PR. The `#![cfg(loom)]` test
   file is invisible to `cargo test` by default and rotted silently between
   v0.4.0 and v0.4.1 (the v0.4.0 `FlushPolicy` change removed fields the loom
   test still referenced); this job prevents that class of regression.
@@ -108,9 +111,9 @@ missing domain-language docs).
 
 - **AGENTS.md verification discipline** gained two new hard rules:
   - Rule 5: "The supply-chain gate is BOTH `cargo audit` AND `cargo deny
-    check`." They pull from different advisory sources in edge cases.
+check`." They pull from different advisory sources in edge cases.
   - Rule 6: "The loom gate is `RUSTFLAGS='--cfg loom' cargo test --features
-    loom --test loom --release`." `#![cfg(loom)]` files are invisible to
+loom --test loom --release`." `#![cfg(loom)]` files are invisible to
     default `cargo test` and silently rot.
 - **CONTRIBUTING.md** gained a new section: "Internal hooks: `#[cfg]` over
   `#[doc(hidden)]`" — codifies the lesson from the v0.4.1 semver leak so

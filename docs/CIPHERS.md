@@ -91,7 +91,7 @@ pub trait SegmentCipher: Send + Sync + Debug {
 ### Authentication
 
 AEADs (recommended) bundle confidentiality + authentication. The trait does
-not *require* an AEAD — a plain symmetric cipher without authentication
+not _require_ an AEAD — a plain symmetric cipher without authentication
 would technically satisfy the type signature. **Don't do this.** The
 segment file is the trust boundary: without authentication, a tampered
 segment can cause arbitrary CBOR decode failures (best case) or silent
@@ -234,7 +234,7 @@ Implications:
 
 - **The cipher does not see item boundaries** — it operates on the
   compressed CBOR blob. A 1-byte change to any item propagates through CBOR
-  + zstd and produces a completely different ciphertext byte stream.
+  - zstd and produces a completely different ciphertext byte stream.
 - **The cipher does not see the filename** — `seg_{start:012}_{end:012}.zst`
   is on disk in plaintext. This is deliberate (filename-based recovery
   requires it). If the sequence-number metadata is sensitive in your
