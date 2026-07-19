@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet — see [0.4.2] below for the most recent release._
-Next work is tracked in [TODO_LIST.md](TODO_LIST.md).
+### Fixed
+- **CI hang**: `stress_8_writers_2_readers_throughput` and
+  `concurrency_4_writers_1_reader_10k_events` used `FlushPolicy::Batch(4)`,
+  creating 20 000 and 2 500 segment files respectively. Under parallel test
+  execution this caused pathological I/O that hung CI for hours. Both now use
+  `FlushPolicy::Manual` — items stay in-memory during the concurrent phase,
+  testing mutex contention instead of the filesystem.
+- **CI compile failure**: The README encryption example doctest referenced
+  `AesGcmCipher` but `cargo test` (default features) does not enable the
+  `encryption` feature. The doctest is now `#[cfg(feature = "encryption")]`-gated
+  via the hidden-`fn main()` pattern so it compiles under both feature sets.
 
 ## [0.4.2] - 2026-07-19
 

@@ -52,7 +52,13 @@ Enable the `encryption` feature and supply any `SegmentCipher`. The built-in
 byte-compatible with monitor365 so existing encrypted segments read without
 migration.
 
-```rust,no_run,no_inline
+```rust,no_run
+# #![allow(unused)]
+# // Requires --features encryption. Without it, AesGcmCipher does not exist.
+# #[cfg(not(feature = "encryption"))]
+# fn main() {}
+# #[cfg(feature = "encryption")]
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 # use serde::{Deserialize, Serialize};
 # #[derive(Serialize, Deserialize, Clone)]
 # struct MyItem { id: u64 }
@@ -64,7 +70,8 @@ let cipher = AesGcmCipher::new(&key);
 let mut config = SegmentConfig::default();
 config.cipher = Some(Box::new(cipher));
 let buffer = SegmentBuffer::<MyItem>::open("/tmp/my-buffer", config)?;
-# Ok::<(), Box<dyn std::error::Error>>(())
+# Ok(())
+# }
 ```
 
 See `examples/encrypted.rs` for a runnable end-to-end example.

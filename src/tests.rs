@@ -359,7 +359,19 @@ fn is_overloaded_false_at_or_below_90_percent() {
 #[test]
 fn concurrency_4_writers_1_reader_10k_events() {
     let tmp = TempDir::new().unwrap();
-    let buf = Arc::new(test_buffer(tmp.path()));
+    // FlushPolicy::Manual keeps all items in-memory during the concurrent phase.
+    // The purpose is to stress-test append/read correctness under contention,
+    // not disk I/O. With Batch(4) this test would create 2_500 segment files.
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                ..test_config(1024 * 1024)
+            },
+        )
+        .unwrap(),
+    );
     const WRITERS: usize = 4;
     const PER_WRITER: usize = 2_500;
     const TOTAL: usize = WRITERS * PER_WRITER; // 10_000
@@ -1103,7 +1115,21 @@ fn stress_8_writers_2_readers_throughput() {
     use std::time::Instant;
 
     let tmp = TempDir::new().unwrap();
-    let buf = Arc::new(test_buffer(tmp.path()));
+    // FlushPolicy::Manual is critical: with Batch(4) this test would create
+    // 20_000 segment files (80_000 items / 4), causing pathological I/O under
+    // parallel test execution. Manual keeps everything in-memory so the test
+    // stresses mutex contention, not the filesystem. The single flush() after
+    // the scope writes one segment.
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                ..test_config(1024 * 1024)
+            },
+        )
+        .unwrap(),
+    );
     const WRITERS: usize = 8;
     const PER_WRITER: usize = 10_000;
     const TOTAL: usize = WRITERS * PER_WRITER; // 80_000
