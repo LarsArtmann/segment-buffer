@@ -22,8 +22,14 @@
 //! let items = buffer.read_from(0, 100)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
+//!
+//! For the full README — install, quickstart, encryption, backpressure,
+//! comparison table, and performance notes — see the
+//! [project README on GitHub](https://github.com/LarsArtmann/segment-buffer#segment-buffer)
+//! or [docs.rs](https://docs.rs/segment-buffer).
 
 #![warn(missing_docs)]
+#![doc = include_str!("../README.md")]
 
 mod cipher;
 mod error;

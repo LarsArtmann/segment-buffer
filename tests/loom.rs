@@ -70,7 +70,11 @@ fn two_writers_concurrent_append_never_loses_items() {
         // Invariant: exactly 4 appends → pending_count == 4 and
         // latest_sequence == 3 (0-indexed, last id assigned).
         assert_eq!(buf.pending_count(), 4, "every append must be counted");
-        assert_eq!(buf.latest_sequence(), 3, "sequence must be 0-indexed monotonic");
+        assert_eq!(
+            buf.latest_sequence(),
+            3,
+            "sequence must be 0-indexed monotonic"
+        );
         let snapshot = buf.stats();
         assert_eq!(snapshot.pending_count, 4);
         assert_eq!(snapshot.latest_sequence, 3);

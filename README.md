@@ -26,11 +26,10 @@ cargo add segment-buffer --features encryption
 ## Quickstart
 
 ```rust
+# use serde::{Deserialize, Serialize};
+# #[derive(Serialize, Deserialize, Clone)]
+# struct MyItem { id: u64 }
 use segment_buffer::{SegmentBuffer, SegmentConfig};
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Clone)]
-struct MyItem { id: u64 }
 
 let buffer = SegmentBuffer::<MyItem>::open("/tmp/my-buffer", SegmentConfig::default())?;
 
@@ -41,6 +40,7 @@ let seq = buffer.append(MyItem { id: 1 })?;
 let items = buffer.read_from(0, 1000)?;
 
 // Delete acknowledged items — a segment is removed when its end_seq <= acked_seq
+let last_acked_seq = seq;
 let deleted = buffer.delete_acked(last_acked_seq)?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
@@ -52,21 +52,26 @@ Enable the `encryption` feature and supply any `SegmentCipher`. The built-in
 byte-compatible with monitor365 so existing encrypted segments read without
 migration.
 
-```rust
+```rust,no_run,no_inline
+# use serde::{Deserialize, Serialize};
+# #[derive(Serialize, Deserialize, Clone)]
+# struct MyItem { id: u64 }
 use segment_buffer::{AesGcmCipher, SegmentBuffer, SegmentConfig};
 
-let cipher = AesGcmCipher::new(&key); // 32-byte AES-256 key
-let buffer = SegmentBuffer::<MyItem>::open(
-    "/tmp/my-buffer",
-    SegmentConfig { cipher: Some(Box::new(cipher)), ..Default::default() },
-)?;
+let key = [0u8; 32]; // 32-byte AES-256 key
+let cipher = AesGcmCipher::new(&key);
+// SegmentConfig is #[non_exhaustive]: Default + field reassignment.
+let mut config = SegmentConfig::default();
+config.cipher = Some(Box::new(cipher));
+let buffer = SegmentBuffer::<MyItem>::open("/tmp/my-buffer", config)?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 See `examples/encrypted.rs` for a runnable end-to-end example.
 
 ## How it works
 
-```
+```text
 append(item) ─► unflushed: Vec<T>   (in-memory, inside the Mutex)
                     │
                     ▼   batch full  OR  flush_interval elapsed  OR  flush()
@@ -128,4 +133,4 @@ to stay on `=0.1.0` until v0.4.0 hot-path work lands.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Licensed under the [Apache License, Version 2.0](https://github.com/LarsArtmann/segment-buffer/blob/master/LICENSE).

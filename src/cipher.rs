@@ -50,6 +50,16 @@ pub struct CipherError {
 impl CipherError {
     /// Construct a [`CipherError`] from anything displayable, with no
     /// underlying cause.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::CipherError;
+    ///
+    /// let err = CipherError::msg("key not configured");
+    /// assert_eq!(err.to_string(), "key not configured");
+    /// assert!(std::error::Error::source(&err).is_none());
+    /// ```
     pub fn msg(message: impl fmt::Display) -> Self {
         Self {
             message: message.to_string(),
@@ -192,6 +202,15 @@ mod private {
     impl AesGcmCipher {
         /// Create a new cipher from a 32-byte AES-256 key.
         ///
+        /// # Example
+        ///
+        /// ```
+        /// use segment_buffer::AesGcmCipher;
+        ///
+        /// let key = [0u8; 32];
+        /// let _cipher = AesGcmCipher::from_slice(&key).unwrap();
+        /// ```
+        ///
         /// # Errors
         ///
         /// Returns [`CipherError`] if the key length is not 32 bytes.
@@ -203,6 +222,18 @@ mod private {
         }
 
         /// Create a new cipher from a 32-byte AES-256 key (const-sized input).
+        ///
+        /// # Example
+        ///
+        /// ```
+        /// use segment_buffer::AesGcmCipher;
+        /// use segment_buffer::SegmentCipher;
+        ///
+        /// let cipher = AesGcmCipher::new(&[0u8; 32]);
+        /// let ciphertext = cipher.encrypt(b"hello").unwrap();
+        /// let plaintext = cipher.decrypt(&ciphertext).unwrap();
+        /// assert_eq!(plaintext, b"hello");
+        /// ```
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use aes_gcm::KeyInit;
             Self {
