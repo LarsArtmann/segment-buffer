@@ -123,6 +123,30 @@ The `#[cfg(any(test, feature = "fuzz"))]` pattern is the correct shield:
 The `fuzz` feature on this crate is the canonical example. See `src/lib.rs`
 `pub mod fuzz_hooks` and the matching `fuzz` feature in `Cargo.toml`.
 
+### Dependency bumps must respect the MSRV
+
+Before widening any dependency version spec (major or minor bump, including
+transitive deps pulled by a `cargo update`), verify the new version's
+`rust-version` against this crate's declared MSRV (currently 1.85 — see
+`docs/MSRV.md` and the `rust-version` field in `Cargo.toml`).
+
+Why: commit `031763d` bumped `criterion` 0.5 → 0.8 without checking MSRV.
+`criterion` 0.8 requires rustc 1.86; CI's MSRV job and the 1.85 matrix jobs
+all failed, forcing a revert (`c4be692`). This wasted a full CI cycle on a
+foreseeable, locally-checkable error.
+
+The check:
+
+```bash
+# After changing any dep version in Cargo.toml or running cargo update:
+cargo +1.85 check --all-targets --features encryption
+# Or, more thoroughly, look at the dep tree for rust-version floors:
+cargo tree -e normal --duplicates
+```
+
+`dependabot.yml` blocks `criterion >= 0.6` for this reason. Remove that
+ignore entry only when the MSRV is deliberately bumped to >= 1.86.
+
 ## Reporting Issues
 
 Use [GitHub Issues](https://github.com/LarsArtmann/segment-buffer/issues).

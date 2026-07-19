@@ -17,8 +17,30 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # Dry-run on PRs that touch packaging, so publish-time surprises
+  # (missing files in the tarball, version mismatch, etc.) surface early.
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - ".github/workflows/publish.yml"
 
 jobs:
+  dry-run:
+    name: cargo publish --dry-run
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to commit hash for supply-chain hygiene (vs @master which drifts).
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo publish --dry-run --features encryption
+        # No token needed for --dry-run. Catches missing files in the tarball,
+        # manifest errors, and dependency resolution issues before a real tag.
+        run: cargo publish --dry-run --features encryption
+
   publish:
     name: cargo publish
     runs-on: ubuntu-latest

@@ -138,6 +138,9 @@ Deferred breaking changes — batch them so users upgrade once.
 - [ ] **macOS flake verification** (`aarch64-darwin`, `x86_64-darwin`) — flake check only runs on x86_64-linux today.
 - [ ] **Sign commits** — `sign-commit = true` is set in `release.toml` and `commit.gpgsign = true` in git config, but SSH signing fails: `gpg.ssh.allowedSignersFile` is not configured. Tags are signed; regular commits are not.
 - [x] **Add publish-on-tag workflow** triggered by `v*` tags — done v0.4.2 (`.github/workflows/publish.yml`). Dormant until `CARGO_REGISTRY_TOKEN` secret is set.
+- [x] **`cargo publish --dry-run` job on Cargo.toml PRs** — added in `[Unreleased]`; surfaces packaging issues before a real tag.
+- [ ] **Enable auto-merge for dependabot PRs** — today dependabot PRs pile up until manually merged (8 were open during the CI-broken window). Requires `gh repo edit --enable-auto-merge` + `auto-merge: true` per updater in `dependabot.yml` + a branch-protection rule allowing auto-merge. Policy decision, not a one-liner.
+- [x] **`criterion` pinned at 0.5 in `dependabot.yml`** — `ignore: criterion >= 0.6` with MSRV comment, so dependabot stops re-proposing the MSRV-breaking 0.8 bump.
 
 ## Investigation
 
@@ -146,6 +149,8 @@ Deferred breaking changes — batch them so users upgrade once.
 - [ ] **Profile the hermetic Nix build** (~164s for test check; most is zstd-sys compiling bundled C). Could pre-build zstd as a Nix dependency via `ZSTD_SYS_USE_PKG_CONFIG=1`.
 - [ ] **Profile the append hot path with `cargo flamegraph`** — the v0.1.0-vs-v0.2.0 30–65% regression has never been profiled.
 - [x] **`cargo publish --dry-run`** — verified; real `cargo publish` executed for v0.4.1.
+- [ ] **Investigate whether `include_str!("../README.md")` should be replaced** — the crate-root rustdoc embeds README.md via `include_str!`, which `craneLib.cleanCargoSource` strips from the Nix sandbox (fixed by a `postUnpack` copy in `flake.nix`, commit `b2e7c4f`). A separate `src/README.md` snippet or a hand-written crate-level doc would dodge this class of bug entirely. Low priority — the `postUnpack` fix works.
+- [ ] **Consider `cargo supply-chain` crate** for downstream-auditable dependency provenance (belt-and-braces alongside `cargo deny` + `cargo audit`).
 
 ## Crates.io publishing
 

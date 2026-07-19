@@ -16,6 +16,9 @@ How to cut a segment-buffer release. Follow this end-to-end; do not skip steps.
 ## Pre-release checklist
 
 - [ ] All planned work for this release is merged to `master`.
+- [ ] The latest CI + Nix runs on `master` are green: `gh run list --limit 4`
+      shows `success` for both workflows on the commit you intend to tag.
+      Local-only green is NOT sufficient (v0.4.1/v0.4.2 shipped with CI broken).
 - [ ] `CHANGELOG.md` has an entry for the new version under `## [Unreleased]`
       (or a specific `[x.y.z]` header if you prefer to stage it).
 - [ ] `README.md` Status section reflects the new version.
@@ -74,6 +77,16 @@ git commit -m "release(v0.4.1): <one-line summary of what shipped>"
 ```
 
 ### 3. Tag
+
+Before tagging, confirm CI is actually green on this commit (not just
+locally):
+
+```bash
+gh run list --limit 4        # every run on this branch must show `success`
+```
+
+If any run is not green, **stop** — do not tag a release on a commit whose
+CI is red or still running. (AGENTS.md verification rule 9.)
 
 ```bash
 git tag -a v0.4.1 -m "v0.4.1"

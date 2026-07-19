@@ -174,6 +174,7 @@ for any future agent (or human) working in this repo.
 6. **The loom gate is `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.** Files gated by `#![cfg(loom)]` are invisible to `cargo test` by default and silently rot without this explicit invocation. The CI `loom` job enforces it.
 7. **Concurrency tests must use `FlushPolicy::Manual`.** With `Batch(4)` the stress test creates 20 000 segment files (80 000 items / 4), causing pathological I/O under parallel test execution that hung CI for hours. `Manual` keeps items in-memory so the test stresses mutex contention, not the filesystem.
 8. **Doctests that need `--features encryption` must be cfg-gated.** A `rust,no_run` code fence referencing `AesGcmCipher` fails to compile under `cargo test` (default features). Use the hidden `#[cfg(feature = "encryption")] fn main() {}` pattern — see the README encryption example.
+9. **Before `git tag` for a release, the most recent CI + Nix runs on the target branch must be green.** Run `gh run list --limit 4` and confirm every run on the branch you are tagging shows `success`. Local-only verification (rule 4) is NOT sufficient: v0.4.1 and v0.4.2 both shipped with a "verification gate" that never checked GitHub Actions, leaving CI broken for 48+ hours while status reports claimed "all green". A release tag on an unverified commit is a lie of omission.
 
 ### Session-end checklist
 
@@ -186,6 +187,7 @@ Before writing any closing summary, status report, or "done" claim:
 - [ ] No fabricated numbers — every "was X / now Y" has a citation or has been rewritten to "first audit" / "no baseline"?
 - [ ] TODO_LIST updated for anything completed or partially completed this session?
 - [ ] **Did I ship a release?** If yes: did the user explicitly approve the release scope? Never ship breaking changes without explicit approval. Never ship two releases in the same day without a soak period.
+- [ ] **Before tagging a release: did `gh run list --limit 4` show the latest CI + Nix runs on the target branch as `success`?** (Rule 9.) A local-only green is not a release-ready green.
 - [ ] **Did I draft the GitHub release notes BEFORE pushing the tag?** A tag-without-release window (even 2 minutes) breaks link checkers and confuses downstream consumers.
 
 If any of these cannot be checked, the closing summary must say so explicitly. "Working tree clean" without `git status` in the same response is a process failure, not a shorthand.

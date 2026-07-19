@@ -1176,6 +1176,23 @@ fn stress_8_writers_2_readers_throughput() {
     });
 
     let elapsed = start.elapsed();
+
+    // Regression guard (AGENTS.md rule 7): under FlushPolicy::Manual the
+    // concurrent append phase must create ZERO segment files. An earlier
+    // Batch(4) version created 20_000 files and hung CI for hours (commit
+    // 80257a0). If this fires, the flush policy or Manual semantics broke —
+    // do NOT widen the bound, investigate the regression.
+    let segment_files_before_flush = std::fs::read_dir(tmp.path())
+        .expect("temp dir readable")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "zst"))
+        .count();
+    assert_eq!(
+        segment_files_before_flush, 0,
+        "FlushPolicy::Manual must not create segment files during append; \
+         found {segment_files_before_flush} .zst file(s) — flush policy regression"
+    );
+
     buf.flush().unwrap();
 
     // Correctness: all items assigned and readable.

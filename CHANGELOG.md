@@ -42,6 +42,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `peter-evans/create-pull-request` v6→v8, `cachix/install-nix-action` v27→v31,
   `cachix/cachix-action` v15→v17).
 
+### Internal
+
+Process and verification hardening added after the 2026-07-20 session
+discovered that v0.4.1/v0.4.2 had shipped with CI silently broken for 48+
+hours (see `docs/status/2026-07-20_01-05_*`).
+
+- **Stress test regression guard** — `stress_8_writers_2_readers_throughput`
+  now asserts zero `.zst` segment files are created during the concurrent
+  phase under `FlushPolicy::Manual`. Catches any future reintroduction of the
+  `Batch(4)` config that hung CI (commit `80257a0`).
+- **Stress throughput re-measured** under the corrected `Manual` config:
+  ~2.29M events/sec (was ~397k, which was actually captured under `Batch(4)`
+  and mislabeled). Both numbers documented in
+  `docs/perf/2026-07-19_v0.4.1_stress_throughput.md` with correct attribution.
+- **`scripts/verify-gate.sh`** — the full local verification gate (fmt +
+  clippy×3 + test×2 + doc + `cargo deny` + `cargo audit` + loom) in one
+  command. Encodes AGENTS.md verification rules 4–6 as an executable script.
+- **AGENTS.md verification rule 9** — before `git tag` for a release, the most
+  recent CI + Nix runs on the target branch must be green (`gh run list
+--limit 4`). Local-only green is not release-ready.
+- **`docs/RELEASE.md`** pre-tag step now requires the same `gh run list`
+  green-check.
+- **`CONTRIBUTING.md`** gained an MSRV-check subsection: dependency bumps must
+  be verified against the declared MSRV before pushing (lesson from the
+  criterion 0.8 MSRV violation).
+- **`dependabot.yml`** now ignores `criterion >= 0.6` with a comment citing
+  the MSRV constraint, so dependabot stops re-proposing the MSRV-breaking bump.
+- **`publish.yml`** gained a `cargo publish --dry-run` job that runs on PRs
+  touching `Cargo.toml`, surfacing packaging issues before a real tag.
+- **MSRV audit**: `cargo check --all-targets --features encryption` on Rust
+  1.85.0 passes — no transitive dependency in `Cargo.lock` exceeds the
+  declared MSRV. The criterion 0.8 revert was the only fix needed.
+- **v0.4.2 status report annotated** (`docs/status/2026-07-19_22-48_*`) — the
+  false "all green / Health 9/10" claims are now inline-corrected with
+  pointers to the real fixes, per the update-old-docs non-destructive
+  annotation discipline.
+
 ## [0.4.2] - 2026-07-19
 
 The "process debt + semver-leak closure" release. All changes are additive or
