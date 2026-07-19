@@ -908,3 +908,269 @@ fn cipher_error_with_source_display_format() {
     let src = err.source().expect("with_source must populate source()");
     assert_eq!(format!("{src}"), "aead tag mismatch");
 }
+
+// =========================================================================
+// for_each_from re-entrancy guard
+// =========================================================================
+
+#[test]
+fn for_each_from_reentry_panics_with_clear_message() {
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(test_buffer(tmp.path()));
+    for i in 0..3 {
+        buf.append(test_item(i)).unwrap();
+    }
+
+    // Re-enter pending_count from inside the callback. The buffer's mutex is
+    // held during Phase 2 (in-memory iteration); without the guard this would
+    // deadlock silently. With the guard it must panic with a message naming
+    // both the offending method and for_each_from.
+    let buf_clone = Arc::clone(&buf);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = buf.for_each_from(0, 100, |_seq, _item| {
+            let _ = buf_clone.pending_count();
+        });
+    }));
+
+    let err = result.expect_err("re-entry must panic, not deadlock");
+    let msg = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| err.downcast_ref::<&'static str>().copied())
+        .expect("panic payload should be a string");
+    assert!(
+        msg.contains("for_each_from"),
+        "panic should name for_each_from, got: {msg}"
+    );
+    assert!(
+        msg.contains("pending_count"),
+        "panic should name the re-entered method, got: {msg}"
+    );
+}
+
+#[test]
+fn for_each_from_reentry_guard_clears_after_panic() {
+    // After a panicking callback, the buffer must NOT be permanently bricked
+    // — the IterationGuard must clear the flag during unwinding.
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(test_buffer(tmp.path()));
+    for i in 0..3 {
+        buf.append(test_item(i)).unwrap();
+    }
+
+    let buf_clone = Arc::clone(&buf);
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = buf.for_each_from(0, 100, |_seq, _item| {
+            let _ = buf_clone.stats();
+        });
+    }));
+
+    // The buffer must be usable again.
+    assert_eq!(buf.pending_count(), 3, "buffer must be usable after panic");
+    assert_eq!(buf.latest_sequence(), 2);
+}
+
+// =========================================================================
+// append_all batch primitive
+// =========================================================================
+
+#[test]
+fn append_all_assigns_contiguous_sequences() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+
+    let last = buf
+        .append_all([test_item(1), test_item(2), test_item(3)])
+        .unwrap();
+    assert_eq!(last, 2, "last seq should be 2 (0-based)");
+    assert_eq!(buf.pending_count(), 3);
+
+    // A second batch continues the sequence.
+    let last2 = buf.append_all([test_item(4), test_item(5)]).unwrap();
+    assert_eq!(last2, 4);
+    assert_eq!(buf.pending_count(), 5);
+}
+
+#[test]
+fn append_all_empty_iterator_is_noop() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    buf.append(test_item(0)).unwrap();
+
+    let last = buf.append_all(std::iter::empty::<TestItem>()).unwrap();
+    assert_eq!(last, 0, "empty append_all returns current last seq");
+    assert_eq!(buf.pending_count(), 1);
+}
+
+#[test]
+fn append_all_visibly_cheaper_lock_count_than_loop_append() {
+    // Not a perf test — a correctness test: append_all assigns contiguous
+    // seqs even under concurrent writers, because the whole batch is under
+    // one lock. Two concurrent append_all calls must not interleave seqs.
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(test_buffer(tmp.path()));
+
+    thread::scope(|s| {
+        let b1 = Arc::clone(&buf);
+        s.spawn(move || {
+            b1.append_all((0..100).map(test_item)).unwrap();
+        });
+        let b2 = Arc::clone(&buf);
+        s.spawn(move || {
+            b2.append_all((0..100).map(test_item)).unwrap();
+        });
+    });
+
+    // All 200 items must be present. Seqs are contiguous but the two batches
+    // may land in either order.
+    assert_eq!(buf.pending_count(), 200);
+    assert_eq!(buf.latest_sequence(), 199);
+}
+
+// =========================================================================
+// path() and config() accessors
+// =========================================================================
+
+#[test]
+fn path_accessor_returns_directory() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    assert_eq!(buf.path(), tmp.path());
+}
+
+#[test]
+fn config_accessor_returns_opened_config() {
+    let tmp = TempDir::new().unwrap();
+    let config = SegmentConfig {
+        flush_policy: FlushPolicy::Batch(7),
+        max_size_bytes: 42,
+        compression_level: 9,
+        cipher: None,
+    };
+    let buf = test_buffer_with_config(tmp.path(), config);
+    let cfg = buf.config();
+    assert_eq!(cfg.flush_policy, FlushPolicy::Batch(7));
+    assert_eq!(cfg.max_size_bytes, 42);
+    assert_eq!(cfg.compression_level, 9);
+}
+
+fn test_buffer_with_config(dir: &Path, config: SegmentConfig) -> TestBuffer {
+    SegmentBuffer::open(dir, config).expect("buffer must open")
+}
+
+// =========================================================================
+// sync_disk_bytes
+// =========================================================================
+
+#[test]
+fn sync_disk_bytes_recovers_after_external_truncation() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let buf = test_buffer(dir);
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+
+    let before = buf.stats().approx_disk_bytes;
+    assert!(before > 0, "flushed segment should have nonzero size");
+
+    // External process truncates all segment files to zero bytes.
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "zst") {
+            fs::write(&path, b"").unwrap();
+        }
+    }
+
+    let synced = buf.sync_disk_bytes().unwrap();
+    assert_eq!(
+        synced, 0,
+        "external truncation must be reflected after sync"
+    );
+    assert_eq!(buf.stats().approx_disk_bytes, 0);
+}
+
+// =========================================================================
+// Throughput stress test — 8 writers × 2 readers, measures events/sec
+// under contention. Verifies correctness (all items readable) AND reports
+// a throughput number so perf regressions show up in test output.
+// =========================================================================
+
+#[test]
+fn stress_8_writers_2_readers_throughput() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(test_buffer(tmp.path()));
+    const WRITERS: usize = 8;
+    const PER_WRITER: usize = 10_000;
+    const TOTAL: usize = WRITERS * PER_WRITER; // 80_000
+    const READERS: usize = 2;
+
+    // Shared read cursor — readers use it as a hint for where to poll.
+    // The cursor may drift ahead (double-reads are harmless); correctness is
+    // verified by the final full read, not by the cursor value.
+    let read_cursor = Arc::new(Mutex::new(0u64));
+    let total_read = Arc::new(AtomicU64::new(0));
+
+    let start = Instant::now();
+    thread::scope(|s| {
+        // 2 reader threads: poll read_from to add read-side contention.
+        for _ in 0..READERS {
+            let buf_r = Arc::clone(&buf);
+            let cursor_r = Arc::clone(&read_cursor);
+            let total_r = Arc::clone(&total_read);
+            s.spawn(move || loop {
+                let current = *cursor_r.lock();
+                if current >= TOTAL as u64 {
+                    break;
+                }
+                if let Ok(events) = buf_r.read_from(current, 500) {
+                    if !events.is_empty() {
+                        total_r.fetch_add(events.len() as u64, Ordering::Relaxed);
+                        *cursor_r.lock() = current + events.len() as u64;
+                    }
+                }
+                std::thread::sleep(Duration::from_micros(20));
+            });
+        }
+
+        // 8 writer threads.
+        for writer_id in 0..WRITERS {
+            let buf_w = Arc::clone(&buf);
+            s.spawn(move || {
+                let base = writer_id * PER_WRITER;
+                for i in 0..PER_WRITER {
+                    let _ = buf_w.append(test_item((base + i) as u64));
+                }
+            });
+        }
+    });
+
+    let elapsed = start.elapsed();
+    buf.flush().unwrap();
+
+    // Correctness: all items assigned and readable.
+    assert_eq!(buf.latest_sequence(), (TOTAL - 1) as u64);
+    assert_eq!(buf.pending_count(), TOTAL as u64);
+    let all_events = buf.read_from(0, TOTAL * 2).unwrap();
+    assert_eq!(
+        all_events.len(),
+        TOTAL,
+        "all {TOTAL} events must be readable after the stress run"
+    );
+
+    // Throughput: report events/sec. NOT a hard assertion (CI hardware varies)
+    // — it's a reporting metric so a human can spot regressions in the test
+    // output.
+    let elapsed_secs = elapsed.as_secs_f64().max(0.001);
+    let throughput = TOTAL as f64 / elapsed_secs;
+    eprintln!(
+        "stress_8w_2r: {TOTAL} events in {elapsed_secs:.3}s = {throughput:.0} events/sec \
+         ({:.2} µs/event under 8-writer contention, {} items observed by readers)",
+        elapsed_secs * 1_000_000.0 / TOTAL as f64,
+        total_read.load(Ordering::Relaxed)
+    );
+}

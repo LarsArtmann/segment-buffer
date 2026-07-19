@@ -1,6 +1,6 @@
 [package]
 name = "segment-buffer"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Lars Artmann <lars@larsartmann.com>"]
@@ -76,4 +76,8 @@ harness = false
 
 [[bench]]
 name = "bench_read_vs_for_each"
+harness = false
+
+[[bench]]
+name = "bench_append_all"
 harness = false

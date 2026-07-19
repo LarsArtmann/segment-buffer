@@ -29,5 +29,9 @@ tag-name = "v{{version}}"
 # Sign tags with the default git signing key.
 sign-tag = true
 
+# Also sign commits (not just tags). Requires a configured gpg or ssh
+# signing key in git config (`user.signingkey`, `commit.gpgsign`).
+sign-commit = true
+
 # Don't enable incremental version bumping; we bump explicitly.
 enable-features = []

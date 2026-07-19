@@ -7,8 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet — see [0.4.0] below for the most recent release._
+_No changes yet — see [0.4.1] below for the most recent release._
 Next work is tracked in [TODO_LIST.md](TODO_LIST.md).
+
+## [0.4.1] - 2026-07-19
+
+The "safety + trust depth" release. All changes are additive (no breaking
+changes). On-disk format, encryption contract, and API shapes are unchanged
+from v0.4.0.
+
+### Added
+
+- **`for_each_from` re-entrancy guard** — calling any `&self` method on the
+  buffer from inside a `for_each_from` callback now panics with a clear message
+  (`{method}: cannot call from within a for_each_from callback`) instead of
+  silently deadlocking. The guard is Drop-cleared for panic safety, so a
+  panicking callback does not brick the buffer. (Closes the v0.4.0 footgun.)
+- **`append_all<I: IntoIterator<Item = T>>`** — batch append under a single
+  lock acquisition. Returns the last assigned sequence number. The whole batch
+  gets contiguous seqs atomically; flush is checked once at the end. Bench:
+  `benches/bench_append_all.rs` quantifies the lock-acquisition saving vs a
+  loop of `append`.
+- **`SegmentBuffer::path()`** — returns `&Path` to the segment directory.
+  Removes the need to `Debug`-parse the buffer to reach the directory.
+- **`SegmentBuffer::config()`** — returns `&SegmentConfig` the buffer was
+  opened with. Lets callers inspect the flush policy, compression level, and
+  cipher presence without re-deriving them.
+- **`SegmentBuffer::sync_disk_bytes()`** — re-stats the segment directory and
+  stores the authoritative total. Corrects drift when an external process
+  (backup, compaction, manual cleanup) touches the directory.
+- **`fuzz_hooks` module** (`#[doc(hidden)]`) — exposes `parse_filename`,
+  `unwrap_envelope`, `wrap_envelope`, and `SegmentRange` for fuzz targets.
+  Not part of the public API.
+- **Two new fuzz targets**: `fuzz_parse_filename` (17M+ runs / 16s, zero
+  crashes) and `fuzz_envelope` (15M+ runs / 16s, zero crashes; fuzzer
+  discovered the `SBF1` magic dictionary entry organically).
+- **Property tests**: `FlushPolicy::Manual` never auto-flushes (up to 499
+  appends); `read_from(start, limit)` ⊆ `read_from(start, larger_limit)`;
+  `delete_acked` pending_count is monotone non-increasing; `for_each_from`
+  visits the same items as `read_from`.
+- **Throughput stress test**: 8 writers × 2 readers × 80k events, reports
+  events/sec under contention.
+- **Loom test**: `append_all` batch atomicity under concurrent `append`.
+- **CI workflows**: nightly cargo-fuzz (`fuzz.yml`), weekly flake.lock update
+  (`update-flake-lock.yml`), cargo-audit + cargo-deny supply-chain job,
+  dependabot.yml for GitHub Actions + cargo.
+- **Docs**: `docs/PERFORMANCE.md` (methodology), `docs/RELEASE.md` (runbook),
+  `docs/MSRV.md` (policy).
+
+### Changed
+
+- **`packages.default` in `flake.nix`** now builds with Rust 1.85 (the declared
+  MSRV) via `craneLibMsrv`, proving the package builds on its floor — not just
+  on whatever nixpkgs stable ships.
+- **`dtolnay/rust-toolchain`** pinned to a commit hash in all CI workflows
+  (supply-chain hygiene).
+- **`nix.yml` cachix-action** guarded to the canonical repo + optional token,
+  so forks don't attempt uploads to a cache that doesn't exist.
+- **README perf paragraph** now carries the methodology caveat inline ("single-
+  run, single-machine; see docs/PERFORMANCE.md").
+- **README comparison table** now carries a freshness disclaimer.
+- **AGENTS.md session-end checklist** gains "release scope approval" and
+  "draft release notes before tagging" items (process guard against the
+  v0.4.0 failure).
+
+### Fixed
+
+- **Loom test was broken since v0.4.0** — referenced removed `max_batch_events`
+  / `flush_interval_secs` fields and had an inner attribute inside a function
+  body. Now uses `FlushPolicy::Manual` via the builder API. The breakage was
+  invisible because `#![cfg(loom)]` skips compilation unless `--cfg loom` is set.
+
+### Internal
+
+- `SegmentRange` fields are now `pub` (were `pub(crate)`) to support the
+  `fuzz_hooks` re-export. The `segment` module itself stays private; the fields
+  are only reachable through `#[doc(hidden)] fuzz_hooks`.
 
 ## [0.4.0] - 2026-07-19
 

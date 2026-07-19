@@ -181,5 +181,7 @@ Before writing any closing summary, status report, or "done" claim:
 - [ ] Every doc claim that says "passes"/"verified"/"green" cites a commit hash or a literal command output in this session?
 - [ ] No fabricated numbers — every "was X / now Y" has a citation or has been rewritten to "first audit" / "no baseline"?
 - [ ] TODO_LIST updated for anything completed or partially completed this session?
+- [ ] **Did I ship a release?** If yes: did the user explicitly approve the release scope? Never ship breaking changes without explicit approval. Never ship two releases in the same day without a soak period.
+- [ ] **Did I draft the GitHub release notes BEFORE pushing the tag?** A tag-without-release window (even 2 minutes) breaks link checkers and confuses downstream consumers.
 
 If any of these cannot be checked, the closing summary must say so explicitly. "Working tree clean" without `git status` in the same response is a process failure, not a shorthand.

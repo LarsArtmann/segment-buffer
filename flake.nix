@@ -39,6 +39,14 @@
 
           craneLib = inputs.crane.mkLib pkgs;
 
+          # MSRV-pinned crane: proves `packages.default` builds on the crate's
+          # declared floor (1.85), not just on whatever nixpkgs stable ships.
+          # The checks (test/clippy/doc) keep using `craneLib` (stable) for
+          # broader coverage; only the shipped package is MSRV-locked.
+          craneLibMsrv = (inputs.crane.mkLib pkgsRust).overrideToolchain (
+            p: p.rust-bin.stable."1.85.0".minimal
+          );
+
           # Source filtered to Cargo-relevant files for build caching.
           src = craneLib.cleanCargoSource ./.;
 
@@ -55,6 +63,15 @@
           # Build dependencies once (with the encryption feature so aes-gcm and
           # rand are vendored), then reuse the artifacts across every check.
           cargoArtifacts = craneLib.buildDepsOnly (
+            commonArgs
+            // {
+              cargoExtraArgs = "--features encryption";
+            }
+          );
+
+          # Dependency artifacts built under the MSRV toolchain, reused by
+          # `packages.default` so it does not rebuild deps from scratch.
+          cargoArtifactsMsrv = craneLibMsrv.buildDepsOnly (
             commonArgs
             // {
               cargoExtraArgs = "--features encryption";
@@ -109,17 +126,21 @@
           devShells.fuzz = pkgs.mkShell {
             packages = [
               (pkgsRust.rust-bin.nightly.latest.minimal.override {
-                extensions = [ "rust-src" "rustc-codegen-cranelift" "rustc-dev" ];
+                extensions = [
+                  "rust-src"
+                  "rustc-codegen-cranelift"
+                  "rustc-dev"
+                ];
               })
               pkgs.pkg-config
               pkgs.zstd
             ];
           };
 
-          packages.default = craneLib.buildPackage (
+          packages.default = craneLibMsrv.buildPackage (
             commonArgs
             // {
-              inherit cargoArtifacts;
+              cargoArtifacts = cargoArtifactsMsrv;
               cargoExtraArgs = "--features encryption";
               doCheck = false;
               meta = with lib; {
@@ -188,7 +209,9 @@
                       pkgs.cargo
                     ]
                   }:$PATH"
-                  export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.zstd ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                  export LD_LIBRARY_PATH="${
+                    pkgs.lib.makeLibraryPath [ pkgs.zstd ]
+                  }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
                   # cargo-fuzz needs to be on PATH; expect the caller to have
                   # installed it once via `cargo install cargo-fuzz`.
                   export PATH="$HOME/.cargo/bin:$PATH"

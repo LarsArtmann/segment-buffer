@@ -69,11 +69,11 @@ const ENVELOPE_LEN: usize = 8;
 
 /// Inclusive `[start, end]` range of sequence numbers stored in a segment file.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct SegmentRange {
+pub struct SegmentRange {
     /// First sequence number in the segment (inclusive).
-    pub(crate) start: u64,
+    pub start: u64,
     /// Last sequence number in the segment (inclusive).
-    pub(crate) end: u64,
+    pub end: u64,
 }
 
 impl SegmentRange {
@@ -95,7 +95,7 @@ impl SegmentRange {
 }
 
 /// Build the segment filename for an inclusive `[start, end]` range.
-pub(crate) fn filename(start: u64, end: u64) -> String {
+pub fn filename(start: u64, end: u64) -> String {
     format!("{SEGMENT_PREFIX}{start:012}_{end:012}{SEGMENT_SUFFIX}")
 }
 
@@ -105,7 +105,7 @@ pub(crate) fn filename(start: u64, end: u64) -> String {
 /// this to filter directory listings. Note: the format does not enforce
 /// `start <= end` at the parse level (legacy files in the wild may violate it),
 /// so callers that need the invariant must check.
-pub(crate) fn parse_filename(name: &str) -> Option<SegmentRange> {
+pub fn parse_filename(name: &str) -> Option<SegmentRange> {
     let core = name
         .strip_prefix(SEGMENT_PREFIX)?
         .strip_suffix(SEGMENT_SUFFIX)?;
@@ -166,7 +166,7 @@ const ENVELOPE_RESERVED_LEN: usize = 3;
 /// cipher and zstd/CBOR layers operate on; it is identical in layout to a
 /// v1 file. Requiring the reserved bytes to be zero is what makes the
 /// legacy-detection false-positive rate negligible (2⁻⁵⁶ per file).
-pub(crate) fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
+pub fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
     let reserved_range = ENVELOPE_MAGIC.len() + 1..ENVELOPE_LEN;
     let reserved_zero = [0u8; ENVELOPE_RESERVED_LEN];
     if raw.len() >= ENVELOPE_LEN
@@ -180,7 +180,7 @@ pub(crate) fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
 }
 
 /// Prepend the envelope to `payload`.
-pub(crate) fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
+pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(ENVELOPE_LEN + payload.len());
     out.extend_from_slice(&ENVELOPE_MAGIC);
     out.push(ENVELOPE_VERSION);

@@ -178,4 +178,146 @@ proptest! {
         // Contract: open() must never panic regardless of directory contents.
         let _ = crate::SegmentBuffer::<PropItem>::open(dir, crate::SegmentConfig::default());
     }
+
+    /// `FlushPolicy::Manual` must never auto-flush, regardless of how many
+    /// items are appended or how long the buffer has been open. The only way
+    /// to make items durable under Manual is to call `flush()` explicitly.
+    /// This is the contract that lets callers use Manual for tests and for
+    /// absolute control over write amplification.
+    #[test]
+    fn flush_policy_manual_never_auto_flushes(
+        n in 0u16..500,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        for i in 0..n {
+            let _ = buf.append(PropItem { id: i as u64, payload: format!("p-{i}") });
+        }
+
+        // After up to 499 appends under Manual, there must be zero segment
+        // files on disk. Items live only in memory until the caller flushes.
+        let segment_count = std::fs::read_dir(tmp.path())
+            .map(|entries| entries.filter_map(|e| e.ok()).filter(|e| {
+                e.file_name().to_string_lossy().ends_with(".zst")
+            }).count())
+            .unwrap_or(0);
+        prop_assert_eq!(segment_count, 0, "Manual policy must not auto-flush");
+
+        // But an explicit flush must still work and make items durable.
+        buf.flush().expect("explicit flush must succeed");
+        let segment_count_after = std::fs::read_dir(tmp.path())
+            .map(|entries| entries.filter_map(|e| e.ok()).filter(|e| {
+                e.file_name().to_string_lossy().ends_with(".zst")
+            }).count())
+            .unwrap_or(0);
+        if n > 0 {
+            prop_assert_eq!(segment_count_after, 1, "explicit flush must create exactly one segment");
+        }
+    }
+
+    /// `read_from(start, limit)` must return a prefix of `read_from(start, larger_limit)`:
+    /// increasing the limit only adds items, never removes or reorders them.
+    #[test]
+    fn read_from_limit_monotone(
+        n in 0u16..200,
+        small_limit in 1u16..200,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+        for i in 0..n {
+            buf.append(PropItem { id: i as u64, payload: format!("p-{i}") }).expect("append");
+        }
+        buf.flush().expect("flush");
+
+        let small = buf.read_from(0, small_limit as usize).expect("small read");
+        let large = buf.read_from(0, small_limit as usize + 100).expect("large read");
+
+        // small must be a prefix of large.
+        prop_assert!(small.len() <= large.len());
+        for (i, item) in small.iter().enumerate() {
+            prop_assert_eq!(item, &large[i], "mismatch at index {}", i);
+        }
+    }
+
+    /// `delete_acked(seq)` must never increase `pending_count`. Acknowledging
+    /// more (larger seq) can only remove items, never add them.
+    #[test]
+    fn delete_acked_pending_count_monotone_nonincreasing(
+        n in 1u8..50,
+        ack1 in 0u64..49,
+        ack2 in 0u64..49,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+        for i in 0..n {
+            buf.append(PropItem { id: i as u64, payload: format!("p-{i}") }).expect("append");
+        }
+        buf.flush().expect("flush");
+
+        let (lo, hi) = if ack1 <= ack2 { (ack1, ack2) } else { (ack2, ack1) };
+        let _ = buf.delete_acked(lo).expect("delete lo");
+        let after_lo = buf.pending_count();
+        let _ = buf.delete_acked(hi).expect("delete hi");
+        let after_hi = buf.pending_count();
+
+        prop_assert!(
+            after_hi <= after_lo,
+            "pending_count must not increase from ack={lo} to ack={hi}: {} -> {}",
+            after_lo, after_hi
+        );
+    }
+
+    /// `for_each_from` must visit exactly the same items as `read_from`, in
+    /// the same order. This is the core equivalence between the lending and
+    /// the cloning iterator APIs.
+    #[test]
+    fn for_each_from_visits_same_items_as_read_from(
+        n in 0u16..100,
+        start in 0u64..50,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+        for i in 0..n {
+            buf.append(PropItem { id: i as u64, payload: format!("p-{i}") }).expect("append");
+        }
+        buf.flush().expect("flush");
+
+        let from_read: Vec<PropItem> = buf.read_from(start, 1000).expect("read_from");
+        let mut from_for_each: Vec<(u64, PropItem)> = Vec::new();
+        buf.for_each_from(start, 1000, |seq, item: &PropItem| {
+            from_for_each.push((seq, item.clone()));
+        }).expect("for_each_from");
+
+        // Same count.
+        prop_assert_eq!(from_read.len(), from_for_each.len(), "item count mismatch");
+
+        // Same seqs and items, in order.
+        for (i, read_item) in from_read.iter().enumerate() {
+            let (fef_seq, fef_item) = &from_for_each[i];
+            prop_assert_eq!(fef_item, read_item, "item mismatch at index {}", i);
+            // The seq must be start + i (contiguous, ascending).
+            prop_assert_eq!(*fef_seq, start + i as u64, "seq mismatch at index {}", i);
+        }
+    }
 }

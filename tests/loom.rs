@@ -1,10 +1,10 @@
 //! Loom concurrency test for the in-memory `SegmentBuffer` hot path.
 //!
 //! What this covers:
-//! - `append` (in-memory path only — `max_batch_events` is set huge so the
-//!   flush threshold never trips, and `flush_interval_secs` is huge so the
-//!   interval check never trips either)
+//! - `append` (in-memory path only — `FlushPolicy::Manual` so the flush
+//!   threshold never trips)
 //! - `pending_count`, `latest_sequence`, `stats()` — read-only inner accessors
+//! - `append_all` batch primitive under contention
 //!
 //! What this does NOT cover:
 //! - `flush`, `delete_acked`, `recover`, `read_from` — all of these touch the
@@ -21,7 +21,7 @@
 
 use loom::sync::Arc;
 use loom::thread;
-use segment_buffer::{SegmentBuffer, SegmentConfig};
+use segment_buffer::{FlushPolicy, SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -29,18 +29,14 @@ struct Item {
     id: u64,
 }
 
+/// Manual flush policy so the test exercises only the in-memory
+/// lock + Vec + u64 counter path, never the filesystem.
 fn loom_config() -> SegmentConfig {
-    // huge thresholds → no auto-flush; the test exercises only the in-memory
-    // lock + Vec + u64 counter path.
-    // SegmentConfig is #[non_exhaustive]; Default + field reassignment is the
-    // only external construction pattern.
-    #![allow(clippy::field_reassign_with_default)]
-    let mut config = SegmentConfig::default();
-    config.max_batch_events = usize::MAX;
-    config.flush_interval_secs = u64::MAX;
-    config.max_size_bytes = u64::MAX;
-    config.compression_level = 3;
-    config
+    SegmentConfig::builder()
+        .flush_policy(FlushPolicy::Manual)
+        .max_size_bytes(u64::MAX)
+        .compression_level(3)
+        .build()
 }
 
 #[test]
@@ -118,5 +114,34 @@ fn writer_and_reader_do_not_observe_torn_snapshot() {
 
         h1.join().unwrap();
         h2.join().unwrap();
+    });
+}
+
+#[test]
+fn append_all_batch_atomicity_under_concurrent_append() {
+    // Verify that append_all assigns a contiguous block of sequence numbers
+    // even when a concurrent single append is interleaved by the scheduler.
+    // The whole batch is under one lock, so no single append can split it.
+    loom::model(|| {
+        let dir = tempfile::tempdir().unwrap();
+        let buf: Arc<SegmentBuffer<Item>> =
+            Arc::new(SegmentBuffer::open(dir.path(), loom_config()).unwrap());
+
+        let b1 = buf.clone();
+        let h1 = thread::spawn(move || {
+            b1.append_all([Item { id: 10 }, Item { id: 11 }, Item { id: 12 }])
+                .unwrap();
+        });
+        let b2 = buf.clone();
+        let h2 = thread::spawn(move || {
+            b2.append(Item { id: 99 }).unwrap();
+        });
+
+        h1.join().unwrap();
+        h2.join().unwrap();
+
+        // Total items must be 4 (3 from append_all + 1 from append).
+        assert_eq!(buf.pending_count(), 4);
+        assert_eq!(buf.latest_sequence(), 3);
     });
 }

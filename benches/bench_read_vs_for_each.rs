@@ -4,7 +4,18 @@
 //! Quantifies the clone cost the lending iterator was introduced to avoid.
 //!
 //! Run with:
-//!   cargo bench --bench bench_read_vsForEach --features encryption
+//!   cargo bench --bench bench_read_vs_for_each --features encryption
+//!
+//! # Why the shared buffer is correct
+//!
+//! Both `read_from` and `for_each_from` are read-only — they do not modify the
+//! buffer's `unflushed` Vec. The buffer has exactly N items at setup time, and
+//! every iteration reads those same N items. The buffer state is constant
+//! across iterations, so there is no state-growth bias. The shared buffer
+//! stays hot in L1/L2 cache across iterations, which mirrors the production
+//! "hot buffer" case (the common workload). Per-iteration setup via
+//! `iter_batched_ref` would conflate the N append costs into the read
+//! measurement, which is wrong for a read-only bench.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 #[path = "support.rs"]
@@ -16,7 +27,11 @@ fn bench_read_vs_for_each(c: &mut Criterion) {
     for &n in &[1_000usize, 10_000] {
         // Both benches share the same buffer state: N unflushed items in
         // memory (no segment files), so the clone-vs-borrow delta is the
-        // entire signal. Use Manual flush policy to keep items in memory.
+        // entire signal. usize::MAX batch size keeps items in memory.
+        //
+        // Shared buffer is correct because both operations are READ-ONLY —
+        // they do not modify `unflushed`. The buffer state is constant across
+        // iterations, mirroring the production "hot buffer" case.
         let (buf, _tmp) = support::open_buffer(usize::MAX);
         for i in 0..n as u64 {
             buf.append(support::item(i)).unwrap();

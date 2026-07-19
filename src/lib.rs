@@ -40,6 +40,16 @@ pub use cipher::AesGcmCipher;
 pub use cipher::{CipherError, SegmentCipher};
 pub use error::{Result, SegmentError};
 
+/// Hidden internals exposed for fuzz targets and deep integration tests.
+/// NOT part of the public API; do not depend on these from external code.
+/// Stability is not guaranteed — these may change or disappear in any release.
+#[doc(hidden)]
+pub mod fuzz_hooks {
+    pub use crate::segment::{
+        filename, parse_filename, unwrap_envelope, wrap_envelope, SegmentRange,
+    };
+}
+
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -297,6 +307,35 @@ pub struct BufferStats {
 /// time the caller reads them, because other threads can append/flush/delete
 /// immediately after `open` returns. For a live view, use
 /// [`SegmentBuffer::stats`].
+///
+/// # Recovering over a populated directory
+///
+/// ```
+/// use segment_buffer::{SegmentBuffer, SegmentConfig, FlushPolicy};
+/// use tempfile::tempdir;
+///
+/// let dir = tempdir()?;
+///
+/// // First instance: write three items, flush, drop.
+/// {
+///     let config = SegmentConfig::builder()
+///         .flush_policy(FlushPolicy::Manual)
+///         .build();
+///     let buf: SegmentBuffer<u64> = SegmentBuffer::open(dir.path(), config)?;
+///     for i in 0..3u64 { buf.append(i)?; }
+///     buf.flush()?;
+/// }
+///
+/// // Re-open: recovery must find one segment covering seqs 0..=2.
+/// let (buf, report) =
+///     SegmentBuffer::<u64>::open_with_report(dir.path(), SegmentConfig::default())?;
+/// assert_eq!(report.segment_count, 1);
+/// assert_eq!(report.head_seq, 0);
+/// assert_eq!(report.next_seq, 3);
+/// assert!(report.disk_bytes > 0, "flushed segment must have nonzero size");
+/// assert_eq!(report.removed_tmp_files, 0);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RecoveryReport {
@@ -349,6 +388,15 @@ pub struct SegmentBuffer<T> {
     /// way — operators who manipulate the directory behind the buffer's back
     /// get the directory scan cost back.
     scan_cache: Mutex<Option<Vec<segment::SegmentRange>>>,
+    /// Re-entrancy guard for [`SegmentBuffer::for_each_from`]. Set to `true`
+    /// for the duration of a `for_each_from` call (including across the user
+    /// callback `F`); every other `&self` method that takes `inner.lock()`
+    /// asserts this is `false` and panics with a clear message otherwise.
+    ///
+    /// This converts the silent deadlock of re-entering the buffer from inside
+    /// a `for_each_from` callback into an immediate, diagnosable panic. The
+    /// atomic load costs ~1 ns per locking op — negligible next to the mutex.
+    iteration_in_progress: std::sync::atomic::AtomicBool,
 }
 
 /// `Debug` mirrors the field set of [`BufferStats`] plus the directory path.
@@ -451,6 +499,7 @@ where
             }),
             approx_disk_bytes: std::sync::atomic::AtomicU64::new(0),
             scan_cache: Mutex::new(None),
+            iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
         };
 
         let report = buffer.recover()?;
@@ -483,6 +532,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn append(&self, event: T) -> Result<u64> {
+        self.assert_not_reentered("append");
         let (should_flush, seq) = {
             let mut inner = self.inner.lock();
             inner.unflushed.push(event);
@@ -527,6 +577,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn flush(&self) -> Result<()> {
+        self.assert_not_reentered("flush");
         let (events, start_seq, end_seq) = {
             let mut inner = self.inner.lock();
             inner.last_flush = Instant::now();
@@ -590,6 +641,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn read_from(&self, start_seq: u64, limit: usize) -> Result<Vec<T>> {
+        self.assert_not_reentered("read_from");
         if limit == 0 {
             return Ok(Vec::new());
         }
@@ -666,14 +718,18 @@ where
     /// both paths pay the same CBOR+zstd+cipher decode cost per segment — the
     /// clone saving only applies to the in-memory tail.
     ///
-    /// # Deadlock warning
+    /// # Re-entrancy contract
     ///
-    /// The mutex is held across `f` while iterating the in-memory pending
-    /// items. **Do NOT** call any other `&self` method on `SegmentBuffer`
-    /// from inside `f` — it will deadlock. (The callback receives only
-    /// `(seq, &T)`, which gives no way to reach the buffer, but a closure
-    /// that captures a clone of the `Arc<SegmentBuffer<T>>` can still
-    /// re-enter.)
+    /// The buffer mutex is held across `f` while iterating the in-memory
+    /// pending items. Calling **any** other `&self` method on `SegmentBuffer`
+    /// from inside `f` would deadlock (`parking_lot::Mutex` is not reentrant).
+    /// To make this footgun impossible to hit silently, every other method
+    /// asserts it is not being re-entered from inside a `for_each_from`
+    /// callback and **panics with a clear message** if it is. The callback
+    /// receives only `(seq, &T)`, which gives no way to reach the buffer, but
+    /// a closure that captures a clone of the `Arc<SegmentBuffer<T>>` can
+    /// still attempt re-entry — and will now get an immediate, diagnosable
+    /// panic instead of a silent hang.
     ///
     /// # Example
     ///
@@ -702,6 +758,15 @@ where
         if limit == 0 {
             return Ok(0);
         }
+
+        // Mark iteration in progress for the entire call. Every other locking
+        // method asserts the flag is false and panics with a clear message,
+        // converting the silent deadlock (parking_lot::Mutex is not reentrant)
+        // into an immediate, diagnosable failure. The guard clears the flag on
+        // scope exit, including during panic unwinding from `f`.
+        self.iteration_in_progress
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let _guard = IterationGuard(&self.iteration_in_progress);
 
         let mut visited = 0usize;
 
@@ -791,6 +856,7 @@ where
     /// so it never advances past the pending window, keeping the backlog count
     /// honest.
     pub fn delete_acked(&self, acked_seq: u64) -> Result<usize> {
+        self.assert_not_reentered("delete_acked");
         let segments = self.scan_segments()?;
         let mut deleted = 0;
         let mut freed_bytes: u64 = 0;
@@ -873,6 +939,7 @@ where
     /// ```
     #[must_use = "the sequence number is meaningless if discarded"]
     pub fn latest_sequence(&self) -> u64 {
+        self.assert_not_reentered("latest_sequence");
         let inner = self.inner.lock();
         if inner.next_seq == 0 {
             0
@@ -908,6 +975,7 @@ where
     /// ```
     #[must_use = "the backlog size is meaningless if discarded"]
     pub fn pending_count(&self) -> u64 {
+        self.assert_not_reentered("pending_count");
         let inner = self.inner.lock();
         inner.next_seq.saturating_sub(inner.head_seq)
     }
@@ -1058,6 +1126,7 @@ where
     /// ```
     #[must_use = "the snapshot is meaningless if discarded"]
     pub fn stats(&self) -> BufferStats {
+        self.assert_not_reentered("stats");
         let inner = self.inner.lock();
         let pending_count = inner.next_seq.saturating_sub(inner.head_seq);
         let latest_sequence = if inner.next_seq == 0 {
@@ -1087,9 +1156,197 @@ where
         }
     }
 
+    /// The directory this buffer reads from and writes segment files to.
+    ///
+    /// Useful for operators that need to inspect, archive, or quarantine the
+    /// segment directory without parsing it out of [`Debug`](std::fmt::Debug).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// assert_eq!(buf.path(), dir.path());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use = "the path is meaningless if discarded"]
+    pub fn path(&self) -> &std::path::Path {
+        &self.dir
+    }
+
+    /// The [`SegmentConfig`] this buffer was opened with.
+    ///
+    /// Returned by reference so callers can inspect the flush policy, disk
+    /// ceiling, compression level, and cipher presence without re-deriving
+    /// them. The config is immutable for the lifetime of the buffer.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig, FlushPolicy};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let config = SegmentConfig::builder()
+    ///     .flush_at_batch_size(128)
+    ///     .build();
+    /// let buf: SegmentBuffer<u64> = SegmentBuffer::open(dir.path(), config)?;
+    /// match &buf.config().flush_policy {
+    ///     FlushPolicy::Batch(n) => println!("flushing at {n} items"),
+    ///     _ => {}
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use = "the config is meaningless if discarded"]
+    pub fn config(&self) -> &SegmentConfig {
+        &self.config
+    }
+
+    /// Re-stat the segment directory and store the authoritative total as
+    /// [`BufferStats::approx_disk_bytes`].
+    ///
+    /// [`BufferStats::approx_disk_bytes`] is updated incrementally on every
+    /// flush/delete/recover, so it is accurate as long as only this buffer
+    /// touches the directory. If an external process (backup, compaction,
+    /// manual cleanup) adds or removes segment files, the cached value drifts.
+    /// This method recomputes it from a directory scan.
+    ///
+    /// Returns the new total so callers can observe the delta without a
+    /// second call to [`stats`](Self::stats).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// buf.append(1)?;
+    /// buf.flush()?;
+    ///
+    /// // Simulate an external process truncating a segment file to zero bytes.
+    /// for entry in std::fs::read_dir(dir.path())? {
+    ///     let _ = std::fs::write(entry?.path(), b"");
+    /// }
+    ///
+    /// let synced = buf.sync_disk_bytes()?;
+    /// assert_eq!(synced, 0, "external truncation should be reflected");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if the directory cannot be read.
+    pub fn sync_disk_bytes(&self) -> Result<u64> {
+        self.assert_not_reentered("sync_disk_bytes");
+        let segments = self.scan_segments()?;
+        let total: u64 = segments
+            .iter()
+            .filter_map(|s| fs::metadata(self.segment_path(s.start, s.end)).ok())
+            .map(|m| m.len())
+            .sum();
+        self.approx_disk_bytes
+            .store(total, std::sync::atomic::Ordering::Relaxed);
+        Ok(total)
+    }
+
+    /// Append a batch of items under a single lock acquisition.
+    ///
+    /// Each item receives the next contiguous sequence number. Returns the
+    /// last sequence number assigned (matching the contract of
+    /// [`append`](Self::append)); the full range is
+    /// `[last - count + 1, last]` where `count` is the number of items the
+    /// iterator yielded.
+    ///
+    /// # Batch vs streaming semantics
+    ///
+    /// All items are accumulated under a single lock acquisition, then the
+    /// flush policy is checked **once** at the end. This gives true atomic
+    /// batch semantics: either the entire batch lands in the buffer or the
+    /// error propagates. Callers who want per-item auto-flush semantics
+    /// (flush at every `batch_size` threshold) should call
+    /// [`append`](Self::append) in a loop instead — `append_all` is
+    /// optimized for the "load this batch atomically" use case and avoids
+    /// paying the lock-acquisition cost per item.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig, FlushPolicy};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let config = SegmentConfig::builder()
+    ///     .flush_policy(FlushPolicy::Manual)
+    ///     .build();
+    /// let buf: SegmentBuffer<u64> = SegmentBuffer::open(dir.path(), config)?;
+    ///
+    /// let last = buf.append_all([10u64, 20, 30, 40])?;
+    /// assert_eq!(last, 3); // 0-based: items got seqs 0, 1, 2, 3
+    /// assert_eq!(buf.pending_count(), 4);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if a flush triggered by the batch fails.
+    pub fn append_all<I>(&self, items: I) -> Result<u64>
+    where
+        I: IntoIterator<Item = T>,
+    {
+        self.assert_not_reentered("append_all");
+        let (should_flush, last_seq, count) = {
+            let mut inner = self.inner.lock();
+            let mut count = 0u64;
+            let mut last_seq = inner.next_seq.saturating_sub(1);
+            for item in items {
+                inner.unflushed.push(item);
+                inner.next_seq = inner.next_seq.wrapping_add(1);
+                last_seq = inner.next_seq - 1;
+                count += 1;
+            }
+            if count == 0 {
+                // Empty iterator: no-op, return current last seq (or 0).
+                return Ok(inner.next_seq.saturating_sub(1));
+            }
+            let should_flush = self
+                .config
+                .flush_policy
+                .should_flush(inner.unflushed.len(), inner.last_flush.elapsed());
+            (should_flush, last_seq, count)
+        };
+        debug_assert!(count > 0);
+        if should_flush {
+            self.flush()?;
+        }
+        Ok(last_seq)
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
+
+    /// Panic with a clear message if a `for_each_from` callback is currently
+    /// re-entering the buffer. The alternative is a silent deadlock
+    /// (`parking_lot::Mutex` is not reentrant), so an explicit panic is
+    /// strictly better for diagnosability.
+    fn assert_not_reentered(&self, method: &'static str) {
+        if self
+            .iteration_in_progress
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            panic!(
+                "{method}: cannot call from within a for_each_from callback \
+                 (the buffer mutex is held; re-entry would deadlock)"
+            );
+        }
+    }
 
     fn recover(&self) -> Result<RecoveryReport> {
         let removed_tmp_files = segment::clean_tmp(&self.dir)?;
@@ -1187,6 +1444,17 @@ where
     }
 }
 
+/// RAII guard that clears [`SegmentBuffer::iteration_in_progress`] on drop,
+/// including during panic unwinding. Without this, a panicking `for_each_from`
+/// callback would leave the flag set and permanently brick the buffer.
+struct IterationGuard<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for IterationGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Static thread-safety assertion
 // ---------------------------------------------------------------------------
@@ -1205,3 +1473,26 @@ mod tests;
 
 #[cfg(test)]
 mod property_tests;
+
+// Each example file is embedded as a doc-test so `cargo test --doc` gives
+// execution coverage on top of the compilation coverage from
+// `cargo test --examples`. The `concat!` wraps the raw file content in a
+// code fence so rustdoc treats it as compilable+runnable Rust.
+#[cfg(doctest)]
+mod example_doctests {
+    #[doc = concat!("```rust\n", include_str!("../examples/basic_usage.rs"), "\n```")]
+    const BASIC_USAGE: () = ();
+
+    #[doc = concat!("```rust\n", include_str!("../examples/backpressure.rs"), "\n```")]
+    const BACKPRESSURE: () = ();
+
+    #[doc = concat!("```rust\n", include_str!("../examples/crash_recovery.rs"), "\n```")]
+    const CRASH_RECOVERY: () = ();
+
+    #[doc = concat!("```rust\n", include_str!("../examples/mpmc.rs"), "\n```")]
+    const MPMC: () = ();
+
+    #[cfg(feature = "encryption")]
+    #[doc = concat!("```rust\n", include_str!("../examples/encrypted.rs"), "\n```")]
+    const ENCRYPTED: () = ();
+}

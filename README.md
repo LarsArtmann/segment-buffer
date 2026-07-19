@@ -100,6 +100,9 @@ You define priority thresholds — see `examples/backpressure.rs`.
 
 ## Comparison
 
+_Comparison tables rot. This one was written against the versions current as of
+2026-07; verify against the upstream crates before making a storage decision._
+
 | Feature         | segment-buffer           | yaque                     | disk_backed_queue |
 | --------------- | ------------------------ | ------------------------- | ----------------- |
 | Segment files   | zstd+CBOR                | raw bytes                 | SQLite            |
@@ -112,14 +115,14 @@ You define priority thresholds — see `examples/backpressure.rs`.
 
 ## Status
 
-**v0.4.0** — the "API ergonomic + perf" release. Adds `SegmentConfig::builder()`,
-`FlushPolicy` (replaces the silent-combine of batch + interval), `RecoveryReport`,
-`for_each_from` lending iterator (~21× faster than `read_from` on in-memory
-items), typed `SegmentError::Io { path, source }`, AtomicU64 disk bytes,
-`scan_segments()` cache, plus `crash_recovery` and `mpmc` examples.
-**v0.4.0 is a breaking release** (SegmentConfig field reshuffle + SegmentError::Io
-shape). See [CHANGELOG.md](CHANGELOG.md) for migration notes.
-See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md).
+**v0.4.1** — the "safety + trust depth" release. Adds `for_each_from` re-entrancy
+guard (panics instead of silently deadlocking), `append_all` batch primitive,
+`path()`/`config()`/`sync_disk_bytes()` accessors, 2 new fuzz targets, 4 new
+property tests, nightly fuzz CI, supply-chain checks (cargo-audit + cargo-deny),
+and docs (`docs/PERFORMANCE.md`, `docs/RELEASE.md`, `docs/MSRV.md`).
+Non-breaking; drop-in upgrade from v0.4.0.
+See [CHANGELOG.md](CHANGELOG.md) for details.
+See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
 
 **Performance vs v0.1.0:** a controlled `git worktree` benchmark
 ([docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md](docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md))
@@ -128,6 +131,10 @@ has a per-write cost) but recovery latency down ~40–45% across the board (the
 v0.2.0 recovery refactor). Net is roughly break-even for large-batch workloads
 and clearly better on cold starts; tiny-batch high-frequency writers may want
 to stay on `=0.1.0` until v0.4.0 hot-path work lands.
+_Methodology caveat: these are single-run, single-machine medians without
+statistical noise bars — indicative of direction, not publication-grade. See
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the methodology and how to
+reproduce._
 
 ## License
 

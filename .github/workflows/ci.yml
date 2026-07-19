@@ -28,7 +28,8 @@ jobs:
         rust: [stable, "1.85"]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      # Pinned to commit hash for supply-chain hygiene (vs @master which drifts).
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy, rustfmt
@@ -54,10 +55,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.85"
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --all-targets --features encryption
+
+  supply-chain:
+    name: cargo audit + cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: cargo audit (RustSec advisories)
+        run: cargo audit
+      - name: cargo deny (advisories + licenses + bans + sources)
+        run: cargo deny check
 
   link-check:
     name: Markdown link check (lychee)

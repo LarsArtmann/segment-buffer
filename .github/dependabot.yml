@@ -1,0 +1,31 @@
+version: 2
+
+# Belt-and-braces alongside Renovate. If Renovate ever breaks or its config
+# drifts, Dependabot keeps GitHub Actions and Cargo dependencies current.
+
+updates:
+  # GitHub Actions versions in .github/workflows/
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci(actions)"
+
+  # Cargo dependencies in Cargo.toml / Cargo.lock
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - cargo
+    commit-message:
+      prefix: "deps"

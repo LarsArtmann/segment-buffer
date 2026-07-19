@@ -21,6 +21,14 @@ path = "fuzz_targets/fuzz_corrupted_read.rs"
 name = "fuzz_recovery"
 path = "fuzz_targets/fuzz_recovery.rs"
 
+[[bin]]
+name = "fuzz_parse_filename"
+path = "fuzz_targets/fuzz_parse_filename.rs"
+
+[[bin]]
+name = "fuzz_envelope"
+path = "fuzz_targets/fuzz_envelope.rs"
+
 # Keep the fuzz crate out of the parent workspace so it builds independently
 # (it requires nightly + -Zsanitizer).
 [workspace]
