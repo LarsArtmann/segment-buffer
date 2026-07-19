@@ -123,12 +123,12 @@ If you need to evolve the format (new checksum, new compression, metadata block)
 
 ```
 src/
-  lib.rs           SegmentBuffer, SegmentConfig, BufferInner; orchestrates lock + flush policy
+  lib.rs           SegmentBuffer, SegmentConfig, BufferStats, BufferInner; orchestrates lock + flush policy
   segment.rs       On-disk format: envelope, SegmentRange, filename/parse, encode/decode pipeline, scan, clean_tmp
-  cipher.rs        SegmentCipher trait, CipherError, AesGcmCipher (feature-gated impl in `mod private`)
+  cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + ErrorExt upcast for MSRV 1.85), AesGcmCipher (feature-gated impl in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
-  tests.rs         `mod tests` — 29 unit tests
-  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip (6 properties)
+  tests.rs         `mod tests` — 32 unit tests
+  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues (8 properties)
 examples/          basic_usage, backpressure, encrypted (feature-gated)
 benches/           4 criterion targets + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery); requires nightly
@@ -152,6 +152,7 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 ## CI / MSRV
 
 - Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.85`.
-- **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0.
+- **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0. Locally, `cargo +1.85 check` has not yet been executed to confirm — the claim currently rests on the CI job.
+- **Pre-1.86 trait-upcasting workaround:** `CipherError::source()` uses a private `ErrorExt` trait in `src/cipher.rs` to upcast `Arc<dyn ErrorExt + Send + Sync>` → `&dyn Error` because Rust 1.85 cannot coerce `dyn ErrorExt` to `dyn Error` directly. Once the MSRV moves to 1.86+, this trait can be deleted and `source()` simplified to `self.source.as_deref()` (tracked in TODO_LIST.md under the v0.3.0 batch).
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.

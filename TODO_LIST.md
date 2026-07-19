@@ -7,6 +7,21 @@ Status legend: `[ ]` pending · `[~]` in progress · `[x]` done (move to CHANGEL
 
 ---
 
+## v0.2.0 follow-ups (P0 debt from the v0.2.0 sweep)
+
+Items the v0.2.0 self-review (`docs/status/2026-07-19_04-22_*`) flagged as
+under-delivered or skipped. These do not require a release; do them on `HEAD`.
+
+- [ ] **Run `cargo +1.85 check --all-targets --features encryption` locally.** The `ErrorExt` trait upcast (src/cipher.rs) and the `const fn assert_send_sync` assertion (src/lib.rs) are written to preserve MSRV 1.85 but have never been verified outside CI. Install 1.85 via Nix (`nix shell github:oxalica/rust-overlay#rust-bin.stable."1.85.0".default`) if rustup is unavailable.
+- [ ] **Run real `cargo +nightly fuzz`** for ≥60s per target. Proptest analogues are interim mitigation only. Install nightly via Nix if rustup is unavailable.
+- [ ] **Doc-test for `CipherError::with_source`** — show wrapping an AEAD error and reading it back via `source()`.
+- [ ] **`Debug` impl for `SegmentBuffer<T>`** — standard collection ergonomics; current absence makes `dbg!()`-style debugging worse.
+- [ ] **Snapshot/golden tests for `SegmentError` and `CipherError` Display** — lock in the format strings before they ossify.
+- [ ] **Bench `stats()` vs individual accessors** — prove or remove the "cheaper and more consistent" claim in the doc comment.
+- [ ] **Controlled benchmark baseline** — checkout v0.1.0 (pre-envelope), capture criterion baseline, compare to HEAD. Or update README/CHANGELOG to honestly say "no controlled baseline".
+
+---
+
 ## v0.3.0 (next breaking release)
 
 These are breaking changes; batch them so users upgrade once.
@@ -17,6 +32,8 @@ These are breaking changes; batch them so users upgrade once.
 - [ ] **`FlushPolicy` enum** (Batch / Interval / Manual) to replace the two `SegmentConfig` fields that silently combine.
 - [ ] **Typed `SegmentError::Io`** — currently bare `#[from] io::Error` drops path context.
 - [ ] **Consider `SegmentCipher` → `SegmentAead` rename** — the trait is specifically AEAD-shaped (self-describing nonce-in-band); the name lies slightly.
+- [ ] **`#[non_exhaustive]` on `BufferStats`** — v0.2.0 added the struct with all-public fields; adding a field later is currently breaking.
+- [ ] **`#[non_exhaustive]` on `SegmentConfig`** — older debt of the same class.
 
 ## Concurrency & provability
 

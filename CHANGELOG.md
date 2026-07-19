@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 _No changes yet — see [0.2.0] below for the most recent release._
+Next work is tracked in [TODO_LIST.md](TODO_LIST.md) (v0.2.0 follow-ups first,
+then the v0.3.0 breaking batch).
 
 ## [0.2.0] - 2026-07-19
 

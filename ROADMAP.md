@@ -36,13 +36,13 @@ stores. The filename contract would remain the recovery source of truth.
 
 ### 4. Fuzzing & integrity
 
-- A `cargo fuzz` harness targeting `parse_filename`, `encode`/`decode` roundtrips, and recovery from arbitrary on-disk garbage.
+- A `cargo-fuzz` scaffold exists (`fuzz/fuzz_corrupted_read`, `fuzz/fuzz_recovery`) and is CI-runnable via proptest analogues, but the libfuzzer harness itself has not yet been run and is not in CI (decision pending: required job / nightly / manual). Deeper fuzz targets (envelope edge cases, `parse_filename` over arbitrary UTF-8) are still outstanding.
 - Optional checksum (e.g. Blake3) per segment for detecting bit-rot distinct from cipher authentication failures.
 
 ### 5. Observability
 
-- Expose segment count and per-segment sizes via a metrics endpoint or a `stats()` accessor.
-- Structured recovery summary (segments found, bytes, head/next seq) is already logged; consider a returned `RecoveryReport` for programmatic use.
+- The `stats()` accessor shipped in v0.2.0 as a single-lock `BufferStats` snapshot (pending/latest/head/next seq + disk bytes + pressure). Richer per-segment metrics (segment count, per-segment size histogram) are still future work.
+- Structured recovery summary (segments found, bytes, head/next seq) is already logged; a returned `RecoveryReport` for programmatic use is planned for v0.3.0 (see TODO_LIST.md).
 
 ## Non-goals (by design)
 

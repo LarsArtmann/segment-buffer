@@ -155,3 +155,60 @@ Real correctness bug fixed, module split landed, missing docs created, reproduci
 2. **`Cargo.lock` committed.** I force-added `Cargo.lock` past your global gitignore to enable reproducible Nix builds. This goes against the conventional "library crates gitignore the lockfile" guidance. Keep it committed (current state, enables Nix reproducibility), or revert and use `crane`'s `vendorCargoDeps` with a hash instead?
 
 3. **Nix Rust toolchain pinning.** The flake currently uses nixpkgs' stable Rust (1.96.2) for `nix develop`, while the crate's MSRV is 1.85. Should I add a Rust 1.85 overlay so `nix develop` actually verifies the MSRV claim (closer CI parity, but loses newer compiler diagnostics in dev), or keep stable for dev and rely on the existing GitHub Actions `msrv` job for MSRV enforcement?
+
+---
+
+## Resolution (2026-07-19)
+
+This report covers the multi-skill session that landed as `522de63` (Nix flake,
+`segment.rs` split, FEATURES/ROADMAP). Two further sessions shipped on the same
+day — the superb-tier format-envelope session (`e09f84c`) and the v0.2.0 cut
+(`fe81dd2`) — and resolved many of the items below. This appendix records, for
+a reader who opens this old report, which findings shipped and which are still
+open. Cross-references are to `TODO_LIST.md` line numbers as of `fe81dd2`.
+
+### Shipped in subsequent commits
+
+- **§b.4 full-code-review gaps:** the `recover()` lock-across-I/O finding — fixed
+  in `fe81dd2` (metadata loop now runs before the mutex is taken). The static
+  `Send + Sync` assertion — added in `fe81dd2` (`src/lib.rs`). The
+  `#[must_use]` attributes — added in `fe81dd2` on `latest_sequence`,
+  `pending_count`, `store_pressure`, `is_overloaded`, plus `len`/`is_empty`/
+  `stats`.
+- **§b.2 data-model:** typed `SegmentError` variants with `{path, phase, ..}`
+  landed in `e09f84c`; `SegmentRange::new(start, end)` with `debug_assert!`
+  invariant landed in `fe81dd2`.
+- **§e.9 / §e.10 / §e.11 / §f.11 / §f.12:** static `Sync`/`Send` assertions,
+  `#[must_use]` attributes, and `#[track_caller]` consideration — the first two
+  shipped in `fe81dd2`; `#[track_caller]` stays deferred (TODO_LIST line 24).
+- **§f.21 RecoveryReport** — still planned (TODO_LIST line 16, v0.3.0 batch).
+- **§f.22 Stats / `snapshot()` accessor** — shipped in `fe81dd2` as `stats()` →
+  `BufferStats` (single-lock snapshot of pending/latest/head/next seq + disk
+  bytes + pressure).
+- **§f.44 `len()` / `is_empty()`** — shipped in `fe81dd2`.
+- **§f.14 property tests** — 8 properties now run on every `cargo test`
+  (filename bijection, payload bijection, envelope identity, encrypted
+  roundtrip with varied key, corrupted-segment/recovery fuzz analogues).
+
+### Still open (tracked in TODO_LIST.md)
+
+- **§c skill-contract HTML artifacts** (code-quality-scan, architecture-review,
+  nix-flake-migration, full-code-review) — still not produced; tracked at
+  TODO_LIST line 63 (negotiate-or-produce).
+- **§e.8 / §f.35 doc-test depth** — `#![doc = include_str!("../README.md")]`
+  on the crate root still deferred (TODO_LIST line 59).
+- **§f.16 Loom test** — still PLANNED (TODO_LIST line 23).
+- **§f.18 MSRV pin in flake** — still open (TODO_LIST line 54).
+- **§f.43 tightness of `T: 'static`** — under investigation (TODO_LIST line 73).
+- **§f.49 Nix CI workflow** — still open (TODO_LIST line 53).
+
+### Questions in §g — current status
+
+- **Q1 (skill artifacts):** still open. The HTML artifacts have not been
+  produced retroactively; TODO_LIST line 63 records the negotiate-or-produce
+  decision as pending.
+- **Q2 (Cargo.lock committed):** **decided.** `Cargo.lock` stays committed for
+  reproducible Nix builds; documented in `AGENTS.md` ("CI / MSRV" section).
+- **Q3 (MSRV pin in flake):** still open. The flake still uses nixpkgs stable
+  Rust; MSRV verification currently relies on the GitHub Actions `msrv` job
+  only. TODO_LIST line 54.

@@ -156,3 +156,74 @@ The three superb-tier changes landed green: 8-byte `SBF1` envelope with legacy a
 2. **Version cut.** Typed errors are a breaking change. Should I cut `0.2.0` now (consolidating all the superb-tier work into one release), or hold for more changes (e.g., the encrypted-legacy fix, the API excellence tier) and cut `0.2.0` as a bigger release? I don't know your release cadence preference.
 
 3. **Fuzz in CI.** Running `cargo-fuzz` in CI requires nightly and is slow (minutes per target). Do you want it as (a) a required CI job on every PR, (b) a nightly/scheduled job, or (c) left out of CI entirely and run manually/ad-hoc? This is a workflow/cadence call I can't make for you.
+
+---
+
+## Resolution (2026-07-19)
+
+This report covers the superb-tier session (format envelope, typed errors,
+property tests, fuzz scaffold) that landed as `e09f84c`. The very next session
+cut v0.2.0 as `fe81dd2` and resolved nearly every P0 item below. This appendix
+records, for a reader who opens this old report, which findings shipped and
+which remain open. Cross-references are to `TODO_LIST.md` line numbers as of
+`fe81dd2`.
+
+### Shipped in `fe81dd2` (v0.2.0)
+
+- **§d.1 envelope false-positive bug:** FIXED. `unwrap_envelope` now requires
+  the `SBF1` magic AND the 3 reserved bytes to all be zero, dropping the
+  false-positive rate on legacy encrypted files from 2⁻³² to 2⁻⁵⁶. Regression
+  test `envelope_detection_requires_zero_reserved_bytes` added. (Option (a)
+  from §g.Q1 was chosen.)
+- **§d.2 fake legacy-encrypted test:** REPLACED. The new
+  `legacy_encrypted_file_without_envelope_still_reads` hand-crafts a real
+  `[nonce][ciphertext]` file with no envelope and proves it reads back through
+  the enveloped reader. The headline monitor365 byte-compatibility guarantee
+  now has actual test coverage.
+- **§d.3 fuzz parser dead code:** FIXED. `fuzz_recovery::DirGarbage::from`
+  rewritten with a clean pairwise chunk consumer.
+- **§d.4 / §c.1 API break without version bump:** FIXED. v0.2.0 cut in
+  `fe81dd2`; `CHANGELOG.md` documents the breaking change set; README carries
+  a `pin with =0.1.0` escape hatch.
+- **§d.5 proptest fixed key:** FIXED. `full_write_read_encrypted_roundtrip`
+  now takes `key in any::<[u8; 32]>()` per case.
+- **§d.7 / §c.7 CipherError open+closed:** FIXED. `CipherError` is now opaque
+  (private fields, `msg` / `with_source` constructors, `#[non_exhaustive]`
+  via the private-fields strategy).
+- **§c.5 / §e.7 `source()` chain:** FIXED. `CipherError::with_source` preserves
+  the underlying AEAD error; `Error::source()` returns it. Regression test
+  `wrong_key_cipher_error_carries_source_chain` proves the chain fires.
+- **§c.6 / §e.11 error-matching doc-test:** SHIPPED. Module-level doc-test in
+  `error.rs` shows `match err { SegmentError::Cbor { path, phase, .. } => … }`
+  including the `#[non_exhaustive]` catch-all.
+- **§d.9 stale AGENTS.md diagram:** FIXED in `AGENTS.md` (write-path diagram
+  now shows the 8-byte `SBF1` envelope prepend step). Note: the README.md
+  ASCII diagram is still the pre-envelope flow — see docs-health pass for the
+  v0.2.0 sweep self-review.
+
+### Still open (tracked in TODO_LIST.md or v0.2.0 self-review §c)
+
+- **§b.1 / §c.3 / §d.1 fuzz crate never executed:** STILL NOT RUN. Proptest
+  analogues were added in `fe81dd2` as interim mitigation but are not a
+  substitute for the real libfuzzer harness. TODO_LIST line 67 (CI cadence
+  decision) + v0.2.0 self-review §c.2.
+- **§c.4 Loom test:** STILL PLANNED. TODO_LIST line 23.
+- **§b.5 / §c.5b error rendering snapshot test:** STILL MISSING. Should be
+  added to TODO_LIST (currently only in v0.2.0 self-review §c.6).
+- **§c.8 PROPTEST_CASES pin in CI:** STILL OPEN. TODO_LIST line 68.
+- **§c.9 / §f.16 Nix fuzz app (`apps.fuzz`):** STILL OPEN. TODO_LIST line 69.
+- **§d.10 `Cow::Borrowed` branch:** acknowledged; no action planned.
+- **§d.11 / §e.5 no benchmark baseline:** STILL OPEN. v0.2.0 self-review §b.5
+  reiterates the "no controlled baseline" gap.
+- **§b.6 / §e.6 docs polish (597M+ citation, CHANGELOG prose):** partially
+  addressed; the 597M claim is still uncited in README.md line 5.
+
+### Questions in §g — current status
+
+- **Q1 (legacy encrypted support):** **decided — option (a).** Reserved-bytes-
+  zero check shipped in `fe81dd2`. False-positive rate now 2⁻⁵⁶, "negligible
+  across the full 597M-segment corpus" claim is now actually true.
+- **Q2 (version cut):** **decided — cut v0.2.0.** `fe81dd2` contains the
+  consolidated breaking change set.
+- **Q3 (fuzz in CI cadence):** **still open.** Pending user decision
+  (required job / nightly / manual / out-of-CI). TODO_LIST line 67.

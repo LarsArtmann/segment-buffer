@@ -76,7 +76,7 @@ append(item) ─► unflushed: Vec<T>   (in-memory, inside the Mutex)
               CBOR ─► zstd ─► [optional cipher.encrypt]
                     │
                     ▼
-              write seg_*.zst.tmp ─► fsync ─► atomic rename to seg_*.zst
+              prepend 8-byte SBF1 envelope ─► write seg_*.zst.tmp ─► fsync ─► atomic rename
                     │
                     ▼   (lock re-acquired)
               approx_disk_bytes += len
