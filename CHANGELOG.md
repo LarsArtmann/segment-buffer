@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-07-19
 
 ### Added
+
 - `SegmentBuffer<T>` — durable bounded queue backed by zstd-compressed CBOR segment files.
   Generic over any `T: Serialize + DeserializeOwned + Clone + Send + 'static`.
 - `SegmentConfig` with tunable batch size, flush interval, max disk usage, and compression level.
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and pressure/overload boundary conditions.
 
 ### Fixed
+
 - Concurrency bug in `flush()`: sequence numbers (`start_seq`, `end_seq`) are now computed
   atomically inside the mutex lock alongside taking the pending events. Previously, a race
   between concurrent `append()` calls could corrupt segment filenames by computing the
@@ -33,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the push, not re-read after releasing the lock.
 
 ### Security
+
 - Extracted from monitor365 and proven on 597M+ events in production.
 
 [Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.1.0...HEAD
