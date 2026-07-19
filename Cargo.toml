@@ -46,7 +46,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 thiserror = "2"
 serde = "1"
-aes-gcm = { version = "0.10", optional = true }
+aes-gcm = { version = "0.11", optional = true }
 rand = { version = "0.8", optional = true }
 
 [dev-dependencies]
