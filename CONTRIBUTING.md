@@ -88,7 +88,7 @@ When a public error variant wraps a typed underlying error, the underlying
 cause must be reachable via `Error::source()` — not erased behind a `format!`.
 `CipherError::with_source` is the constructor that honors this; `msg` is
 for errors with no underlying cause. Adding a typed underlying error and
-*then* removing it later (or vice versa) is breaking.
+_then_ removing it later (or vice versa) is breaking.
 
 ### On-disk format changes require a migration story
 

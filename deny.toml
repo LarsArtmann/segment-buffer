@@ -19,17 +19,17 @@ ignore = []
 # Allow these licenses unconditionally. Apache-2.0 and MIT cover the bulk of
 # the dependency tree; the others cover transitive deps that show up.
 allow = [
-    "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "MIT",
-    "MIT-0",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "Unicode-DFS-2016",
-    "Unicode-3.0",
-    "Zlib",
-    "CC0-1.0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "Zlib",
+  "CC0-1.0",
 ]
 # Deny everything not listed above.
 confidence-threshold = 0.93
@@ -40,8 +40,8 @@ confidence-threshold = 0.93
 multiple-versions = "warn"
 # Deny explicitly-banned crates.
 deny = [
-    # Add crates that should never appear here. Examples of crates this project
-    # would ban on sight: none currently, but the field is here for future use.
+  # Add crates that should never appear here. Examples of crates this project
+  # would ban on sight: none currently, but the field is here for future use.
 ]
 # Warn on wildcard dependencies (`dep = "*"`); the Cargo.toml uses caret
 # requirements, so this should always pass.

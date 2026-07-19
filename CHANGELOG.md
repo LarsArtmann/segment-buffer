@@ -143,7 +143,7 @@ contract are all unchanged from v0.2.0.
   such hook exists; the only Crush hook is `commit-diff-context.sh`, which
   fires when a commit runs (to inject diff context) and does not stage or
   commit. The three sessions' "lost track of working-tree state" was a real
-  pattern, but the *attribution* was wrong — the cause was the assistant
+  pattern, but the _attribution_ was wrong — the cause was the assistant
   not running `git status`/`git log` before claiming state. Now codified as
   Verification discipline rule 1 in `AGENTS.md`.
 - **`PROPTEST_CASES=256` pinned in CI** — removes a flaky-machine variable

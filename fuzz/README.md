@@ -41,10 +41,10 @@ cargo +nightly fuzz run fuzz_recovery       -- -max_total_time=60
 
 2026-07-19, via `nix develop .#fuzz`:
 
-| Target                | Runs      | Time | Crashes | Coverage blocks |
-| --------------------- | --------- | ---- | ------- | --------------- |
-| `fuzz_corrupted_read` | 187,811   | 60s  | 0       | 392             |
-| `fuzz_recovery`       | 942,719   | 60s  | 0       | —               |
+| Target                | Runs    | Time | Crashes | Coverage blocks |
+| --------------------- | ------- | ---- | ------- | --------------- |
+| `fuzz_corrupted_read` | 187,811 | 60s  | 0       | 392             |
+| `fuzz_recovery`       | 942,719 | 60s  | 0       | —               |
 
 libFuzzer recovered the `SBF1` magic dictionary entry organically from
 `fuzz_corrupted_read`, confirming the envelope-detection path is exercised.
@@ -64,4 +64,3 @@ Not yet wired. The plan is a nightly scheduled GitHub workflow
 (`.github/workflows/fuzz.yml`) that runs both apps for ~5 minutes on every
 midnight run, plus proptest analogues already run on every `cargo test`.
 Tracked in [TODO_LIST.md](../TODO_LIST.md).
-

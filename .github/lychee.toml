@@ -19,9 +19,7 @@ accept = ["200"]
 
 # Exclude the private monitor365 repo (referenced as text in README.md and
 # CHANGELOG.md but the URL is a 404 to anonymous visitors).
-exclude = [
-  "^https://github\\.com/LarsArtmann/monitor365",
-]
+exclude = ["^https://github\\.com/LarsArtmann/monitor365"]
 
 # Exclude localhost / loopback
 exclude_loopback = true
