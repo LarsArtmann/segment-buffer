@@ -34,6 +34,15 @@ cargo bench --bench bench_recover
 cargo doc --no-deps --features encryption
 ```
 
+### Nix (reproducible)
+
+```bash
+nix develop                 # devShell: rustc/cargo/clippy/rustfmt/rust-analyzer + zstd + pkg-config
+nix fmt                     # treefmt: nixfmt + rustfmt (edition 2021, agrees with `cargo fmt`)
+nix flake check             # build, test, clippy, fmt, doc — all under the sandbox
+nix build .#checks.x86_64-linux.test   # run just the test check
+```
+
 ## Feature flags
 
 - `default = []`
@@ -44,13 +53,13 @@ cargo doc --no-deps --features encryption
 ## Architecture & data flow
 
 ```
-append(item) ─► pending: Vec<T>  (in-memory, inside Mutex)
+append(item) ─► unflushed: Vec<T>  (in-memory, inside Mutex)
                    │
                    ▼  (batch full OR flush_interval elapsed OR explicit flush())
-            take() pending, compute start_seq/end_seq INSIDE the lock
+            take() the batch, compute start_seq/end_seq INSIDE the lock
                    │
                    ▼  (lock released)
-            CBOR-serialize  ─►  zstd compress  ─►  [optional cipher.encrypt]
+            CBOR-serialize  ─►  zstd compress  ─►  [optional cipher.encrypt]   (src/segment.rs)
                    │
                    ▼
             write to seg_*.zst.tmp  ─►  sync_all  ─►  rename to seg_*.zst
@@ -69,11 +78,11 @@ append(item) ─► pending: Vec<T>  (in-memory, inside Mutex)
 - On `open()`: `.tmp` files are deleted (incomplete crash writes), then filenames are parsed to rebuild `head_seq` (min start) and `next_seq` (max end + 1).
 - Atomic durability comes from the tmp → `sync_all` → `rename` sequence in `write_segment`.
 
-If you change the filename format, `parse_segment_filename` and `segment_filename` are the two sides of the contract — both must stay in sync, and existing on-disk files from monitor365 must still parse.
+If you change the filename format, `segment::filename` and `segment::parse_filename` (in `src/segment.rs`) are the two sides of the contract — both must stay in sync, and existing on-disk files from monitor365 must still parse.
 
 ## Critical concurrency invariant
 
-**`start_seq`, `end_seq`, and the sequence number returned by `append()` must all be computed inside the same mutex lock that takes ownership of `pending` / pushes the event.** Do not refactor these into separate lock acquisitions.
+**`start_seq`, `end_seq`, and the sequence number returned by `append()` must all be computed inside the same mutex lock that takes ownership of `unflushed` / pushes the event.** Do not refactor these into separate lock acquisitions.
 
 This was a real race fixed post-extraction (see CHANGELOG `[0.1.0]` → "Fixed"). The previous code re-read `next_seq` in a second lock and produced corrupted segment filenames under concurrent `append()`.
 
@@ -91,19 +100,26 @@ The crate **ships no admission policy**. `store_pressure()` returns `approx_disk
 
 ```
 src/
-  lib.rs       SegmentBuffer, SegmentConfig, segment_filename/parse, recover, write_segment
+  lib.rs       SegmentBuffer, SegmentConfig, BufferInner; orchestrates lock + flush policy
+  segment.rs   On-disk format: SegmentRange, filename/parse, encode/decode pipeline, scan, clean_tmp
   cipher.rs    SegmentCipher trait + AesGcmCipher (feature-gated impl in `mod private`)
   error.rs     SegmentError (non_exhaustive, thiserror), Result alias
-  tests.rs     `mod tests` — included via `#[cfg(test)] mod tests;` from lib.rs
+  tests.rs     `mod tests` — included via `#[cfg(test)] mod tests;` from lib.rs (27 unit + 2 doc tests w/ encryption)
 examples/      basic_usage, backpressure, encrypted (feature-gated)
-benches/       4 criterion targets, each declared separately in Cargo.toml with `harness = false`
+benches/       4 criterion targets + shared support.rs (Item/config/open helpers)
+FEATURES.md    Honest capability inventory by status
+ROADMAP.md     Long-term direction and explicit non-goals
+flake.nix      Reproducible devShell (zstd, pkg-config, Rust toolchain)
 ```
+
+The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` (byte-level disk format) is deliberate: the buffer doesn't know how segments are encoded, and the segment module doesn't know about the mutex. `SegmentBuffer`'s private `write_segment`/`read_segment`/`scan_segments`/`segment_path` methods are thin instance-bound wrappers over the stateless `segment::` free functions.
 
 ## Code conventions
 
 - `#![warn(missing_docs)]` is on — every public item needs a doc comment.
 - Doc comment style uses `# Errors` and `# Example` sections (see `SegmentBuffer::open`).
-- Tests use `tempfile::TempDir` and a `test_buffer`/`pressure_test_buffer` helper with small `max_batch_events: 4` and `flush_interval_secs: 3600` (effectively disables auto-flush).
+- Tests use `tempfile::TempDir` and a `test_config(max_size_bytes)` helper with small `max_batch_events: 4` and `flush_interval_secs: 3600` (effectively disables auto-flush).
+- The private in-memory field is `unflushed: Vec<T>` (items not yet written to a segment) — distinct from the public `pending_count()` backlog metric. Do not confuse the two.
 - The top-level doc example is `#![no_run]`-gated.
 - Lint posture is strict: `RUSTFLAGS=-D warnings` plus clippy `-D warnings`.
 
@@ -111,5 +127,5 @@ benches/       4 criterion targets, each declared separately in Cargo.toml with 
 
 - Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.85`.
 - **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0.
-- macOS needs `brew install zstd` (CI does this automatically).
-- `Cargo.lock` is gitignored (library crate).
+- macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
+- **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.

@@ -1,8 +1,14 @@
 /target
 **/*.rs.bk
-Cargo.lock
 .fuzz/
 *.profraw
+
+# NOTE: Cargo.lock is intentionally committed (not gitignored) so that Nix
+# flake builds are reproducible. See flake.nix and AGENTS.md.
+
+# Nix build outputs
+result
+result-*
 
 # >>> buildflow-managed (.gitignore) >>>
 # Auto-managed by buildflow. Edit outside these markers; this block is regenerated on `buildflow --fix`.

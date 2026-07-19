@@ -1,15 +1,11 @@
-//! Benchmark: crash recovery throughput — SegmentBuffer::open() on a directory
-//! with pre-existing segment files.
+//! Benchmark: crash recovery throughput — `SegmentBuffer::open()` on a
+//! directory with pre-existing segment files.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use segment_buffer::{SegmentBuffer, SegmentConfig};
-use serde::{Deserialize, Serialize};
+#[path = "support.rs"]
+mod support;
 
-#[derive(Serialize, Deserialize, Clone)]
-struct Item {
-    id: u64,
-    payload: String,
-}
+use segment_buffer::SegmentBuffer;
 
 fn bench_recover(c: &mut Criterion) {
     let mut group = c.benchmark_group("recover");
@@ -18,41 +14,17 @@ fn bench_recover(c: &mut Criterion) {
         group.bench_function(format!("{n_segments}_segments"), |b| {
             b.iter_with_setup(
                 || {
-                    let tmp = tempfile::tempdir().unwrap();
-                    {
-                        let buf = SegmentBuffer::<Item>::open(
-                            tmp.path(),
-                            SegmentConfig {
-                                max_batch_events: 4,
-                                flush_interval_secs: 3600,
-                                max_size_bytes: u64::MAX,
-                                compression_level: 3,
-                                cipher: None,
-                            },
-                        )
-                        .unwrap();
-                        for i in 0..(n_segments * 4) as u64 {
-                            buf.append(Item {
-                                id: i,
-                                payload: format!("payload-{i}"),
-                            })
-                            .unwrap();
-                        }
+                    let (buf, tmp) = support::open_buffer(4);
+                    for i in 0..(n_segments * 4) as u64 {
+                        buf.append(support::item(i)).unwrap();
                     }
+                    drop(buf); // flush all segments to disk, then drop the handle
                     tmp
                 },
                 |tmp| {
-                    let buf = SegmentBuffer::<Item>::open(
-                        tmp.path(),
-                        SegmentConfig {
-                            max_batch_events: 4,
-                            flush_interval_secs: 3600,
-                            max_size_bytes: u64::MAX,
-                            compression_level: 3,
-                            cipher: None,
-                        },
-                    )
-                    .unwrap();
+                    // Re-open the directory: this is the recovery path being measured.
+                    let buf = SegmentBuffer::<support::Item>::open(tmp.path(), support::config(4))
+                        .unwrap();
                     black_box(buf.pending_count());
                 },
             )

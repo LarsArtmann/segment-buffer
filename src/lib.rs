@@ -27,6 +27,7 @@
 
 mod cipher;
 mod error;
+mod segment;
 
 #[cfg(feature = "encryption")]
 pub use cipher::AesGcmCipher;
@@ -34,7 +35,6 @@ pub use cipher::SegmentCipher;
 pub use error::{Result, SegmentError};
 
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -43,10 +43,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::{debug, info};
 
-const SEGMENT_PREFIX: &str = "seg_";
-const SEGMENT_SUFFIX: &str = ".zst";
-const TMP_SUFFIX: &str = ".tmp";
-const NONCE_LEN: usize = 12;
+use segment::SegmentRange;
 
 /// Configuration knobs for [`SegmentBuffer`].
 pub struct SegmentConfig {
@@ -88,14 +85,11 @@ impl Default for SegmentConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct SegmentRange {
-    start: u64,
-    end: u64,
-}
-
 struct BufferInner<T> {
-    pending: Vec<T>,
+    /// Items buffered in memory, not yet written to a segment file. Drained by
+    /// [`SegmentBuffer::flush`] and rebuilt empty on crash recovery (unflushed
+    /// items do not survive a crash by design).
+    unflushed: Vec<T>,
     next_seq: u64,
     head_seq: u64,
     last_flush: Instant,
@@ -121,11 +115,14 @@ where
     /// Open (or create) a buffer at `dir`, recovering from any existing
     /// segment files.
     ///
+    /// Recovery is **filename-based**: it scans the directory to rebuild
+    /// `head_seq` / `next_seq` and deletes leftover `.tmp` debris. Segment
+    /// *contents* are not read until [`read_from`](Self::read_from), so a
+    /// corrupted segment does not fail here — it fails when read.
+    ///
     /// # Errors
     ///
-    /// Returns [`SegmentError::Io`] if the directory cannot be created or read,
-    /// or [`SegmentError::Cbor`] / [`SegmentError::Integrity`] if recovery
-    /// encounters a corrupted segment.
+    /// Returns [`SegmentError::Io`] if the directory cannot be created or read.
     pub fn open(dir: impl Into<PathBuf>, config: SegmentConfig) -> Result<Self> {
         let dir = dir.into();
         fs::create_dir_all(&dir)?;
@@ -134,7 +131,7 @@ where
             dir,
             config,
             inner: Mutex::new(BufferInner {
-                pending: Vec::new(),
+                unflushed: Vec::new(),
                 next_seq: 0,
                 head_seq: 0,
                 last_flush: Instant::now(),
@@ -157,11 +154,11 @@ where
     pub fn append(&self, event: T) -> Result<u64> {
         let (should_flush, seq) = {
             let mut inner = self.inner.lock();
-            inner.pending.push(event);
+            inner.unflushed.push(event);
             inner.next_seq += 1;
             let seq = inner.next_seq - 1;
 
-            let batch_full = inner.pending.len() >= self.config.max_batch_events;
+            let batch_full = inner.unflushed.len() >= self.config.max_batch_events;
             let interval_elapsed =
                 inner.last_flush.elapsed().as_secs() >= self.config.flush_interval_secs;
             (batch_full || interval_elapsed, seq)
@@ -174,15 +171,15 @@ where
         Ok(seq)
     }
 
-    /// Flush pending items to a segment file. No-op if the pending batch is empty.
+    /// Flush buffered items to a segment file. No-op if nothing is buffered.
     pub fn flush(&self) -> Result<()> {
         let (events, start_seq, end_seq) = {
             let mut inner = self.inner.lock();
             inner.last_flush = Instant::now();
-            if inner.pending.is_empty() {
+            if inner.unflushed.is_empty() {
                 return Ok(());
             }
-            let events = std::mem::take(&mut inner.pending);
+            let events = std::mem::take(&mut inner.unflushed);
             let count = events.len() as u64;
             let end_seq = inner.next_seq - 1;
             let start_seq = end_seq + 1 - count;
@@ -239,8 +236,8 @@ where
         // Phase 2: read from in-memory pending events.
         if result.len() < limit {
             let inner = self.inner.lock();
-            let pending_start = inner.next_seq.saturating_sub(inner.pending.len() as u64);
-            for (i, event) in inner.pending.iter().enumerate() {
+            let pending_start = inner.next_seq.saturating_sub(inner.unflushed.len() as u64);
+            for (i, event) in inner.unflushed.iter().enumerate() {
                 let seq = pending_start + i as u64;
                 if seq < start_seq {
                     continue;
@@ -255,10 +252,20 @@ where
         Ok(result)
     }
 
-    /// Delete all segment files whose items are fully covered by `acked_seq`.
+    /// Delete all on-disk segment files whose items are fully covered by
+    /// `acked_seq`.
     ///
     /// A segment is deleted when its `end_seq <= acked_seq`. Returns the number
     /// of segment files removed.
+    ///
+    /// # Limitation
+    ///
+    /// Acknowledgement only removes **flushed** segment files. Items still held
+    /// in the in-memory pending batch have no segment file to delete, so they
+    /// remain readable (and counted by [`SegmentBuffer::pending_count`]) until
+    /// they are flushed and acknowledged in a later call. `head_seq` is clamped
+    /// so it never advances past the pending window, keeping the backlog count
+    /// honest.
     pub fn delete_acked(&self, acked_seq: u64) -> Result<usize> {
         let segments = self.scan_segments()?;
         let mut deleted = 0;
@@ -287,7 +294,14 @@ where
         {
             let mut inner = self.inner.lock();
             inner.approx_disk_bytes = inner.approx_disk_bytes.saturating_sub(freed_bytes);
-            inner.head_seq = new_head.unwrap_or(inner.next_seq);
+            // `head_seq` tracks the oldest unacked sequence. Clamp it to the
+            // start of the in-memory pending window: items still waiting to be
+            // flushed cannot be acknowledged (there is no segment file to
+            // delete), so head_seq must not advance past them. Without this
+            // clamp, acknowledging past a buffer that still holds unflushed
+            // items would make `pending_count` under-report the real backlog.
+            let pending_start = inner.next_seq.saturating_sub(inner.unflushed.len() as u64);
+            inner.head_seq = new_head.unwrap_or(inner.next_seq).min(pending_start);
         }
 
         if deleted > 0 {
@@ -335,20 +349,9 @@ where
     // -----------------------------------------------------------------------
 
     fn recover(&self) -> Result<()> {
-        for entry in fs::read_dir(&self.dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().ends_with(TMP_SUFFIX))
-            {
-                let _ = fs::remove_file(&path);
-                debug!(path = ?path, "Cleaned up incomplete segment from crash");
-            }
-        }
+        segment::clean_tmp(&self.dir)?;
 
-        let mut segments = self.scan_segments()?;
-        segments.sort_by_key(|s| s.start);
+        let segments = self.scan_segments()?;
 
         let mut inner = self.inner.lock();
         let total_bytes: u64 = segments
@@ -357,12 +360,15 @@ where
             .map(|m| m.len())
             .sum();
 
-        if segments.is_empty() {
-            inner.next_seq = 0;
-            inner.head_seq = 0;
-        } else {
-            inner.head_seq = segments.first().unwrap().start;
-            inner.next_seq = segments.last().unwrap().end + 1;
+        match (segments.first(), segments.last()) {
+            (Some(first), Some(last)) => {
+                inner.head_seq = first.start;
+                inner.next_seq = last.end + 1;
+            }
+            _ => {
+                inner.next_seq = 0;
+                inner.head_seq = 0;
+            }
         }
         inner.approx_disk_bytes = total_bytes;
 
@@ -378,88 +384,26 @@ where
     }
 
     fn write_segment(&self, start: u64, end: u64, events: &[T]) -> Result<u64> {
-        let mut cbor_buf = Vec::new();
-        ciborium::into_writer(events, &mut cbor_buf)
-            .map_err(|e| SegmentError::Cbor(format!("serialization: {e}")))?;
-
-        let compressed = zstd::encode_all(cbor_buf.as_slice(), self.config.compression_level)?;
-
-        let final_bytes = if let Some(ref cipher) = self.config.cipher {
-            cipher.encrypt(&compressed)?
-        } else {
-            compressed
-        };
-        let final_len = final_bytes.len() as u64;
-
-        let seg_name = segment_filename(start, end);
-        let seg_path = self.dir.join(&seg_name);
-        let tmp_path = self.dir.join(format!("{seg_name}{TMP_SUFFIX}"));
-
-        {
-            let mut file = fs::File::create(&tmp_path)?;
-            file.write_all(&final_bytes)?;
-            file.sync_all()?;
-        }
-
-        fs::rename(&tmp_path, &seg_path)?;
-        Ok(final_len)
+        segment::write(
+            &self.dir,
+            self.config.cipher.as_deref(),
+            self.config.compression_level,
+            SegmentRange { start, end },
+            events,
+        )
     }
 
     fn read_segment(&self, seg: SegmentRange) -> Result<Vec<T>> {
-        let path = self.segment_path(seg.start, seg.end);
-        let raw = fs::read(&path)?;
-
-        let compressed = if let Some(ref cipher) = self.config.cipher {
-            if raw.len() < NONCE_LEN {
-                return Err(SegmentError::Integrity(format!(
-                    "segment {} too small for nonce",
-                    path.display()
-                )));
-            }
-            cipher.decrypt(&raw)?
-        } else {
-            raw
-        };
-
-        let cbor_buf = zstd::decode_all(compressed.as_slice())?;
-        let events: Vec<T> = ciborium::from_reader(cbor_buf.as_slice())
-            .map_err(|e| SegmentError::Cbor(format!("deserialization: {e}")))?;
-        Ok(events)
+        segment::read(&self.dir, self.config.cipher.as_deref(), seg)
     }
 
     fn scan_segments(&self) -> Result<Vec<SegmentRange>> {
-        let mut segments = Vec::new();
-        for entry in fs::read_dir(&self.dir)? {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if let Some(range) = parse_segment_filename(&name_str) {
-                segments.push(range);
-            }
-        }
-        segments.sort_by_key(|s| s.start);
-        Ok(segments)
+        segment::scan(&self.dir)
     }
 
     fn segment_path(&self, start: u64, end: u64) -> PathBuf {
-        self.dir.join(segment_filename(start, end))
+        self.dir.join(segment::filename(start, end))
     }
-}
-
-/// Build the segment filename for a given range.
-fn segment_filename(start: u64, end: u64) -> String {
-    format!("{SEGMENT_PREFIX}{start:012}_{end:012}{SEGMENT_SUFFIX}")
-}
-
-/// Parse `seg_{start:012}_{end:012}.zst` → `SegmentRange`.
-fn parse_segment_filename(name: &str) -> Option<SegmentRange> {
-    let core = name
-        .strip_prefix(SEGMENT_PREFIX)?
-        .strip_suffix(SEGMENT_SUFFIX)?;
-    let (start_str, end_str) = core.split_once('_')?;
-    let start = start_str.parse().ok()?;
-    let end = end_str.parse().ok()?;
-    Some(SegmentRange { start, end })
 }
 
 #[cfg(test)]

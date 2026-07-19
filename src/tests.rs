@@ -21,33 +21,25 @@ fn test_item(n: u64) -> TestItem {
 
 type TestBuffer = SegmentBuffer<TestItem>;
 
+/// Shared test config: small batch, auto-flush effectively disabled. Only
+/// `max_size_bytes` varies between tests, so it is the single parameter.
+fn test_config(max_size_bytes: u64) -> SegmentConfig {
+    SegmentConfig {
+        max_batch_events: 4,
+        flush_interval_secs: 3600,
+        max_size_bytes,
+        compression_level: 3,
+        cipher: None,
+    }
+}
+
 fn test_buffer(dir: &Path) -> TestBuffer {
-    SegmentBuffer::open(
-        dir,
-        SegmentConfig {
-            max_batch_events: 4,
-            flush_interval_secs: 3600,
-            max_size_bytes: 1024 * 1024,
-            compression_level: 3,
-            cipher: None,
-        },
-    )
-    .expect("Failed to create buffer")
+    SegmentBuffer::open(dir, test_config(1024 * 1024)).expect("Failed to create buffer")
 }
 
 /// Buffer with max_size_bytes=1000 so pressure percentages are exact.
 fn pressure_test_buffer(dir: &Path) -> TestBuffer {
-    SegmentBuffer::open(
-        dir,
-        SegmentConfig {
-            max_batch_events: 4,
-            flush_interval_secs: 3600,
-            max_size_bytes: 1000,
-            compression_level: 3,
-            cipher: None,
-        },
-    )
-    .expect("Failed to create pressure-test buffer")
+    SegmentBuffer::open(dir, test_config(1000)).expect("Failed to create pressure-test buffer")
 }
 
 fn set_disk_bytes<T>(buf: &SegmentBuffer<T>, bytes: u64) {
@@ -61,16 +53,18 @@ fn set_disk_bytes<T>(buf: &SegmentBuffer<T>, bytes: u64) {
 
 #[test]
 fn parse_filename_roundtrip() {
-    let range = parse_segment_filename("seg_000000000000_000000000255.zst").unwrap();
+    use super::segment::parse_filename;
+
+    let range = parse_filename("seg_000000000000_000000000255.zst").unwrap();
     assert_eq!(range.start, 0);
     assert_eq!(range.end, 255);
 
-    let range = parse_segment_filename("seg_000000001000_000000001099.zst").unwrap();
+    let range = parse_filename("seg_000000001000_000000001099.zst").unwrap();
     assert_eq!(range.start, 1000);
     assert_eq!(range.end, 1099);
 
-    assert!(parse_segment_filename("not_a_segment").is_none());
-    assert!(parse_segment_filename("seg_000000000000.zst").is_none());
+    assert!(parse_filename("not_a_segment").is_none());
+    assert!(parse_filename("seg_000000000000.zst").is_none());
 }
 
 // =========================================================================
@@ -176,6 +170,32 @@ fn delete_acked_all() {
     let deleted = buf.delete_acked(3).unwrap();
     assert_eq!(deleted, 1);
     assert_eq!(buf.pending_count(), 0);
+}
+
+#[test]
+fn delete_acked_with_unflushed_pending_keeps_backlog_honest() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let buf = test_buffer(dir);
+
+    // Two items stay in memory: max_batch_events is 4, no auto-flush fires.
+    buf.append(test_item(0)).unwrap();
+    buf.append(test_item(1)).unwrap();
+    assert_eq!(buf.pending_count(), 2);
+
+    // Consumer reads them from memory, then acks past them. There is no
+    // segment file to remove, so deleted == 0.
+    let deleted = buf.delete_acked(100).unwrap();
+    assert_eq!(deleted, 0, "Nothing was flushed, so no segment is removed");
+
+    // The unflushed items remain in the backlog and are still readable.
+    assert_eq!(
+        buf.pending_count(),
+        2,
+        "Unflushed items must stay counted until flushed + acknowledged"
+    );
+    let events = buf.read_from(0, 100).unwrap();
+    assert_eq!(events.len(), 2);
 }
 
 #[test]
@@ -296,17 +316,7 @@ fn roundtrip_preserves_event_data() {
 #[test]
 fn store_pressure_returns_0_when_no_limit() {
     let tmp = TempDir::new().unwrap();
-    let buf: TestBuffer = SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            max_batch_events: 4,
-            flush_interval_secs: 3600,
-            max_size_bytes: 0,
-            compression_level: 3,
-            cipher: None,
-        },
-    )
-    .expect("create buffer");
+    let buf: TestBuffer = SegmentBuffer::open(tmp.path(), test_config(0)).expect("create buffer");
     assert_eq!(buf.store_pressure(), 0.0);
     assert!(!buf.is_overloaded());
 }
@@ -314,17 +324,7 @@ fn store_pressure_returns_0_when_no_limit() {
 #[test]
 fn store_pressure_bounded_at_1_0_when_disk_exceeds_limit() {
     let tmp = TempDir::new().unwrap();
-    let buf: TestBuffer = SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            max_batch_events: 4,
-            flush_interval_secs: 3600,
-            max_size_bytes: 1,
-            compression_level: 3,
-            cipher: None,
-        },
-    )
-    .expect("create buffer");
+    let buf: TestBuffer = SegmentBuffer::open(tmp.path(), test_config(1)).expect("create buffer");
     set_disk_bytes(&buf, 999_999_999);
     let pressure = buf.store_pressure();
     assert!(

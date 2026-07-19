@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `FEATURES.md` — honest feature inventory by status, the canonical answer to "what does this crate do?".
+- `ROADMAP.md` — long-term direction (async I/O, ChaCha20-Poly1305, pluggable segment store, fuzzing) and explicit non-goals.
+- `flake.nix` — reproducible devShell with `zstd`, `pkg-config`, and the Rust toolchain (`nix develop`).
+- Shared `benches/support.rs` module consolidating the benchmark `Item`, config, and open helper previously duplicated across all four criterion targets.
+
+### Changed
+
+- Extracted `src/segment.rs`: the on-disk format (filename contract, CBOR→zstd→cipher encode/decode pipeline, segment scan, tmp cleanup) now lives in its own module. `SegmentBuffer` focuses purely on in-memory orchestration and locking. No public API change.
+- Renamed the private `BufferInner::pending` field to `unflushed` for precision: it holds items not yet written to a segment file, distinct from the public `pending_count()` backlog metric.
+- Crash recovery no longer sorts segments twice or uses guarded `unwrap()`s; the first/last lookup uses explicit pattern matching.
+
+### Fixed
+
+- `delete_acked(acked_seq)` no longer under-reports `pending_count()` when called while items are still buffered in memory. `head_seq` is now clamped to the in-memory window so the backlog count stays honest even when the ack cannot remove unflushed items (they have no segment file to delete). The limitation that acks only take effect on flushed segments is now documented on the method.
+
 ## [0.1.0] - 2026-07-19
 
 ### Added
