@@ -73,3 +73,7 @@ harness = false
 [[bench]]
 name = "bench_stats"
 harness = false
+
+[[bench]]
+name = "bench_read_vs_for_each"
+harness = false

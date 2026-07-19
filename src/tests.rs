@@ -42,8 +42,8 @@ fn pressure_test_buffer(dir: &Path) -> TestBuffer {
 }
 
 fn set_disk_bytes<T>(buf: &SegmentBuffer<T>, bytes: u64) {
-    let mut inner = buf.inner.lock();
-    inner.approx_disk_bytes = bytes;
+    buf.approx_disk_bytes
+        .store(bytes, std::sync::atomic::Ordering::Relaxed);
 }
 
 // =========================================================================
