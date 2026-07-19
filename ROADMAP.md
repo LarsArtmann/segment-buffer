@@ -36,13 +36,13 @@ stores. The filename contract would remain the recovery source of truth.
 
 ### 4. Fuzzing & integrity
 
-- A `cargo-fuzz` scaffold exists (`fuzz/fuzz_corrupted_read`, `fuzz/fuzz_recovery`) and is CI-runnable via proptest analogues, but the libfuzzer harness itself has not yet been run and is not in CI (decision pending: required job / nightly / manual). Deeper fuzz targets (envelope edge cases, `parse_filename` over arbitrary UTF-8) are still outstanding.
+- A `cargo-fuzz` scaffold exists (`fuzz/fuzz_corrupted_read`, `fuzz/fuzz_recovery`) and was verified locally on 2026-07-19 via the Nix `devShells.fuzz` (nightly + `libfuzzer-sys`): `fuzz_corrupted_read` ran 187,811 cases / 60s (392 coverage blocks, zero crashes), `fuzz_recovery` ran 942,719 cases / 60s (zero crashes). CI integration (nightly scheduled workflow) is the next step; CI proptest analogues run on every `cargo test` in the meantime. Deeper fuzz targets (envelope edge cases, `parse_filename` over arbitrary UTF-8) are still outstanding.
 - Optional checksum (e.g. Blake3) per segment for detecting bit-rot distinct from cipher authentication failures.
 
 ### 5. Observability
 
-- The `stats()` accessor shipped in v0.2.0 as a single-lock `BufferStats` snapshot (pending/latest/head/next seq + disk bytes + pressure). Richer per-segment metrics (segment count, per-segment size histogram) are still future work.
-- Structured recovery summary (segments found, bytes, head/next seq) is already logged; a returned `RecoveryReport` for programmatic use is planned for v0.3.0 (see TODO_LIST.md).
+- The `stats()` accessor shipped in v0.2.0 as a single-lock `BufferStats` snapshot (pending/latest/head/next seq + disk bytes + pressure). v0.3.0 added the `benches/bench_stats.rs` micro-bench proving `stats()` (~12 ns) beats three individual accessors (~31 ns). Richer per-segment metrics (segment count, per-segment size histogram) are still future work.
+- Structured recovery summary (segments found, bytes, head/next seq) is already logged; a returned `RecoveryReport` for programmatic use is deferred to v0.4.0 (see TODO_LIST.md).
 
 ## Non-goals (by design)
 

@@ -22,16 +22,19 @@ under-delivered or skipped. These do not require a release; do them on `HEAD`.
 
 ---
 
-## v0.3.0 (next breaking release)
+## v0.4.0 (next breaking release)
 
-These are breaking changes; batch them so users upgrade once.
+These breaking API improvements were originally floated for v0.3.0 but deferred
+to v0.4.0 so that v0.3.0 could be a minimal "close the v0.2.0 debt" release.
+They are batched so users upgrade once. Design principle: each one must be
+prototyped + benched before adoption; reject the ones that don't pay rent.
 
-- [ ] **`SegmentConfig::builder()`** with defaults — replace the public-field struct with a builder so new fields don't break callers.
-- [ ] **`flush_interval: Duration`** instead of `flush_interval_secs: u64` — idiomatic, composable.
+- [ ] **`SegmentConfig::builder()`** with defaults — replace the public-field struct with a builder so new fields don't break callers. Now that the struct is `#[non_exhaustive]` (v0.3.0), the builder is ergonomic debt, not semver debt — but downstream code is paying for it today via the `Default + field reassignment` workaround.
+- [ ] **`flush_interval: Duration`** instead of `flush_interval_secs: u64` — idiomatic, composable, plays well with `humantime`.
 - [ ] **`RecoveryReport` returned from `open()`** — segments found, bytes, head/next seq, time spent. Today this is logged but not returned.
 - [ ] **`FlushPolicy` enum** (Batch / Interval / Manual) to replace the two `SegmentConfig` fields that silently combine.
 - [ ] **Typed `SegmentError::Io`** — currently bare `#[from] io::Error` drops path context.
-- [ ] **Consider `SegmentCipher` → `SegmentAead` rename** — the trait is specifically AEAD-shaped (self-describing nonce-in-band); the name lies slightly.
+- [ ] **Consider `SegmentCipher` → `SegmentAead` rename** — the trait is specifically AEAD-shaped (self-describing nonce-in-band); the name lies slightly. Decision task: rename, or document the AEAD-only intent and keep the name.
 - [x] **`#[non_exhaustive]` on `BufferStats`** — added in v0.3.0; `SegmentConfig` too. Construction-by-literal is no longer part of the public API; downstream consumers use `Default + field reassignment` or (future) the `SegmentConfig::builder()` once v0.4.0 lands.
 - [x] **`#[non_exhaustive]` on `SegmentConfig`** — same class of debt, closed in the same v0.3.0 batch.
 
