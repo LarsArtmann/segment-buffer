@@ -94,7 +94,7 @@ Deferred breaking changes — batch them so users upgrade once.
 - [ ] **Loom test for `delete_acked` + `append` interleaving** — requires abstracting I/O behind a trait loom can mock; real engineering work.
 - [ ] **`#[track_caller]`** on panicking paths (defensive — the re-entrancy guard is the only panic today).
 - [ ] **Consider `RwLock` for read-heavy workloads** — `read_from` is read-only; `append`/`flush`/`delete_acked` write. Measure first.
-- [x] **Stress test: 8 writers × 2 readers × 80k events with throughput reporting** — added v0.4.1; baseline captured v0.4.2.
+- [x] **Stress test: 8 writers × 2 readers × 80k events with throughput reporting** — added v0.4.1; baseline captured v0.4.2. Fixed v0.4.3: switched to `FlushPolicy::Manual` to avoid creating 20 000 segment files that hung CI.
 - [ ] **Stress test: 16 writers × 4 readers × 1M events with p50/p99 latency histogram** — today's stress test reports throughput only, not latency distribution.
 
 ## Format & storage
@@ -123,7 +123,6 @@ Deferred breaking changes — batch them so users upgrade once.
 - [x] **`docs/CIPHERS.md`** — AES-GCM internals + ChaCha20-Poly1305 + no-op cipher worked examples. Added v0.4.2.
 - [x] **Copywriting pass** on `Cargo.toml` `description`. Done v0.4.2.
 - [ ] **Skill-contract debt** — produce the HTML artifacts required by the `code-quality-scan`, `architecture-review`, `full-code-review`, and `nix-flake-migration` skills (or explicitly renegotiate them).
-- [ ] **Envelope v2 design doc** — sketch the migration path for when v2 lands.
 
 ## CI / tooling
 
@@ -137,8 +136,8 @@ Deferred breaking changes — batch them so users upgrade once.
 - [x] **MSRV pin in flake** — done v0.4.1 (packages.default now uses 1.85).
 - [x] **CI `loom` job** — done v0.4.2.
 - [ ] **macOS flake verification** (`aarch64-darwin`, `x86_64-darwin`) — flake check only runs on x86_64-linux today.
-- [ ] **Sign commits** — tags are signed; commits are not. Add `sign-commit = true` to git config.
-- [ ] **Add publish-on-tag workflow** triggered by `v*` tags (requires `CARGO_REGISTRY_TOKEN` secret).
+- [ ] **Sign commits** — `sign-commit = true` is set in `release.toml` and `commit.gpgsign = true` in git config, but SSH signing fails: `gpg.ssh.allowedSignersFile` is not configured. Tags are signed; regular commits are not.
+- [x] **Add publish-on-tag workflow** triggered by `v*` tags — done v0.4.2 (`.github/workflows/publish.yml`). Dormant until `CARGO_REGISTRY_TOKEN` secret is set.
 
 ## Investigation
 
@@ -151,5 +150,4 @@ Deferred breaking changes — batch them so users upgrade once.
 ## Crates.io publishing
 
 - [x] **crates.io API token configured** locally; works for manual `cargo publish`.
-- [ ] **Set up a crates.io API token** in GitHub Actions secrets for automated publishing on tag.
-- [ ] **Add publish-on-tag workflow** triggered by `v*` tags.
+- [ ] **Set up a crates.io API token** in GitHub Actions secrets for automated publishing on tag (`CARGO_REGISTRY_TOKEN` — the `publish.yml` workflow is dormant without it).
