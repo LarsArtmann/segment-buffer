@@ -24,7 +24,7 @@ const SEGMENT_PREFIX: &str = "seg_";
 /// Filename suffix for finalized, zstd-compressed segment files.
 const SEGMENT_SUFFIX: &str = ".zst";
 /// Suffix for in-progress writes, treated as crash debris on recovery.
-pub(super) const TMP_SUFFIX: &str = ".tmp";
+const TMP_SUFFIX: &str = ".tmp";
 /// Bytes of the AEAD nonce prefix written by [`SegmentCipher`] implementations
 /// such as AES-256-GCM. Ciphertexts shorter than this cannot be valid.
 const NONCE_LEN: usize = 12;
