@@ -54,6 +54,10 @@ workflow-audit-log.*
 /coverage
 reports/
 
+## Nix
+.envrc
+.direnv/
+
 ## Rust
 *.pdb
 # <<< buildflow-managed (.gitignore) <<<
