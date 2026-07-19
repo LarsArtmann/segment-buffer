@@ -17,7 +17,8 @@
 //! `iter_batched_ref` would conflate the N append costs into the read
 //! measurement, which is wrong for a read-only bench.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 #[path = "support.rs"]
 mod support;
 

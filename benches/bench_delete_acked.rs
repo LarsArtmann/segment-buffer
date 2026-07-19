@@ -1,6 +1,7 @@
 //! Benchmark: delete_acked throughput after populating segments.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 #[path = "support.rs"]
 mod support;
 

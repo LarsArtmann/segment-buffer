@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call it — re-entrancy panics now point to the user's callback code instead of
   the internal guard function.
 
+### Changed
+- **aes-gcm 0.10 → 0.11**: `Nonce::from_slice` → `Nonce::from` / `try_into`
+  (upstream deprecation). No public API change.
+- **rand 0.8 → 0.9**: `thread_rng()` → `rng()` (upstream rename). No public API
+  change.
+- **criterion 0.5 → 0.8** (dev-only): `criterion::black_box` → `std::hint::black_box`
+  (upstream deprecation).
+- **GitHub Actions**: bumped all workflows to latest major versions
+  (`actions/checkout` v4→v7, `actions/upload-artifact` v4→v7,
+  `peter-evans/create-pull-request` v6→v8, `cachix/install-nix-action` v27→v31,
+  `cachix/cachix-action` v15→v17).
+
 ## [0.4.2] - 2026-07-19
 
 The "process debt + semver-leak closure" release. All changes are additive or

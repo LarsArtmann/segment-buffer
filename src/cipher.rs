@@ -260,12 +260,12 @@ mod private {
             use rand::RngCore;
 
             let mut nonce_bytes = [0u8; 12];
-            rand::thread_rng().fill_bytes(&mut nonce_bytes);
-            let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
+            rand::rng().fill_bytes(&mut nonce_bytes);
+            let nonce = aes_gcm::Nonce::from(nonce_bytes);
 
             let ciphertext = self
                 .cipher
-                .encrypt(nonce, plaintext)
+                .encrypt(&nonce, plaintext)
                 .map_err(|e| wrap("AES-GCM encryption failed", e))?;
 
             let mut out = Vec::with_capacity(12 + ciphertext.len());
@@ -281,10 +281,13 @@ mod private {
                 return Err(CipherError::msg("ciphertext too small for nonce prefix"));
             }
             let (nonce_bytes, encrypted) = ciphertext.split_at(12);
-            let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
+            let nonce: [u8; 12] = nonce_bytes
+                .try_into()
+                .map_err(|_| CipherError::msg("invalid nonce length: expected 12 bytes"))?;
+            let nonce = aes_gcm::Nonce::from(nonce);
 
             self.cipher
-                .decrypt(nonce, encrypted)
+                .decrypt(&nonce, encrypted)
                 .map_err(|e| wrap("AES-GCM decryption failed", e))
         }
     }

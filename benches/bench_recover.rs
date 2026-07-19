@@ -1,7 +1,8 @@
 //! Benchmark: crash recovery throughput — `SegmentBuffer::open()` on a
 //! directory with pre-existing segment files.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 #[path = "support.rs"]
 mod support;
 
