@@ -172,6 +172,8 @@ for any future agent (or human) working in this repo.
 4. **Run the verification gate before declaring work done.** `cargo fmt --all -- --check` + `cargo clippy --all-targets --features encryption -- -D warnings` + `cargo test --no-fail-fast --features encryption` + `cargo doc --no-deps --features encryption`. Any claim that "tests pass" or "the build is green" must rest on a literal run of these in the current session, with the exit codes captured.
 5. **The supply-chain gate is BOTH `cargo audit` AND `cargo deny check`.** They pull from different advisory sources in edge cases. Running only one is not equivalent to running both. The CI `supply-chain` job runs both; the local pre-commit gate must too.
 6. **The loom gate is `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.** Files gated by `#![cfg(loom)]` are invisible to `cargo test` by default and silently rot without this explicit invocation. The CI `loom` job enforces it.
+7. **Concurrency tests must use `FlushPolicy::Manual`.** With `Batch(4)` the stress test creates 20 000 segment files (80 000 items / 4), causing pathological I/O under parallel test execution that hung CI for hours. `Manual` keeps items in-memory so the test stresses mutex contention, not the filesystem.
+8. **Doctests that need `--features encryption` must be cfg-gated.** A `rust,no_run` code fence referencing `AesGcmCipher` fails to compile under `cargo test` (default features). Use the hidden `#[cfg(feature = "encryption")] fn main() {}` pattern — see the README encryption example.
 
 ### Session-end checklist
 
