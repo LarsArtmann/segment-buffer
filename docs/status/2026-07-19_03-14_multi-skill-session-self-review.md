@@ -8,6 +8,8 @@
 
 Real correctness bug fixed, module split landed, missing docs created, reproducible Nix build added and verified hermetically. **But:** several skills were executed only superficially, three skills' required output artifacts (HTML reports, inline health report) were silently skipped, and the depth of review (naming, data-model, full-code) was shallower than the skill descriptions demand. Treat the "completed" checklist from the live session as optimistic — see §a vs §b.
 
+> **Update 2026-07-19 (commits `e09f84c`, `fe81dd2`, `e15c0b6`):** many §b/§c items resolved in subsequent sessions — the `recover()` lock-across-I/O (§b.4), static `Send+Sync` assertion (§f.11), `#[must_use]` sweep (§f.12), `stats()`/`BufferStats` (§f.22), `len`/`is_empty` (§f.44), typed errors (§b.2), property tests (§f.14). The skill-contract HTML artifacts (§c) and Loom test (§f.16) remain open. Full item-by-item status in [Resolution (2026-07-19)](#resolution-2026-07-19) at the bottom.
+
 ---
 
 ## a) FULLY DONE (verified green: fmt + clippy + 27+2 tests + rustdoc + hermetic nix build)
@@ -161,54 +163,39 @@ Real correctness bug fixed, module split landed, missing docs created, reproduci
 ## Resolution (2026-07-19)
 
 This report covers the multi-skill session that landed as `522de63` (Nix flake,
-`segment.rs` split, FEATURES/ROADMAP). Two further sessions shipped on the same
-day — the superb-tier format-envelope session (`e09f84c`) and the v0.2.0 cut
-(`fe81dd2`) — and resolved many of the items below. This appendix records, for
-a reader who opens this old report, which findings shipped and which are still
-open. Cross-references are to `TODO_LIST.md` line numbers as of `fe81dd2`.
+`segment.rs` split, FEATURES/ROADMAP). Three subsequent sessions shipped on the
+same day — `e09f84c` (superb-tier envelope), `fe81dd2` (v0.2.0 cut), `e15c0b6`
+(docs sweep) — and resolved many items below. Item-by-item status:
 
-### Shipped in subsequent commits
+### Findings resolved
 
-- **§b.4 full-code-review gaps:** the `recover()` lock-across-I/O finding — fixed
-  in `fe81dd2` (metadata loop now runs before the mutex is taken). The static
-  `Send + Sync` assertion — added in `fe81dd2` (`src/lib.rs`). The
-  `#[must_use]` attributes — added in `fe81dd2` on `latest_sequence`,
-  `pending_count`, `store_pressure`, `is_overloaded`, plus `len`/`is_empty`/
-  `stats`.
-- **§b.2 data-model:** typed `SegmentError` variants with `{path, phase, ..}`
-  landed in `e09f84c`; `SegmentRange::new(start, end)` with `debug_assert!`
-  invariant landed in `fe81dd2`.
-- **§e.9 / §e.10 / §e.11 / §f.11 / §f.12:** static `Sync`/`Send` assertions,
-  `#[must_use]` attributes, and `#[track_caller]` consideration — the first two
-  shipped in `fe81dd2`; `#[track_caller]` stays deferred (TODO_LIST line 24).
-- **§f.21 RecoveryReport** — still planned (TODO_LIST line 16, v0.3.0 batch).
-- **§f.22 Stats / `snapshot()` accessor** — shipped in `fe81dd2` as `stats()` →
-  `BufferStats` (single-lock snapshot of pending/latest/head/next seq + disk
-  bytes + pressure).
-- **§f.44 `len()` / `is_empty()`** — shipped in `fe81dd2`.
-- **§f.14 property tests** — 8 properties now run on every `cargo test`
-  (filename bijection, payload bijection, envelope identity, encrypted
-  roundtrip with varied key, corrupted-segment/recovery fuzz analogues).
+| Item          | Claim in report                                             | Resolution                                                                                                                                            | Commit                | Release |
+| ------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------- |
+| §b.2          | Data-model reflection not done; errors still stringly-typed | Typed `SegmentError` variants `{path, phase, ..}` + `SegmentRange::new(start, end)` with `debug_assert!`                                              | `e09f84c` + `fe81dd2` | v0.2.0  |
+| §b.4          | `recover()` holds lock across `fs::metadata` loop           | FIXED: metadata I/O now runs before mutex; lock held only to publish state                                                                            | `fe81dd2`             | v0.2.0  |
+| §e.9 / §f.11  | No static `Sync`/`Send` assertion                           | Shipped: `const fn assert_send_sync` in `src/lib.rs`                                                                                                  | `fe81dd2`             | v0.2.0  |
+| §e.10 / §f.12 | No `#[must_use]` on accessors                               | Shipped on `latest_sequence`/`pending_count`/`len`/`is_empty`/`store_pressure`/`is_overloaded`/`stats`                                                | `fe81dd2`             | v0.2.0  |
+| §f.14         | No property tests                                           | 8 properties run on every `cargo test` (filename/payload/envelope bijections, encrypted roundtrip with varied key, corrupted/recovery fuzz analogues) | `e09f84c` + `fe81dd2` | v0.2.0  |
+| §f.22         | No `stats()`/`snapshot()` accessor                          | Shipped as `stats()` → `BufferStats` (single-lock snapshot)                                                                                           | `fe81dd2`             | v0.2.0  |
+| §f.44         | No `len()` / `is_empty()` standard methods                  | Shipped as aliases of `pending_count()`                                                                                                               | `fe81dd2`             | v0.2.0  |
 
-### Still open (tracked in TODO_LIST.md)
+### Still open
 
-- **§c skill-contract HTML artifacts** (code-quality-scan, architecture-review,
-  nix-flake-migration, full-code-review) — still not produced; tracked at
-  TODO_LIST line 63 (negotiate-or-produce).
-- **§e.8 / §f.35 doc-test depth** — `#![doc = include_str!("../README.md")]`
-  on the crate root still deferred (TODO_LIST line 59).
-- **§f.16 Loom test** — still PLANNED (TODO_LIST line 23).
-- **§f.18 MSRV pin in flake** — still open (TODO_LIST line 54).
-- **§f.43 tightness of `T: 'static`** — under investigation (TODO_LIST line 73).
-- **§f.49 Nix CI workflow** — still open (TODO_LIST line 53).
+| Item          | Claim in report                                          | Current status                         | Where tracked                         |
+| ------------- | -------------------------------------------------------- | -------------------------------------- | ------------------------------------- |
+| §c.1–c.6      | Skill-contract HTML artifacts (4 skills)                 | STILL NOT PRODUCED                     | TODO_LIST "Skill-contract debt"       |
+| §e.8 / §f.35  | Doc-test depth; `#![doc = include_str!("../README.md")]` | STILL DEFERRED                         | TODO_LIST "Docs & polish"             |
+| §e.13 / §f.13 | `#[track_caller]` on panicking paths                     | STILL DEFERRED (defensive; none today) | TODO_LIST "Concurrency & provability" |
+| §f.16         | Loom concurrency test                                    | STILL PLANNED                          | TODO_LIST "Concurrency & provability" |
+| §f.18         | MSRV pin in flake (1.85 overlay)                         | STILL OPEN                             | TODO_LIST "Observability & ops"       |
+| §f.21         | `RecoveryReport` from `open()`                           | STILL PLANNED                          | TODO_LIST "v0.3.0 batch"              |
+| §f.43         | Tighten `T: 'static`                                     | UNDER INVESTIGATION                    | TODO_LIST "Investigation"             |
+| §f.49         | Nix CI workflow (`.github/workflows/nix.yml`)            | STILL OPEN                             | TODO_LIST "Observability & ops"       |
 
-### Questions in §g — current status
+### §g questions — resolved vs open
 
-- **Q1 (skill artifacts):** still open. The HTML artifacts have not been
-  produced retroactively; TODO_LIST line 63 records the negotiate-or-produce
-  decision as pending.
-- **Q2 (Cargo.lock committed):** **decided.** `Cargo.lock` stays committed for
-  reproducible Nix builds; documented in `AGENTS.md` ("CI / MSRV" section).
-- **Q3 (MSRV pin in flake):** still open. The flake still uses nixpkgs stable
-  Rust; MSRV verification currently relies on the GitHub Actions `msrv` job
-  only. TODO_LIST line 54.
+| Q   | Topic                         | Status         | Decision                                                                       |
+| --- | ----------------------------- | -------------- | ------------------------------------------------------------------------------ |
+| Q1  | Skill-contract HTML artifacts | **Still open** | Not produced retroactively; negotiate-or-produce decision pending              |
+| Q2  | `Cargo.lock` committed        | **Decided**    | Stays committed for reproducible Nix builds; documented in AGENTS.md           |
+| Q3  | MSRV pin in flake             | **Still open** | Flake uses nixpkgs stable; MSRV verification relies on GitHub Actions job only |
