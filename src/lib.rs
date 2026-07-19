@@ -85,6 +85,36 @@ impl Default for SegmentConfig {
     }
 }
 
+/// Point-in-time snapshot of buffer state, captured atomically under a single
+/// lock acquisition so all fields are mutually consistent.
+///
+/// Returned by [`SegmentBuffer::stats`]. Useful for metrics endpoints or
+/// dashboards that need to observe multiple values without paying for several
+/// lock/unlock round-trips (and risking a torn read between calls).
+#[derive(Debug, Clone)]
+pub struct BufferStats {
+    /// Items waiting in the buffer (on-disk + in-memory pending).
+    /// Same value as [`SegmentBuffer::pending_count`].
+    pub pending_count: u64,
+    /// Highest sequence number assigned (or `0` if the buffer is empty).
+    /// Same value as [`SegmentBuffer::latest_sequence`].
+    pub latest_sequence: u64,
+    /// Oldest unacknowledged sequence number (`head_seq`).
+    pub head_sequence: u64,
+    /// Next sequence number that will be assigned by the next successful
+    /// [`SegmentBuffer::append`] (`next_seq`).
+    pub next_sequence: u64,
+    /// Approximate total bytes used by segment files on disk. Decreases when
+    /// [`SegmentBuffer::delete_acked`] removes files.
+    pub approx_disk_bytes: u64,
+    /// Configured ceiling on disk usage (`max_size_bytes`). `0` disables the
+    /// limit; in that case [`store_pressure`](Self::store_pressure) is `0.0`.
+    pub max_size_bytes: u64,
+    /// `approx_disk_bytes / max_size_bytes`, clamped to `[0.0, 1.0]`.
+    /// `0.0` when no limit is configured.
+    pub store_pressure: f32,
+}
+
 struct BufferInner<T> {
     /// Items buffered in memory, not yet written to a segment file. Drained by
     /// [`SegmentBuffer::flush`] and rebuilt empty on crash recovery (unflushed
@@ -427,6 +457,7 @@ where
     /// assert_eq!(buf.latest_sequence(), 1);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[must_use = "the sequence number is meaningless if discarded"]
     pub fn latest_sequence(&self) -> u64 {
         let inner = self.inner.lock();
         if inner.next_seq == 0 {
@@ -461,9 +492,57 @@ where
     /// assert_eq!(buf.pending_count(), 0);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[must_use = "the backlog size is meaningless if discarded"]
     pub fn pending_count(&self) -> u64 {
         let inner = self.inner.lock();
         inner.next_seq.saturating_sub(inner.head_seq)
+    }
+
+    /// Standard [`len`](#method.len) alias for [`pending_count`](Self::pending_count).
+    ///
+    /// Provided so `SegmentBuffer` reads like a normal collection at the call
+    /// site (`buf.len()`, `buf.is_empty()`). Same value as `pending_count()`,
+    /// kept as `u64` because the buffer is proven beyond `usize::MAX` on
+    /// 32-bit targets (597M+ events in monitor365).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// assert!(buf.is_empty());
+    /// buf.append(7)?;
+    /// assert_eq!(buf.len(), 1);
+    /// assert!(!buf.is_empty());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use = "the backlog size is meaningless if discarded"]
+    pub fn len(&self) -> u64 {
+        self.pending_count()
+    }
+
+    /// `true` when there are no items waiting in the buffer (on-disk or
+    /// in-memory). Equivalent to `pending_count() == 0`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// assert!(buf.is_empty());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use = "the emptiness flag is meaningless if discarded"]
+    pub fn is_empty(&self) -> bool {
+        self.pending_count() == 0
     }
 
     /// Disk usage pressure as a value between 0.0 and 1.0.
@@ -486,6 +565,7 @@ where
     /// assert!(buf.store_pressure() < 0.1);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[must_use = "the pressure value is meaningless if discarded"]
     pub fn store_pressure(&self) -> f32 {
         let inner = self.inner.lock();
         if self.config.max_size_bytes == 0 {
@@ -511,8 +591,60 @@ where
     /// assert!(!buf.is_overloaded());
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[must_use = "the overload flag is meaningless if discarded"]
     pub fn is_overloaded(&self) -> bool {
         self.store_pressure() > 0.9
+    }
+
+    /// Capture a consistent snapshot of buffer state under a single lock.
+    ///
+    /// Cheaper and more consistent than calling
+    /// [`pending_count`](Self::pending_count),
+    /// [`latest_sequence`](Self::latest_sequence),
+    /// [`store_pressure`](Self::store_pressure) etc. individually (which each
+    /// take the mutex and could observe a flush/delete between calls).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// buf.append(1)?;
+    /// buf.append(2)?;
+    ///
+    /// let snapshot = buf.stats();
+    /// assert_eq!(snapshot.pending_count, 2);
+    /// assert_eq!(snapshot.next_sequence, 2);
+    /// assert!(snapshot.store_pressure < 0.01);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use = "the snapshot is meaningless if discarded"]
+    pub fn stats(&self) -> BufferStats {
+        let inner = self.inner.lock();
+        let pending_count = inner.next_seq.saturating_sub(inner.head_seq);
+        let latest_sequence = if inner.next_seq == 0 {
+            0
+        } else {
+            inner.next_seq - 1
+        };
+        let store_pressure = if self.config.max_size_bytes == 0 {
+            0.0
+        } else {
+            (inner.approx_disk_bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
+        };
+        BufferStats {
+            pending_count,
+            latest_sequence,
+            head_sequence: inner.head_seq,
+            next_sequence: inner.next_seq,
+            approx_disk_bytes: inner.approx_disk_bytes,
+            max_size_bytes: self.config.max_size_bytes,
+            store_pressure,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -524,29 +656,33 @@ where
 
         let segments = self.scan_segments()?;
 
-        let mut inner = self.inner.lock();
+        // All filesystem access (stat'ing each segment for its size) happens
+        // BEFORE the mutex is taken. The lock is held only long enough to
+        // publish the rebuilt in-memory state, honouring the invariant that
+        // the mutex is never held across file I/O.
         let total_bytes: u64 = segments
             .iter()
             .filter_map(|s| fs::metadata(self.segment_path(s.start, s.end)).ok())
             .map(|m| m.len())
             .sum();
 
-        match (segments.first(), segments.last()) {
-            (Some(first), Some(last)) => {
-                inner.head_seq = first.start;
-                inner.next_seq = last.end + 1;
-            }
-            _ => {
-                inner.next_seq = 0;
-                inner.head_seq = 0;
-            }
+        let (head_seq, next_seq) = match (segments.first(), segments.last()) {
+            (Some(first), Some(last)) => (first.start, last.end + 1),
+            _ => (0, 0),
+        };
+
+        let segment_count = segments.len();
+        {
+            let mut inner = self.inner.lock();
+            inner.head_seq = head_seq;
+            inner.next_seq = next_seq;
+            inner.approx_disk_bytes = total_bytes;
         }
-        inner.approx_disk_bytes = total_bytes;
 
         info!(
-            segments = segments.len(),
-            head_seq = inner.head_seq,
-            next_seq = inner.next_seq,
+            segments = segment_count,
+            head_seq,
+            next_seq,
             disk_bytes = total_bytes,
             "Segment buffer recovered"
         );
@@ -559,7 +695,7 @@ where
             &self.dir,
             self.config.cipher.as_deref(),
             self.config.compression_level,
-            SegmentRange { start, end },
+            SegmentRange::new(start, end),
             events,
         )
     }
@@ -576,6 +712,19 @@ where
         self.dir.join(segment::filename(start, end))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Static thread-safety assertion
+// ---------------------------------------------------------------------------
+
+// `SegmentBuffer<T>` is documented as MPMC-safe via `parking_lot::Mutex`. This
+// fails to compile if anyone ever introduces a non-`Send`/`Sync` field on
+// `SegmentBuffer` or `BufferInner` (e.g. an `Rc`), turning the documented
+// thread-safety guarantee into a compile-time contract instead of a comment.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<SegmentBuffer<()>>();
+};
 
 #[cfg(test)]
 mod tests;

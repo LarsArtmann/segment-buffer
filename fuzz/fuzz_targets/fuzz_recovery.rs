@@ -23,23 +23,20 @@ struct DirGarbage {
 }
 
 // libfuzzer works on raw bytes; interpret them as a sequence of (name, blob)
-// pairs so the directory contains segment-like and non-segment files alike.
+// pairs separated by NUL bytes so the directory contains a mix of
+// segment-like and non-segment files.
 impl<'a> From<&'a [u8]> for DirGarbage {
     fn from(data: &'a [u8]) -> Self {
         let mut entries = Vec::new();
         let mut chunks = data.split(|b| *b == 0);
-        while let (Some(name_chunk), rest) = (chunks.next(), {
-            let mut peek = chunks.clone();
-            peek.next()
-        }) {
-            let Some(blob) = chunks.next() else { break };
-            // Only create files whose names look like segment files or are
-            // short enough to be plausible directory entries.
+        while let (Some(name_chunk), Some(blob)) = (chunks.next(), chunks.next()) {
             let name = String::from_utf8_lossy(name_chunk).into_owned();
+            // Only create files whose names look like plausible directory
+            // entries. Segment filenames are 32 chars (`seg_` + 12 + `_` + 12
+            // + `.zst`); cap at 64 to allow slack for fuzz garbage too.
             if !name.is_empty() && name.len() < 64 {
                 entries.push((name, blob.to_vec()));
             }
-            let _ = rest; // suppress unused
         }
         DirGarbage { entries }
     }

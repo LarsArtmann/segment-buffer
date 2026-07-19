@@ -69,13 +69,13 @@ append(item) ─► unflushed: Vec<T>  (in-memory, inside Mutex)
             CBOR-serialize  ─►  zstd compress  ─►  [optional cipher.encrypt]   (src/segment.rs)
                    │
                    ▼
-            write to seg_*.zst.tmp  ─►  sync_all  ─►  rename to seg_*.zst
-                   │
+            prepend 8-byte SBF1 envelope  ─►  write to seg_*.zst.tmp
+                   │                          ─►  sync_all  ─►  rename to seg_*.zst
                    ▼  (lock re-acquired)
             approx_disk_bytes += len
 ```
 
-`read_from(start, limit)` scans on-disk segments first (sorted by `start`), then drains the in-memory pending tail. `delete_acked(seq)` removes every segment whose `end <= seq` and advances `head_seq`.
+`read_from(start, limit)` scans on-disk segments first (sorted by `start`), then drains the in-memory pending tail. `delete_acked(seq)` removes every segment whose `end <= seq` and advances `head_seq`. Read path strips the envelope (auto-detecting legacy v1 files) before decryption.
 
 ### Crash recovery (the defining design choice)
 
@@ -93,7 +93,7 @@ If you change the filename format, `segment::filename` and `segment::parse_filen
 
 This was a real race fixed post-extraction (see CHANGELOG `[0.1.0]` → "Fixed"). The previous code re-read `next_seq` in a second lock and produced corrupted segment filenames under concurrent `append()`.
 
-The `parking_lot::Mutex` is **never held across file I/O** — `flush()` drops it before `write_segment` and re-acquires it only to bump `approx_disk_bytes`. There are no await points; all I/O is synchronous.
+The `parking_lot::Mutex` is **never held across file I/O** — `flush()` drops it before `write_segment` and re-acquires it only to bump `approx_disk_bytes`; `recover()` collects all segment metadata (file sizes via `fs::metadata`, head/next seq from filenames) before taking the lock once to publish the rebuilt state. There are no await points; all I/O is synchronous.
 
 ## Backpressure / overload policy
 
@@ -115,9 +115,9 @@ offset  bytes  meaning
   8..          payload (zstd(CBOR), optionally encrypted — the v1 layout)
 ```
 
-On read, the envelope is **auto-detected**: files starting with `SBF1` are unwrapped; files without the magic are treated as legacy v1 (the original monitor365 format). This makes the envelope strictly additive — no migration needed. The cipher always sees the payload (post-envelope-strip), so cipher byte-compatibility is preserved.
+On read, the envelope is **auto-detected**: a file is treated as enveloped only when the magic matches **and** the 3 reserved bytes are all zero. Requiring the reserved bytes is what makes the false-positive rate on legacy encrypted files (whose first 7 bytes are random AEAD nonce) **2⁻⁵⁶ per file — negligible even across the full 597M-segment monitor365 corpus**. Files without both conditions are treated as legacy v1 (the original monitor365 format). This makes the envelope strictly additive — no migration needed. The cipher always sees the payload (post-envelope-strip), so cipher byte-compatibility is preserved.
 
-If you need to evolve the format (new checksum, new compression, metadata block), bump `ENVELOPE_VERSION` in `src/segment.rs` and branch on the version in `unwrap_envelope`. Do not change the magic.
+If you need to evolve the format (new checksum, new compression, metadata block), bump `ENVELOPE_VERSION` in `src/segment.rs` and branch on the version in `unwrap_envelope`. The reserved-bytes-zero invariant must keep holding for any new v1-compatible version; repurpose them only when bumping to a version that is allowed to refuse legacy detection.
 
 ## Project layout
 
@@ -133,6 +133,7 @@ examples/          basic_usage, backpressure, encrypted (feature-gated)
 benches/           4 criterion targets + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery); requires nightly
 FEATURES.md        Honest capability inventory by status
+TODO_LIST.md       Short/mid-term improvement tasks with status
 ROADMAP.md         Long-term direction and explicit non-goals
 flake.nix          Reproducible devShell (zstd, pkg-config, Rust toolchain)
 ```

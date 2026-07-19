@@ -107,10 +107,16 @@ You define priority thresholds — see `examples/backpressure.rs`.
 
 ## Status
 
-**v0.1.0** — extracted from monitor365, fully decoupled, zero monitor365
-dependencies. See [FEATURES.md](FEATURES.md) for the honest capability inventory
-and [ROADMAP.md](ROADMAP.md) for direction. Changes live in
-[CHANGELOG.md](CHANGELOG.md).
+**v0.2.0** — extracted from monitor365, fully decoupled, zero monitor365
+dependencies. The v0.2.0 release hardens the format envelope's legacy-detection
+contract (false-positive rate on legacy encrypted files: 2⁻³² → 2⁻⁵⁶), adds
+`stats()`/`BufferStats`/`len`/`is_empty`, makes `CipherError` opaque with
+`source()` chaining, and ships several correctness refinements. See
+[FEATURES.md](FEATURES.md) for the honest capability inventory,
+[ROADMAP.md](ROADMAP.md) for direction, and [CHANGELOG.md](CHANGELOG.md) for
+the full change history. **v0.2.0 is a breaking release** (error-variant
+shapes + `CipherError` field visibility); pin with `=0.1.0` if you need the
+older API.
 
 ## License
 

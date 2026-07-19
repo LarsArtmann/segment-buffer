@@ -10,29 +10,84 @@
 //! [`CipherError`] to a [`crate::SegmentError::Cipher`].
 
 use std::fmt;
+use std::sync::Arc;
+
+/// Helper trait that lets a `dyn Error + Send + Sync` trait object be upcast
+/// to `&dyn Error` without requiring Rust 1.86's trait-upcasting coercion.
+/// The crate's MSRV is 1.85; once it moves to 1.86+ this can be removed and
+/// `source()` can be a plain `self.source.as_deref()`.
+trait ErrorExt: fmt::Debug + std::error::Error {
+    /// Upcast this error to a `dyn std::error::Error` reference.
+    fn as_std_error(&self) -> &(dyn std::error::Error + 'static);
+}
+
+impl<T: std::error::Error + 'static> ErrorExt for T {
+    fn as_std_error(&self) -> &(dyn std::error::Error + 'static) {
+        self
+    }
+}
 
 /// Error returned by [`SegmentCipher`] implementations.
 ///
 /// Deliberately minimal: the cipher operates on bytes, not files, so it has no
 /// path or sequence context to carry. The segment I/O layer enriches this into
 /// a [`crate::SegmentError::Cipher`] with the offending file's path.
+///
+/// Construct with [`CipherError::msg`] for a plain message, or
+/// [`CipherError::with_source`] when you want to preserve the underlying AEAD
+/// (or other) error type for `std::error::Error::source()` chaining. The
+/// fields are private so that adding context later is non-breaking.
 #[derive(Debug, Clone)]
-pub struct CipherError(pub String);
+pub struct CipherError {
+    /// Human-readable description of what went wrong.
+    message: String,
+    /// Optional underlying cause (e.g. the AEAD crate's opaque error).
+    /// `Arc` (not `Box`) so [`CipherError`] stays [`Clone`]. Surfaced via
+    /// [`std::error::Error::source`].
+    source: Option<Arc<dyn ErrorExt + Send + Sync>>,
+}
 
 impl CipherError {
-    /// Construct a [`CipherError`] from anything displayable.
+    /// Construct a [`CipherError`] from anything displayable, with no
+    /// underlying cause.
     pub fn msg(message: impl fmt::Display) -> Self {
-        Self(message.to_string())
+        Self {
+            message: message.to_string(),
+            source: None,
+        }
+    }
+
+    /// Construct a [`CipherError`] that preserves the underlying error so
+    /// operators can inspect it via [`std::error::Error::source`].
+    ///
+    /// Use this when wrapping a typed error from an AEAD implementation
+    /// (`aes_gcm::Error`, `chacha20poly1305::Error`, …) so the original
+    /// failure is not erased behind a `format!`.
+    pub fn with_source<E>(message: impl fmt::Display, source: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self {
+            message: message.to_string(),
+            source: Some(Arc::new(source)),
+        }
     }
 }
 
 impl fmt::Display for CipherError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.message)
     }
 }
 
-impl std::error::Error for CipherError {}
+impl std::error::Error for CipherError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // `Arc<dyn ErrorExt + Send + Sync>` cannot be coerced to
+        // `&dyn Error` until trait-upcasting stabilises for our MSRV (1.86+);
+        // `ErrorExt::as_std_error` does the upcast explicitly.
+        self.source.as_ref().map(|s| s.as_std_error())
+    }
+}
 
 /// Encrypts and decrypts segment file payloads.
 ///
@@ -74,6 +129,31 @@ pub trait SegmentCipher: Send + Sync {
 #[cfg(feature = "encryption")]
 mod private {
     use super::{CipherError, SegmentCipher};
+    use std::fmt;
+    use std::sync::Arc;
+
+    /// Wrapper that turns any `Display`able AEAD error (e.g. the opaque
+    /// `aes_gcm::Error`, which intentionally does not impl `std::error::Error`)
+    /// into something that does, so it can flow through
+    /// [`std::error::Error::source`] chains without losing the original
+    /// diagnostic message.
+    #[derive(Debug, Clone)]
+    struct AeadError(String);
+
+    impl fmt::Display for AeadError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(&self.0)
+        }
+    }
+
+    impl std::error::Error for AeadError {}
+
+    fn wrap<E: fmt::Display>(message: &'static str, e: E) -> CipherError {
+        CipherError {
+            message: message.to_string(),
+            source: Some(Arc::new(AeadError(e.to_string()))),
+        }
+    }
 
     /// AES-256-GCM cipher with a random 12-byte nonce prepended to each ciphertext.
     ///
@@ -94,7 +174,7 @@ mod private {
         pub fn from_slice(key_bytes: &[u8]) -> Result<Self, CipherError> {
             use aes_gcm::KeyInit;
             let cipher = aes_gcm::Aes256Gcm::new_from_slice(key_bytes)
-                .map_err(|e| CipherError::msg(format!("invalid AES-256 key: {e}")))?;
+                .map_err(|e| wrap("invalid AES-256 key", e))?;
             Ok(Self { cipher })
         }
 
@@ -120,7 +200,7 @@ mod private {
             let ciphertext = self
                 .cipher
                 .encrypt(nonce, plaintext)
-                .map_err(|e| CipherError::msg(format!("AES-GCM encryption: {e}")))?;
+                .map_err(|e| wrap("AES-GCM encryption failed", e))?;
 
             let mut out = Vec::with_capacity(12 + ciphertext.len());
             out.extend_from_slice(&nonce_bytes);
@@ -139,7 +219,7 @@ mod private {
 
             self.cipher
                 .decrypt(nonce, encrypted)
-                .map_err(|e| CipherError::msg(format!("AES-GCM decryption: {e}")))
+                .map_err(|e| wrap("AES-GCM decryption failed", e))
         }
     }
 }
