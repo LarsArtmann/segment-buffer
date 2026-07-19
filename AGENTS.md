@@ -170,6 +170,8 @@ for any future agent (or human) working in this repo.
 2. **Never invent baselines.** Health scores, perf numbers, "was X, now Y", "previously N tests" — if you cannot cite the source of the "previous" value, say "first audit" or "no prior baseline" instead. Numbers without provenance are lies with extra steps.
 3. **Line-number citations are banned.** Cite section names, item text, or commit hashes. Line numbers shift the moment any file above the citation is edited; they rot in the same session that wrote them.
 4. **Run the verification gate before declaring work done.** `cargo fmt --all -- --check` + `cargo clippy --all-targets --features encryption -- -D warnings` + `cargo test --no-fail-fast --features encryption` + `cargo doc --no-deps --features encryption`. Any claim that "tests pass" or "the build is green" must rest on a literal run of these in the current session, with the exit codes captured.
+5. **The supply-chain gate is BOTH `cargo audit` AND `cargo deny check`.** They pull from different advisory sources in edge cases. Running only one is not equivalent to running both. The CI `supply-chain` job runs both; the local pre-commit gate must too.
+6. **The loom gate is `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.** Files gated by `#![cfg(loom)]` are invisible to `cargo test` by default and silently rot without this explicit invocation. The CI `loom` job enforces it.
 
 ### Session-end checklist
 

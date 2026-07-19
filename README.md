@@ -115,6 +115,15 @@ _Comparison tables rot. This one was written against the versions current as of
 
 ## Status
 
+**v0.4.2** — the "process debt + semver-leak closure" release. Gates
+`fuzz_hooks` behind a `#[cfg]` feature (closes the v0.4.1 semver leak), adds
+a CI `loom` job (prevents the v0.4.0-v0.4.1 silent rot of the loom test),
+adds 1 new fuzz target (`fuzz_append_all`) and 2 new property tests, and
+ships `docs/DOMAIN_LANGUAGE.md` + `docs/CIPHERS.md`. Non-breaking; drop-in
+upgrade from v0.4.1.
+See [CHANGELOG.md](CHANGELOG.md) for details.
+See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
+
 **v0.4.1** — the "safety + trust depth" release. Adds `for_each_from` re-entrancy
 guard (panics instead of silently deadlocking), `append_all` batch primitive,
 `path()`/`config()`/`sync_disk_bytes()` accessors, 2 new fuzz targets, 4 new

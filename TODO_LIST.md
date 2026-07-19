@@ -7,7 +7,28 @@ Status legend: `[ ]` pending · `[~]` in progress · `[x]` done (move to CHANGEL
 
 ---
 
-## v0.4.1 follow-ups (shipping in this release)
+## v0.4.2 follow-ups (shipping in this release)
+
+Process debt + semver-leak fix + CI hardening uncovered by the v0.4.1 self-review.
+No breaking changes; drop-in upgrade from v0.4.1.
+
+- [x] **Gate `fuzz_hooks` behind `#[cfg(any(test, feature = "fuzz"))]`** instead of `#[doc(hidden)] pub` — closes the v0.4.1 semver leak.
+- [x] **Add `fuzz` Cargo feature** — opt-in feature for unstable internals.
+- [x] **Add CI `loom` job** — `#![cfg(loom)]` test file was invisible to CI and rotted silently between v0.4.0 and v0.4.1.
+- [x] **Document dual `cargo audit` + `cargo deny` verification gate** in AGENTS.md.
+- [x] **Document `#[cfg]` over `#[doc(hidden)]`** in CONTRIBUTING.md.
+- [x] **Add `docs/DOMAIN_LANGUAGE.md`** — glossary for segment, head_seq, next_seq, acked_seq, envelope, flush, recover.
+- [x] **Add `docs/CIPHERS.md`** — bring-your-own AEAD (ChaCha20-Poly1305, no-op) worked examples.
+- [x] **Copywriting pass on `Cargo.toml` `description`** — punchier one-liner for crates.io search.
+- [x] **Property test: `append_all` contiguous seqs across batches** — varying batch sizes, including empty batches.
+- [x] **Property test: `sync_disk_bytes` matches actual du** — after every mutation cycle.
+- [x] **Fuzz target: `fuzz_append_all`** — iterator behavior (empty, single, large) with 4 invariants.
+- [x] **Stress test throughput baseline** captured in `docs/perf/2026-07-19_v0.4.1_stress_throughput.md` (~397k events/sec under 8-writer contention).
+- [x] **Fix broken `AesGcmCipher` doc link** warning under default features.
+
+---
+
+## v0.4.1 (shipped — kept for reference)
 
 Additive API + safety fixes for v0.4.0. No breaking changes.
 
@@ -69,10 +90,12 @@ Deferred breaking changes — batch them so users upgrade once.
 ## Concurrency & provability
 
 - [x] **Loom test for `append` + `stats()`** — 2 tests in `tests/loom.rs` covering the in-memory path.
+- [x] **CI `loom` job** — added v0.4.2; runs `RUSTFLAGS="--cfg loom" cargo test --features loom --release --test loom` so the file cannot rot silently again.
 - [ ] **Loom test for `delete_acked` + `append` interleaving** — requires abstracting I/O behind a trait loom can mock; real engineering work.
 - [ ] **`#[track_caller]`** on panicking paths (defensive — the re-entrancy guard is the only panic today).
 - [ ] **Consider `RwLock` for read-heavy workloads** — `read_from` is read-only; `append`/`flush`/`delete_acked` write. Measure first.
-- [ ] **Stress test: 8 writers × 2 readers × 100k events with latency histogram** — today's test is 4×1×10k, which proves correctness, not performance under contention.
+- [x] **Stress test: 8 writers × 2 readers × 80k events with throughput reporting** — added v0.4.1; baseline captured v0.4.2.
+- [ ] **Stress test: 16 writers × 4 readers × 1M events with p50/p99 latency histogram** — today's stress test reports throughput only, not latency distribution.
 
 ## Format & storage
 
@@ -96,9 +119,11 @@ Deferred breaking changes — batch them so users upgrade once.
 
 ## Docs & polish
 
-- [ ] **`docs/DOMAIN_LANGUAGE.md`** — glossary for segment, head_seq, next_seq, acked_seq, envelope, flush, recover.
-- [ ] **Copywriting pass** on `Cargo.toml` `description` and CHANGELOG prose quality.
+- [x] **`docs/DOMAIN_LANGUAGE.md`** — glossary for segment, head_seq, next_seq, acked_seq, envelope, flush, recover. Added v0.4.2.
+- [x] **`docs/CIPHERS.md`** — AES-GCM internals + ChaCha20-Poly1305 + no-op cipher worked examples. Added v0.4.2.
+- [x] **Copywriting pass** on `Cargo.toml` `description`. Done v0.4.2.
 - [ ] **Skill-contract debt** — produce the HTML artifacts required by the `code-quality-scan`, `architecture-review`, `full-code-review`, and `nix-flake-migration` skills (or explicitly renegotiate them).
+- [ ] **Envelope v2 design doc** — sketch the migration path for when v2 lands.
 
 ## CI / tooling
 
@@ -110,17 +135,21 @@ Deferred breaking changes — batch them so users upgrade once.
 - [x] **cargo-release config** — done v0.4.0.
 - [x] **Nix CI workflow** — done v0.4.0.
 - [x] **MSRV pin in flake** — done v0.4.1 (packages.default now uses 1.85).
+- [x] **CI `loom` job** — done v0.4.2.
 - [ ] **macOS flake verification** (`aarch64-darwin`, `x86_64-darwin`) — flake check only runs on x86_64-linux today.
 - [ ] **Sign commits** — tags are signed; commits are not. Add `sign-commit = true` to git config.
+- [ ] **Add publish-on-tag workflow** triggered by `v*` tags (requires `CARGO_REGISTRY_TOKEN` secret).
 
 ## Investigation
 
 - [ ] **Tighten `T: 'static`** — investigate whether it can be relaxed (needed for the mutex, but worth confirming).
 - [ ] **Extract AES-GCM cipher into its own feature/crate boundary** for users who want only the trait.
 - [ ] **Profile the hermetic Nix build** (~164s for test check; most is zstd-sys compiling bundled C). Could pre-build zstd as a Nix dependency via `ZSTD_SYS_USE_PKG_CONFIG=1`.
-- [ ] **`cargo publish --dry-run`** — verify the package has no packaging issues before the real publish.
+- [ ] **Profile the append hot path with `cargo flamegraph`** — the v0.1.0-vs-v0.2.0 30–65% regression has never been profiled.
+- [x] **`cargo publish --dry-run`** — verified; real `cargo publish` executed for v0.4.1.
 
 ## Crates.io publishing
 
+- [x] **crates.io API token configured** locally; works for manual `cargo publish`.
 - [ ] **Set up a crates.io API token** in GitHub Actions secrets for automated publishing on tag.
 - [ ] **Add publish-on-tag workflow** triggered by `v*` tags.

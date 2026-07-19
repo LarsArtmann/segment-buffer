@@ -40,10 +40,18 @@ pub use cipher::AesGcmCipher;
 pub use cipher::{CipherError, SegmentCipher};
 pub use error::{Result, SegmentError};
 
-/// Hidden internals exposed for fuzz targets and deep integration tests.
-/// NOT part of the public API; do not depend on these from external code.
-/// Stability is not guaranteed — these may change or disappear in any release.
-#[doc(hidden)]
+/// Internal helpers exposed for in-tree fuzz targets and deep integration tests.
+///
+/// **Not part of the public API.** Reachable only when the `fuzz` Cargo feature
+/// is enabled (or under `cfg(test)`). Stability is not guaranteed — these may
+/// change or disappear in any release without bumping the major version.
+///
+/// Rationale: `#[doc(hidden)]` hides items from rustdoc but does **not** remove
+/// them from the semver surface. A `#[cfg]`-gated module does both: it disappears
+/// from docs *and* from the compiled crate when the feature is off, so downstream
+/// users who never opted into `fuzz` cannot reach these items at all. See
+/// `CONTRIBUTING.md` → "Internal hooks: `#[cfg]` over `#[doc(hidden)]`".
+#[cfg(any(test, feature = "fuzz"))]
 pub mod fuzz_hooks {
     pub use crate::segment::{
         filename, parse_filename, unwrap_envelope, wrap_envelope, SegmentRange,

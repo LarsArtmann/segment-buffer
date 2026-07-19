@@ -79,6 +79,24 @@ jobs:
       - name: cargo deny (advisories + licenses + bans + sources)
         run: cargo deny check
 
+  loom:
+    name: Loom concurrency model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      # Loom requires `--cfg loom` so parking_lot 0.12 swaps in
+      # `loom::sync::Mutex`. `--release` is required: loom's exhaustive
+      # exploration is too slow on debug builds. Without this job the
+      # `#![cfg(loom)]` test file is invisible to CI and silently rots.
+      - name: cargo test (loom)
+        run: cargo test --features loom --release --test loom
+        env:
+          RUSTFLAGS: --cfg loom
+
   link-check:
     name: Markdown link check (lychee)
     runs-on: ubuntu-latest

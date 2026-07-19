@@ -7,8 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet — see [0.4.1] below for the most recent release._
+_No changes yet — see [0.4.2] below for the most recent release._
 Next work is tracked in [TODO_LIST.md](TODO_LIST.md).
+
+## [0.4.2] - 2026-07-19
+
+The "process debt + semver-leak closure" release. All changes are additive or
+internal (no breaking changes; drop-in upgrade from v0.4.1). Driven by the
+brutally honest v0.4.1 self-review, which uncovered four critical gaps
+(`fuzz_hooks` semver leak, no CI loom job, missing dual audit+deny gate,
+missing domain-language docs).
+
+### Added
+
+- **`fuzz` Cargo feature** — opt-in feature exposing the `fuzz_hooks` module
+  (`parse_filename`, `wrap_envelope`, `unwrap_envelope`, `SegmentRange`) for
+  out-of-tree fuzz targets. **Items reachable through this feature are not
+  part of the semver contract** and may change in any release without a
+  major bump. The in-tree fuzz crate enables this feature in `fuzz/Cargo.toml`.
+- **CI `loom` job** — `RUSTFLAGS="--cfg loom" cargo test --features loom
+  --release --test loom` runs on every push and PR. The `#![cfg(loom)]` test
+  file is invisible to `cargo test` by default and rotted silently between
+  v0.4.0 and v0.4.1 (the v0.4.0 `FlushPolicy` change removed fields the loom
+  test still referenced); this job prevents that class of regression.
+- **Fuzz target: `fuzz_append_all`** — fuzzes `append_all` over arbitrary
+  iterator behavior (empty, single, large) with 4 invariants: never panics,
+  `pending_count` grows by batch size, `last_seq` advances correctly,
+  follow-up empty iterator is a no-op. 771k+ runs / 16s, zero crashes.
+- **Property test: `append_all_assigns_contiguous_sequences_across_batches`**
+  — varies batch sizes (0–50) across multiple `append_all` calls and asserts
+  seqs stay contiguous at the batch boundary. Catches off-by-one regressions
+  in the `next_seq` counter.
+- **Property test: `sync_disk_bytes_matches_actual_disk_usage`** — after
+  every mutation cycle (flush + append), `sync_disk_bytes()` must bring
+  `stats().approx_disk_bytes` into exact agreement with the sum of `.zst`
+  file sizes on disk. Catches reconciliation drift.
+- **`docs/DOMAIN_LANGUAGE.md`** — glossary for segment, head_seq, next_seq,
+  acked_seq, envelope, flush, recover. Codifies the ubiquitous vocabulary
+  for issues, doc comments, and commit messages.
+- **`docs/CIPHERS.md`** — cipher internals + worked bring-your-own-AEAD
+  examples: ChaCha20-Poly1305 (via the `chacha20poly1305` crate), no-op
+  cipher (testing only), and an explanation of what the cipher does and
+  does not see (item boundaries, filename, envelope).
+- **`docs/perf/2026-07-19_v0.4.1_stress_throughput.md`** — v0.4.1 stress
+  test baseline: ~397k events/sec under 8-writer × 2-reader contention with
+  `FlushPolicy::Manual`. Reproduction command + interpretation included.
+
+### Changed
+
+- **`fuzz_hooks` is now `#[cfg(any(test, feature = "fuzz"))]`** instead of
+  `#[doc(hidden)] pub`. **This closes a v0.4.1-introduced semver leak.**
+  `#[doc(hidden)]` hides items from rustdoc but does NOT remove them from
+  the public API surface; the cfg gate does both. See `CONTRIBUTING.md` →
+  "Internal hooks: `#[cfg]` over `#[doc(hidden)]`" for the rationale.
+- **`Cargo.toml` description** rewritten for crates.io search clarity:
+  "Durable bounded queue: batch-spills to zstd+CBOR segment files with
+  ack-based deletion and filename-based crash recovery. No WAL, no metadata
+  db."
+- **CI `supply-chain` job** renamed to `cargo audit + cargo deny` for
+  discoverability (no behavior change).
+
+### Fixed
+
+- **Broken `AesGcmCipher` doc link warning** under default features (the
+  `[AesGcmCipher]` intradoc link failed to resolve when the `encryption`
+  feature was off). Replaced with a prose reference to "the `AesGcmCipher`
+  behind the `encryption` feature". `RUSTDOCFLAGS="-D warnings" cargo doc`
+  is now clean under all feature combinations.
+
+### Internal
+
+- **AGENTS.md verification discipline** gained two new hard rules:
+  - Rule 5: "The supply-chain gate is BOTH `cargo audit` AND `cargo deny
+    check`." They pull from different advisory sources in edge cases.
+  - Rule 6: "The loom gate is `RUSTFLAGS='--cfg loom' cargo test --features
+    loom --test loom --release`." `#![cfg(loom)]` files are invisible to
+    default `cargo test` and silently rot.
+- **CONTRIBUTING.md** gained a new section: "Internal hooks: `#[cfg]` over
+  `#[doc(hidden)]`" — codifies the lesson from the v0.4.1 semver leak so
+  the next agent doesn't repeat it.
 
 ## [0.4.1] - 2026-07-19
 
@@ -302,7 +379,9 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.2
+[0.4.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.1
 [0.4.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.0
 [0.3.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.3.0
 [0.2.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.2.0

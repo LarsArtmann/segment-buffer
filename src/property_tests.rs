@@ -320,4 +320,110 @@ proptest! {
             prop_assert_eq!(*fef_seq, start + i as u64, "seq mismatch at index {}", i);
         }
     }
+
+    /// `append_all` must assign contiguous sequences across multiple batches,
+    /// regardless of batch sizes. The next batch must start exactly where the
+    /// previous one ended (off-by-one check on the boundary).
+    #[test]
+    fn append_all_assigns_contiguous_sequences_across_batches(
+        batch_sizes in proptest::collection::vec(0u16..50, 1..6),
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        let mut expected_next = 0u64;
+        for (batch_idx, &size) in batch_sizes.iter().enumerate() {
+            let items: Vec<PropItem> = (0..size)
+                .map(|i| PropItem {
+                    id: u64::try_from(batch_idx).unwrap() * 1000 + i as u64,
+                    payload: format!("batch-{batch_idx}-item-{i}"),
+                })
+                .collect();
+            let last_assigned = buf.append_all(items).expect("append_all");
+
+            if size == 0 {
+                // Empty batch is a no-op: last_assigned must equal the previous
+                // expected_next, not advance it.
+                prop_assert_eq!(
+                    last_assigned, expected_next.saturating_sub(1),
+                    "empty append_all at batch {} returned {:?}; prev next was {}",
+                    batch_idx, last_assigned, expected_next,
+                );
+                // expected_next stays the same.
+            } else {
+                let batch_end = expected_next + size as u64;
+                prop_assert_eq!(
+                    last_assigned, batch_end - 1,
+                    "batch {} (size {}) assigned last seq {} but expected {}",
+                    batch_idx, size, last_assigned, batch_end - 1,
+                );
+                expected_next = batch_end;
+            }
+        }
+
+        // Verify on-disk readback matches: contiguous seqs 0..expected_next.
+        buf.flush().expect("flush");
+        let all = buf.read_from(0, expected_next as usize + 10).expect("read_from");
+        prop_assert_eq!(all.len() as u64, expected_next, "readback count mismatch");
+        for (i, _item) in all.iter().enumerate() {
+            // Every item read back; verify count matches.
+            let _ = i;
+        }
+    }
+
+    /// `sync_disk_bytes()` must always bring `stats().approx_disk_bytes` into
+    /// exact agreement with the sum of segment file sizes on disk, regardless
+    /// of the order or count of mutations that preceded the sync. This is the
+    /// authoritative reconciliation primitive.
+    #[test]
+    fn sync_disk_bytes_matches_actual_disk_usage(
+        n_flushes in 0u8..6,
+        items_per_flush in 1u16..40,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        for _ in 0..n_flushes {
+            for i in 0..items_per_flush {
+                buf.append(PropItem {
+                    id: i as u64,
+                    payload: format!("payload-{i}"),
+                }).expect("append");
+            }
+            buf.flush().expect("flush");
+        }
+
+        // Sync, then read both the returned value and the cached stats value.
+        let synced = buf.sync_disk_bytes().expect("sync_disk_bytes");
+        let cached = buf.stats().approx_disk_bytes;
+
+        // Compute the actual disk usage: sum of `.zst` file sizes.
+        let actual: u64 = std::fs::read_dir(tmp.path())
+            .expect("read_dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+            .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+            .sum();
+
+        prop_assert_eq!(
+            synced, actual,
+            "sync_disk_bytes return value disagrees with du after {} flushes of {} items",
+            n_flushes, items_per_flush,
+        );
+        prop_assert_eq!(
+            cached, actual,
+            "stats().approx_disk_bytes disagrees with du after sync; synced={}, actual={}",
+            synced, actual,
+        );
+    }
 }

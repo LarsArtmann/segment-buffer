@@ -135,13 +135,13 @@ impl std::error::Error for CipherError {
 /// # Naming
 ///
 /// The trait is called `SegmentCipher`, not `SegmentAead`, even though the
-/// shipped implementation ([`AesGcmCipher`]) is an AEAD. This is deliberate:
-/// the trait contract is "any stateless self-describing encrypt/decrypt pair",
-/// which admits AEADs (recommended), HMAC-wrapped symmetric ciphers, or even
-/// custom schemes that combine encryption with a separate authenticator.
-/// Renaming to `SegmentAead` would narrow the contract to AEADs only — a
-/// constraint the trait does not actually enforce. Use an AEAD in practice;
-/// the trait stays general on purpose.
+/// shipped implementation (the `AesGcmCipher` behind the `encryption` feature)
+/// is an AEAD. This is deliberate: the trait contract is "any stateless
+/// self-describing encrypt/decrypt pair", which admits AEADs (recommended),
+/// HMAC-wrapped symmetric ciphers, or even custom schemes that combine
+/// encryption with a separate authenticator. Renaming to `SegmentAead` would
+/// narrow the contract to AEADs only — a constraint the trait does not actually
+/// enforce. Use an AEAD in practice; the trait stays general on purpose.
 ///
 /// # Example
 ///

@@ -1,11 +1,11 @@
 [package]
 name = "segment-buffer"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Lars Artmann <lars@larsartmann.com>"]
 license = "Apache-2.0"
-description = "Durable bounded queue with zstd+CBOR segment files, ack-based deletion, and crash recovery"
+description = "Durable bounded queue: batch-spills to zstd+CBOR segment files with ack-based deletion and filename-based crash recovery. No WAL, no metadata DB."
 repository = "https://github.com/LarsArtmann/segment-buffer"
 homepage = "https://github.com/LarsArtmann/segment-buffer"
 documentation = "https://docs.rs/segment-buffer"
@@ -17,6 +17,12 @@ exclude = ["/target", "/.github", "/fuzz", "/benches"]
 [features]
 default = []
 encryption = ["dep:aes-gcm", "dep:rand"]
+# Exposes the `fuzz_hooks` module (parse_filename, wrap/unwrap_envelope,
+# SegmentRange) so out-of-tree fuzz targets and deep integration tests can
+# drive byte-level invariants directly. **Not part of the semver contract**:
+# items reachable through this feature may change in any release without a
+# major bump. The in-tree fuzz crate enables this in `fuzz/Cargo.toml`.
+fuzz = []
 # Enable `loom` to compile the crate under loom's concurrency model. parking_lot
 # 0.12 detects `--cfg loom` at compile time (no cargo feature needed) and
 # switches its `Mutex<T>` to `loom::sync::Mutex<T>` automatically. Run with:

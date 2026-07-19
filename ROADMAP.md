@@ -36,13 +36,14 @@ stores. The filename contract would remain the recovery source of truth.
 
 ### 4. Fuzzing & integrity
 
-- A `cargo-fuzz` scaffold exists (`fuzz/fuzz_corrupted_read`, `fuzz/fuzz_recovery`) and was verified locally on 2026-07-19 via the Nix `devShells.fuzz` (nightly + `libfuzzer-sys`): `fuzz_corrupted_read` ran 187,811 cases / 60s (392 coverage blocks, zero crashes), `fuzz_recovery` ran 942,719 cases / 60s (zero crashes). **Nightly CI integration landed in v0.4.1** (`.github/workflows/fuzz.yml`); CI proptest analogues run on every `cargo test`. Deeper fuzz targets (envelope edge cases, `parse_filename` over arbitrary UTF-8) are still outstanding.
+- A `cargo-fuzz` scaffold exists (`fuzz/fuzz_corrupted_read`, `fuzz/fuzz_recovery`, `fuzz/fuzz_parse_filename`, `fuzz/fuzz_envelope`, `fuzz/fuzz_append_all`) and was verified locally on 2026-07-19 via the Nix `devShells.fuzz` (nightly + `libfuzzer-sys`): `fuzz_corrupted_read` ran 187,811 cases / 60s (392 coverage blocks, zero crashes), `fuzz_recovery` ran 942,719 cases / 60s (zero crashes), `fuzz_parse_filename` ran 17M+ cases / 16s (zero crashes), `fuzz_envelope` ran 15M+ cases / 16s (zero crashes), `fuzz_append_all` ran 771k cases / 16s (zero crashes). **Nightly CI integration landed in v0.4.1** (`.github/workflows/fuzz.yml`); CI proptest analogues run on every `cargo test`.
 - Optional checksum (e.g. Blake3) per segment for detecting bit-rot distinct from cipher authentication failures.
 
 ### 5. Observability
 
 - The `stats()` accessor shipped in v0.2.0 as a single-lock `BufferStats` snapshot (pending/latest/head/next seq + disk bytes + pressure). v0.3.0 added the `benches/bench_stats.rs` micro-bench proving `stats()` (~12 ns) beats three individual accessors (~31 ns). Richer per-segment metrics (segment count, per-segment size histogram) are still future work.
 - Structured recovery summary (`RecoveryReport`) shipped in v0.4.0 via `open_with_report()`. Returns segment_count, head_seq, next_seq, disk_bytes, removed_tmp_files.
+- v0.4.1 added `path()`, `config()`, `sync_disk_bytes()` accessors and a throughput stress test baseline (~397k events/sec under 8-writer contention, captured in `docs/perf/2026-07-19_v0.4.1_stress_throughput.md`).
 
 ### 6. v0.5.0 candidates (next breaking batch)
 

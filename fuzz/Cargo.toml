@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-segment-buffer = { path = ".." }
+segment-buffer = { path = "..", features = ["fuzz"] }
 serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 
@@ -28,6 +28,10 @@ path = "fuzz_targets/fuzz_parse_filename.rs"
 [[bin]]
 name = "fuzz_envelope"
 path = "fuzz_targets/fuzz_envelope.rs"
+
+[[bin]]
+name = "fuzz_append_all"
+path = "fuzz_targets/fuzz_append_all.rs"
 
 # Keep the fuzz crate out of the parent workspace so it builds independently
 # (it requires nightly + -Zsanitizer).

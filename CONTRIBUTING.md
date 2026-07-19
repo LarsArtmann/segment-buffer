@@ -99,6 +99,30 @@ procedure that does not lose data. See the `SBF1` envelope (added in v0.2.0)
 for the additive-change pattern: legacy files are auto-detected and read
 without migration.
 
+### Internal hooks: `#[cfg]` over `#[doc(hidden)]`
+
+When exposing internals for in-tree fuzz targets or deep integration tests
+(the `fuzz_hooks` module pattern), **gate the module behind a Cargo feature
+with `#[cfg]`**, never with `#[doc(hidden)] pub`.
+
+Why: `#[doc(hidden)]` hides an item from rustdoc but **does not remove it
+from the semver surface.** Once a `pub` item ships in a release, changing
+its signature or removing it is technically a breaking change even if no
+documentation references it. Downstream users who happen to import the
+hidden path will break on the next minor bump.
+
+The `#[cfg(any(test, feature = "fuzz"))]` pattern is the correct shield:
+
+- Without `--features fuzz`, the module does not exist in the compiled
+  crate, so downstream users cannot reach the items at all. The semver
+  surface stays clean.
+- With `--features fuzz`, the items exist; users who explicitly opt in are
+  signaling "I accept these are unstable." Document this in the feature
+  description in `Cargo.toml`.
+
+The `fuzz` feature on this crate is the canonical example. See `src/lib.rs`
+`pub mod fuzz_hooks` and the matching `fuzz` feature in `Cargo.toml`.
+
 ## Reporting Issues
 
 Use [GitHub Issues](https://github.com/LarsArtmann/segment-buffer/issues).
