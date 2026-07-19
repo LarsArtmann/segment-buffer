@@ -92,7 +92,7 @@ Deferred breaking changes — batch them so users upgrade once.
 - [x] **Loom test for `append` + `stats()`** — 2 tests in `tests/loom.rs` covering the in-memory path.
 - [x] **CI `loom` job** — added v0.4.2; runs `RUSTFLAGS="--cfg loom" cargo test --features loom --release --test loom` so the file cannot rot silently again.
 - [ ] **Loom test for `delete_acked` + `append` interleaving** — requires abstracting I/O behind a trait loom can mock; real engineering work.
-- [ ] **`#[track_caller]`** on panicking paths (defensive — the re-entrancy guard is the only panic today).
+- [x] **`#[track_caller]`** on panicking paths — added to `assert_not_reentered` and all 9 public methods that call it (append, flush, read_from, delete_acked, latest_sequence, pending_count, stats, sync_disk_bytes, append_all). Re-entrancy panics now point to the user's callback code.
 - [ ] **Consider `RwLock` for read-heavy workloads** — `read_from` is read-only; `append`/`flush`/`delete_acked` write. Measure first.
 - [x] **Stress test: 8 writers × 2 readers × 80k events with throughput reporting** — added v0.4.1; baseline captured v0.4.2. Fixed v0.4.3: switched to `FlushPolicy::Manual` to avoid creating 20 000 segment files that hung CI.
 - [ ] **Stress test: 16 writers × 4 readers × 1M events with p50/p99 latency histogram** — today's stress test reports throughput only, not latency distribution.

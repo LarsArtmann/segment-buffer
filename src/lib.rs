@@ -539,6 +539,7 @@ where
     /// assert_eq!(buf.append(3)?, 2);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[track_caller]
     pub fn append(&self, event: T) -> Result<u64> {
         self.assert_not_reentered("append");
         let (should_flush, seq) = {
@@ -584,6 +585,7 @@ where
     /// assert_eq!(buf.pending_count(), 2);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[track_caller]
     pub fn flush(&self) -> Result<()> {
         self.assert_not_reentered("flush");
         let (events, start_seq, end_seq) = {
@@ -648,6 +650,7 @@ where
     /// assert_eq!(tail, vec![30]);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    #[track_caller]
     pub fn read_from(&self, start_seq: u64, limit: usize) -> Result<Vec<T>> {
         self.assert_not_reentered("read_from");
         if limit == 0 {
@@ -863,6 +866,7 @@ where
     /// they are flushed and acknowledged in a later call. `head_seq` is clamped
     /// so it never advances past the pending window, keeping the backlog count
     /// honest.
+    #[track_caller]
     pub fn delete_acked(&self, acked_seq: u64) -> Result<usize> {
         self.assert_not_reentered("delete_acked");
         let segments = self.scan_segments()?;
@@ -946,6 +950,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[must_use = "the sequence number is meaningless if discarded"]
+    #[track_caller]
     pub fn latest_sequence(&self) -> u64 {
         self.assert_not_reentered("latest_sequence");
         let inner = self.inner.lock();
@@ -982,6 +987,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[must_use = "the backlog size is meaningless if discarded"]
+    #[track_caller]
     pub fn pending_count(&self) -> u64 {
         self.assert_not_reentered("pending_count");
         let inner = self.inner.lock();
@@ -1133,6 +1139,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[must_use = "the snapshot is meaningless if discarded"]
+    #[track_caller]
     pub fn stats(&self) -> BufferStats {
         self.assert_not_reentered("stats");
         let inner = self.inner.lock();
@@ -1251,6 +1258,7 @@ where
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be read.
+    #[track_caller]
     pub fn sync_disk_bytes(&self) -> Result<u64> {
         self.assert_not_reentered("sync_disk_bytes");
         let segments = self.scan_segments()?;
@@ -1304,6 +1312,7 @@ where
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if a flush triggered by the batch fails.
+    #[track_caller]
     pub fn append_all<I>(&self, items: I) -> Result<u64>
     where
         I: IntoIterator<Item = T>,
@@ -1344,6 +1353,7 @@ where
     /// re-entering the buffer. The alternative is a silent deadlock
     /// (`parking_lot::Mutex` is not reentrant), so an explicit panic is
     /// strictly better for diagnosability.
+    #[track_caller]
     fn assert_not_reentered(&self, method: &'static str) {
         if self
             .iteration_in_progress

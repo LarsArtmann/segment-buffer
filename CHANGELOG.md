@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AesGcmCipher` but `cargo test` (default features) does not enable the
   `encryption` feature. The doctest is now `#[cfg(feature = "encryption")]`-gated
   via the hidden-`fn main()` pattern so it compiles under both feature sets.
+- **Nix CI**: `cachix/cachix-action` failed because the binary cache does not
+  exist. Added `continue-on-error: true` so builds proceed without caching.
+
+### Added
+- **`#[track_caller]`** on `assert_not_reentered` and all 9 public methods that
+  call it — re-entrancy panics now point to the user's callback code instead of
+  the internal guard function.
 
 ## [0.4.2] - 2026-07-19
 
