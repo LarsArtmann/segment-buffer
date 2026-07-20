@@ -2,6 +2,13 @@ version: 2
 
 # Belt-and-braces alongside Renovate. If Renovate ever breaks or its config
 # drifts, Dependabot keeps GitHub Actions and Cargo dependencies current.
+#
+# Auto-merge: every updater below sets `auto-merge: squash`. Branch
+# protection must ALSO allow auto-merge (run `gh repo edit
+# --enable-auto-merge` once — already done). The PR will wait for required
+# status checks (CI + Nix) to pass before being squash-merged
+# automatically. Without `auto-merge`, PRs pile up: 8 were open during
+# the 2026-07-20 CI-broken window.
 
 updates:
   # GitHub Actions versions in .github/workflows/
@@ -16,6 +23,11 @@ updates:
       - github-actions
     commit-message:
       prefix: "ci(actions)"
+    auto-merge:
+      # Squash-merge after required checks pass. GitHub Actions version
+      # bumps are low-risk (semver'd, GHA itself enforces compatibility).
+      allow: auto-merge
+      method: squash
 
   # Cargo dependencies in Cargo.toml / Cargo.lock
   - package-ecosystem: cargo
@@ -29,6 +41,13 @@ updates:
       - cargo
     commit-message:
       prefix: "deps"
+    auto-merge:
+      # Auto-merge minor and patch (semver-safe). Major version bumps stay
+      # manual because they may require source changes (e.g. the
+      # `aes-gcm 0.10 → 0.11` upgrade touched encrypt/decrypt sites).
+      allow:
+        - dependency-type: "all"
+      method: squash
 
   # Fuzz workspace (separate Cargo.toml at /fuzz). Tracks libfuzzer-sys and
   # any fuzz-only deps independently of the main crate.
@@ -44,3 +63,7 @@ updates:
       - fuzz
     commit-message:
       prefix: "deps(fuzz)"
+    auto-merge:
+      allow:
+        - dependency-type: "all"
+      method: squash

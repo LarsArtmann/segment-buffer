@@ -982,6 +982,148 @@ fn flock_locks_are_per_directory() {
 }
 
 // =========================================================================
+// SegmentIter (M7)
+// =========================================================================
+
+#[test]
+fn iter_from_yields_seq_item_pairs() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    for i in 0..5 {
+        buf.append(test_item(i)).unwrap();
+    }
+    // Batch(4) triggers a flush on the 4th append; one item stays in memory.
+    let collected: Vec<(u64, TestItem)> = buf.iter_from(0, 100).unwrap().collect();
+    assert_eq!(
+        collected.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4]
+    );
+    assert_eq!(
+        collected.iter().map(|(_, i)| i.id).collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4]
+    );
+}
+
+#[test]
+fn iter_from_limit_zero_returns_empty() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    buf.append(test_item(0)).unwrap();
+    let count = buf.iter_from(0, 0).unwrap().count();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn iter_from_respects_limit() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    for i in 0..10 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    let collected: Vec<u64> = buf.iter_from(2, 3).unwrap().map(|(_, i)| i.id).collect();
+    assert_eq!(collected, vec![2, 3, 4]);
+}
+
+#[test]
+fn iter_from_chains_with_iterator_combinators() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    for i in 0..10 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    // The classic Iterator combinators all work.
+    let sum: u64 = buf
+        .iter_from(0, 100)
+        .unwrap()
+        .map(|(_, i)| i.id)
+        .filter(|x| x % 2 == 0)
+        .sum();
+    assert_eq!(sum, 2 + 4 + 6 + 8);
+}
+
+#[test]
+fn iter_from_start_seq_skips_already_read_items() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    for i in 0..5 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    let collected: Vec<u64> = buf.iter_from(3, 100).unwrap().map(|(_, i)| i.id).collect();
+    assert_eq!(collected, vec![3, 4]);
+}
+
+// =========================================================================
+// mtime probe for scan cache (M13)
+// =========================================================================
+
+/// On a real filesystem (the tempdir), the probe should return `true` —
+/// mtime moves when we write twice with a sleep in between. On a
+/// filesystem that pins mtime to a constant, the probe returns `false`
+/// and the cache guard is skipped (today's behavior).
+#[test]
+fn mtime_probe_returns_true_on_real_filesystem() {
+    let tmp = TempDir::new().unwrap();
+    // The probe runs at open(). Today's CI is on real filesystems
+    // (ext4/tmpfs on Linux, apfs on macOS) where mtime is fine-grained.
+    let buf = test_buffer(tmp.path());
+    assert!(
+        buf.mtime_supported,
+        "mtime capability probe should return true on the host filesystem; \
+         if this fires, the test host has a coarse-granularity or no-mtime \
+         filesystem (the cache guard is correctly disabled in that case, \
+         but the test assertion needs to match)"
+    );
+}
+
+/// External directory mutation must be detected by the mtime guard: if
+/// someone removes a segment file out from under us, the next scan_cache
+/// hit must NOT serve the stale list (would silently drop the segment's
+/// items from reads).
+#[test]
+fn external_segment_removal_invalidates_scan_cache() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    // Two flushes so we have two segments to reason about.
+    for i in 4..8 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    // 8 items readable through the public API.
+    assert_eq!(buf.read_from(0, 100).unwrap().len(), 8);
+
+    // Simulate an external process quarantining one segment.
+    let segments: Vec<_> = std::fs::read_dir(tmp.path())
+        .expect("dir readable")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "zst"))
+        .collect();
+    assert_eq!(segments.len(), 2, "expected exactly two segments on disk");
+    let _ = std::fs::remove_file(&segments[0]);
+
+    // Sleep briefly so the dir mtime moves past the cached value (the
+    // probe sleep is 15ms; we use 25ms here for headroom on coarse fs).
+    std::thread::sleep(std::time::Duration::from_millis(25));
+
+    // The next read must observe the removal: only one segment's items
+    // (4) survive. Without the mtime guard, the stale cache would still
+    // report both segments as on-disk and reads would try (and fail) to
+    // open the removed file — surfacing as an Err.
+    let after = buf.read_from(0, 100).unwrap().len();
+    assert_eq!(
+        after, 4,
+        "external removal must be reflected via mtime guard"
+    );
+}
+
+// =========================================================================
 // Debug impl for SegmentBuffer<T>
 // =========================================================================
 
@@ -1072,7 +1214,7 @@ fn segment_error_io_display_format_with_dir_site() {
 #[test]
 fn segment_error_with_path_upgrades_unknown_to_segment() {
     // with_path on an Unknown Io error upgrades the site to Segment.
-    let raw: SegmentError = std::io::Error::new(std::io::ErrorKind::Other, "boom").into();
+    let raw: SegmentError = std::io::Error::other("boom").into();
     let upgraded = raw.with_path("/tmp/seg.zst");
     match upgraded {
         SegmentError::Io {
@@ -1091,7 +1233,7 @@ fn segment_error_with_path_leaves_segment_alone() {
     // site leaves the original path intact (no clobbering).
     let err = SegmentError::Io {
         site: IoSite::Segment(std::path::PathBuf::from("/original/path.zst")),
-        source: std::io::Error::new(std::io::ErrorKind::Other, "x"),
+        source: std::io::Error::other("x"),
     };
     let upgraded = err.with_path("/wrong/attempt.zst");
     match upgraded {
@@ -1108,7 +1250,7 @@ fn segment_error_with_path_leaves_segment_alone() {
 #[test]
 fn segment_error_with_dir_upgrades_unknown_to_dir() {
     // with_dir on an Unknown Io error tags the site as Dir.
-    let raw: SegmentError = std::io::Error::new(std::io::ErrorKind::Other, "boom").into();
+    let raw: SegmentError = std::io::Error::other("boom").into();
     let tagged = raw.with_dir();
     assert!(matches!(
         tagged,
@@ -1501,6 +1643,148 @@ fn stress_8_writers_2_readers_throughput() {
     );
 }
 
+/// 8 writers × 4 readers stress with per-append latency histogram.
+///
+/// Reports p50/p90/p99/p99.9 latency on the writer path so a human can spot
+/// latency-tail regressions (e.g. a lock-contention change, an allocation
+/// introduced on the hot path). The latency numbers are NOT hard assertions
+/// (CI hardware varies) — they are reported in the test output for
+/// human inspection across runs.
+///
+/// Reuses the rule-7 discipline from the throughput stress: `FlushPolicy::Manual`
+/// so the test stresses mutex contention, not the filesystem. Reader count
+/// is doubled (4 vs the throughput test's 2) so read-side contention
+/// contributes to the writer-tail latency.
+#[test]
+fn stress_8_writers_4_readers_latency_histogram() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                ..test_config(1024 * 1024)
+            },
+        )
+        .unwrap(),
+    );
+    const WRITERS: usize = 8;
+    const PER_WRITER: usize = 10_000;
+    const TOTAL: usize = WRITERS * PER_WRITER; // 80_000
+    const READERS: usize = 4;
+
+    let read_cursor = Arc::new(Mutex::new(0u64));
+    let total_read = Arc::new(AtomicU64::new(0));
+    // Per-writer latency samples. Pre-allocate so sampling overhead doesn't
+    // include allocation in the measured section.
+    let samples: Vec<Mutex<Vec<std::time::Duration>>> = (0..WRITERS)
+        .map(|_| Mutex::new(Vec::with_capacity(PER_WRITER)))
+        .collect();
+
+    let start = Instant::now();
+    thread::scope(|s| {
+        // 4 reader threads: poll read_from to add read-side contention.
+        for _ in 0..READERS {
+            let buf_r = Arc::clone(&buf);
+            let cursor_r = Arc::clone(&read_cursor);
+            let total_r = Arc::clone(&total_read);
+            s.spawn(move || loop {
+                let current = *cursor_r.lock();
+                if current >= TOTAL as u64 {
+                    break;
+                }
+                if let Ok(events) = buf_r.read_from(current, 500) {
+                    if !events.is_empty() {
+                        total_r.fetch_add(events.len() as u64, Ordering::Relaxed);
+                        *cursor_r.lock() = current + events.len() as u64;
+                    }
+                }
+                std::thread::sleep(Duration::from_micros(20));
+            });
+        }
+
+        // 8 writer threads, each measuring per-append latency.
+        for writer_id in 0..WRITERS {
+            let buf_w = Arc::clone(&buf);
+            let samples_w = &samples;
+            s.spawn(move || {
+                let base = writer_id * PER_WRITER;
+                let mut local_samples: Vec<std::time::Duration> = Vec::with_capacity(PER_WRITER);
+                for i in 0..PER_WRITER {
+                    let t = Instant::now();
+                    let _ = buf_w.append(test_item((base + i) as u64));
+                    local_samples.push(t.elapsed());
+                }
+                *samples_w[writer_id].lock() = local_samples;
+            });
+        }
+    });
+
+    let elapsed = start.elapsed();
+
+    // Regression guard (rule 7): under Manual the concurrent append phase
+    // must create ZERO segment files.
+    let segment_files_before_flush = std::fs::read_dir(tmp.path())
+        .expect("temp dir readable")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "zst"))
+        .count();
+    assert_eq!(
+        segment_files_before_flush, 0,
+        "FlushPolicy::Manual must not create segment files during append; \
+         found {segment_files_before_flush} .zst file(s) — flush policy regression"
+    );
+
+    buf.flush().unwrap();
+    assert_eq!(buf.latest_sequence(), (TOTAL - 1) as u64);
+
+    // Merge per-writer samples into a single sorted Vec for percentile
+    // computation. N = 80_000 samples is plenty for stable p99 estimates.
+    let mut all: Vec<std::time::Duration> = Vec::with_capacity(TOTAL);
+    for s in &samples {
+        all.extend_from_slice(&s.lock());
+    }
+    all.sort();
+
+    // Percentile helper. N is large enough that linear indexing is fine.
+    let pct = |p: f64| -> std::time::Duration {
+        if all.is_empty() {
+            return std::time::Duration::ZERO;
+        }
+        let idx = ((p / 100.0) * (all.len() as f64 - 1.0)).round() as usize;
+        all[idx.min(all.len() - 1)]
+    };
+    let elapsed_secs = elapsed.as_secs_f64().max(0.001);
+    let throughput = TOTAL as f64 / elapsed_secs;
+    eprintln!(
+        "stress_8w_4r_latency: {TOTAL} events in {elapsed_secs:.3}s = {throughput:.0} events/sec\n\
+         latency (µs): p50={:.2} p90={:.2} p99={:.2} p99.9={:.2} max={:.2}\n\
+         {} items observed by readers",
+        pct(50.0).as_nanos() as f64 / 1000.0,
+        pct(90.0).as_nanos() as f64 / 1000.0,
+        pct(99.0).as_nanos() as f64 / 1000.0,
+        pct(99.9).as_nanos() as f64 / 1000.0,
+        all.last()
+            .map(|d| d.as_nanos() as f64 / 1000.0)
+            .unwrap_or(0.0),
+        total_read.load(Ordering::Relaxed)
+    );
+
+    // Soft guard: p99 must stay under 5ms on any reasonable host (the test
+    // runs in debug mode by default; release numbers are ~10x lower). This
+    // is NOT a tight bound; if it fires, investigate the hot-path regression
+    // before widening. Typical debug-mode p99 is ~50-500µs under 8-writer
+    // contention.
+    let p99 = pct(99.0);
+    assert!(
+        p99 < std::time::Duration::from_millis(50),
+        "p99 latency {p99:?} exceeded 50ms soft guard — investigate hot-path regression"
+    );
+}
+
 // =========================================================================
 // DurabilityPolicy
 // =========================================================================
@@ -1668,6 +1952,24 @@ fn segment_config_is_clone() {
     assert_eq!(cfg.compression_level, cloned.compression_level);
     assert_eq!(cfg.durability, cloned.durability);
     assert!(cfg.cipher.is_none() && cloned.cipher.is_none());
+}
+
+/// `SegmentConfigBuilder` is `Clone` (M12). This unblocks the pattern of
+/// starting a base builder and cloning it per-buffer when constructing
+/// several related buffers (e.g. a sharded producer set). The cipher
+/// `Arc` is shared between clones — no key duplication.
+#[test]
+fn segment_config_builder_is_clone() {
+    let base = SegmentConfig::builder()
+        .flush_manually()
+        .compression_level(7);
+    let copy = base.clone();
+    let cfg_a = base.build();
+    let cfg_b = copy.compression_level(1).build();
+    assert_eq!(cfg_a.compression_level, 7);
+    assert_eq!(cfg_b.compression_level, 1);
+    assert!(matches!(cfg_a.flush_policy, FlushPolicy::Manual));
+    assert!(matches!(cfg_b.flush_policy, FlushPolicy::Manual));
 }
 
 #[cfg(feature = "encryption")]

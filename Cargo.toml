@@ -94,3 +94,7 @@ harness = false
 [[bench]]
 name = "bench_append_all"
 harness = false
+
+[[bench]]
+name = "bench_durability_policy"
+harness = false

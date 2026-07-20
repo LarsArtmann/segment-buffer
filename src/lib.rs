@@ -303,7 +303,7 @@ impl Default for SegmentConfig {
 /// // Untouched fields fall back to Default.
 /// assert_eq!(config.max_size_bytes, 10 * 1024 * 1024 * 1024);
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SegmentConfigBuilder {
     inner: SegmentConfig,
 }
@@ -617,6 +617,27 @@ pub struct SegmentBuffer<T> {
     /// closes the fd on process termination, releasing the lock even if
     /// `Drop` never runs.
     lock_file: Option<std::fs::File>,
+    /// Result of the open-time mtime capability probe. `true` when the
+    /// filesystem hosting `dir` updates a file's `mtime` on a sub-second
+    /// write-after-write window (ext4/xfs/btrfs/apfs/ntfs-defaults all
+    /// qualify); `false` when the filesystem pins `mtime` to a constant
+    /// (some FUSE mounts, network filesystems with coarse granularity,
+    /// memoised-overlay filesystems) — comparing `0 == 0` would falsely
+    /// confirm cache validity, so we fall back to today's "cache only
+    /// invalidated by in-process mutations" behavior on such filesystems.
+    ///
+    /// See [`probe_mtime_capability`] for the probe sequence and the
+    /// rationale for why a bare stat comparison without the probe is
+    /// unsafe.
+    mtime_supported: bool,
+    /// Last-observed mtime of `dir`, captured alongside every scan_cache
+    /// population. Used by [`scan_segments`](Self::scan_segments) to
+    /// detect external directory manipulation (a backup tool, a manual
+    /// `rm`, an operator quarantining a file) without paying for a full
+    /// readdir on every read. Only consulted when [`mtime_supported`](Self::mtime_supported)
+    /// is `true`; otherwise the cache stays warm until an in-process
+    /// mutation invalidates it.
+    last_dir_mtime: Mutex<Option<std::time::SystemTime>>,
 }
 
 /// `Debug` mirrors the field set of [`BufferStats`] plus the directory path.
@@ -795,6 +816,20 @@ where
         // instead of constructing a fresh one per segment decode.
         let decompressor = zstd::bulk::Decompressor::new()?;
 
+        // Probe mtime capability: write a sentinel file twice with a short
+        // sleep, and check whether the kernel updated its mtime. On
+        // filesystems that pin mtime to a constant (some FUSE, network
+        // filesystems with coarse granularity), the scan-cache mtime
+        // guard is unsafe (0 == 0 false-positive) and we fall back to
+        // today's "cache invalidated only by in-process mutations"
+        // behavior. The probe runs at open() time so the cost is paid
+        // once. The ~15ms sleep is well within the granularity of every
+        // modern local filesystem (ext4/xfs/btrfs/apfs/ntfs all support
+        // nanosecond mtime); filesystems that fail the probe are exactly
+        // those where the guard would have been unsafe.
+        let mtime_supported = probe_mtime_capability(&dir);
+        let initial_mtime = std::fs::metadata(&dir).and_then(|m| m.modified()).ok();
+
         let buffer = Self {
             dir,
             config,
@@ -811,6 +846,8 @@ where
             decompressor: Mutex::new(decompressor),
             store,
             lock_file,
+            mtime_supported,
+            last_dir_mtime: Mutex::new(initial_mtime),
         };
 
         let report = buffer.recover()?;
@@ -1643,6 +1680,80 @@ where
         Ok(last_seq)
     }
 
+    /// Owned-item iterator over buffer contents starting at `start_seq`.
+    ///
+    /// Equivalent to [`read_from`](Self::read_from) but yields `(seq, item)`
+    /// pairs one at a time so callers can write `for (seq, item) in
+    /// buf.iter_from(start, limit)?` and chain standard
+    /// [`Iterator`] combinators (`.take`, `.filter`, `.map`, …).
+    ///
+    /// This is a *materialising* iterator: items are loaded eagerly up to
+    /// `limit` (memory cost `O(limit)`). For a *lending* iterator that
+    /// passes in-memory items by reference without cloning, use
+    /// [`for_each_from`](Self::for_each_from) — that variant is ~20× faster
+    /// on the in-memory tail but takes a closure instead of returning an
+    /// `Iterator`. The two coexist because no stable-Rust `Iterator`
+    /// trait can currently express "yield `&T` from `&mut self`" without
+    /// pre-collecting.
+    ///
+    /// # Re-entrancy contract
+    ///
+    /// The iterator borrows the buffer for `'a`. Drop the iterator before
+    /// calling any other `&self` method on the same buffer; if the
+    /// iterator is alive across a `flush` / `append` / `delete_acked`
+    /// call, that call will panic with a clear message (same contract as
+    /// [`for_each_from`](Self::for_each_from)). The simplest pattern is
+    /// `for item in buf.iter_from(..)? { ... }` — the `for` loop drops the
+    /// iterator at the end of the block.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let buf: SegmentBuffer<u64> =
+    ///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+    /// for i in 0..5u64 { buf.append(i * 10)?; }
+    /// buf.flush()?;
+    ///
+    /// // `for` loop with owned items + seq numbers:
+    /// let mut seen = Vec::new();
+    /// for (seq, item) in buf.iter_from(0, 100)? {
+    ///     seen.push((seq, item));
+    /// }
+    /// assert_eq!(seen, vec![
+    ///     (0, 0), (1, 10), (2, 20), (3, 30), (4, 40),
+    /// ]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError`] if the directory scan or any segment decode
+    /// fails.
+    #[track_caller]
+    pub fn iter_from(&self, start_seq: u64, limit: usize) -> Result<SegmentIter<'_, T>> {
+        self.assert_not_reentered("iter_from");
+        if limit == 0 {
+            return Ok(SegmentIter {
+                inner: Vec::new().into_iter(),
+                _phantom: std::marker::PhantomData,
+            });
+        }
+        let items = self.read_from(start_seq, limit)?;
+        let indexed: Vec<(u64, T)> = items
+            .into_iter()
+            .enumerate()
+            .map(|(i, item)| (start_seq + i as u64, item))
+            .collect();
+        Ok(SegmentIter {
+            inner: indexed.into_iter(),
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
@@ -1736,16 +1847,31 @@ where
         let path = self.segment_path(seg.start, seg.end);
         let raw = self.store.read_bytes(seg).map_err(|e| e.with_path(&path))?;
         let mut decompressor = self.decompressor.lock();
-        segment::decode_segment(self.config.cipher.as_deref(), &mut decompressor, &raw, &path)
-            .map_err(|e| e.with_path(&path))
+        segment::decode_segment(
+            self.config.cipher.as_deref(),
+            &mut decompressor,
+            &raw,
+            &path,
+        )
+        .map_err(|e| e.with_path(&path))
     }
 
     fn scan_segments(&self) -> Result<Vec<segment::SegmentRange>> {
-        // Cache hit: clone under the cache lock and return.
+        // Cache hit: clone under the cache lock and return — UNLESS the
+        // directory mtime has moved since the cache was populated (which
+        // signals an external mutation: backup tool, manual rm, operator
+        // quarantine, etc.). The mtime guard is only consulted when the
+        // open-time capability probe confirmed the filesystem actually
+        // updates mtime — on filesystems that pin mtime to a constant,
+        // comparing 0 == 0 would falsely confirm validity, so we skip the
+        // check entirely on those.
         {
             let cache = self.scan_cache.lock();
             if let Some(ref segments) = *cache {
-                return Ok(segments.clone());
+                if !self.mtime_supported || !self.dir_mtime_changed() {
+                    return Ok(segments.clone());
+                }
+                // mtime moved → fall through to re-scan, replacing the cache.
             }
         }
         // Cache miss: scan via the store, store, return.
@@ -1754,9 +1880,29 @@ where
             .scan()
             .map_err(|e| e.with_dir())
             .map_err(|e| e.with_path(&self.dir))?;
+        // Refresh the cached dir mtime alongside the cache population so
+        // future reads can detect external mutations.
+        let fresh_mtime = std::fs::metadata(&self.dir).and_then(|m| m.modified()).ok();
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());
+        *self.last_dir_mtime.lock() = fresh_mtime;
         Ok(segments)
+    }
+
+    /// Stat the directory's mtime and compare against the last-cached
+    /// value. `true` means the directory was touched externally and the
+    /// scan cache should be invalidated. Cheap (`stat` is one syscall;
+    /// `readdir` is many).
+    fn dir_mtime_changed(&self) -> bool {
+        let current = match std::fs::metadata(&self.dir).and_then(|m| m.modified()) {
+            Ok(t) => t,
+            Err(_) => return true, // directory unreadable → safer to re-scan
+        };
+        let cached = *self.last_dir_mtime.lock();
+        match cached {
+            Some(prev) => prev != current,
+            None => true,
+        }
     }
 
     /// Invalidate the scan cache. Called by every on-disk mutation
@@ -1782,6 +1928,60 @@ impl Drop for IterationGuard<'_> {
     }
 }
 
+/// Owned-item iterator over buffer contents, yielding `(seq, item)` pairs.
+///
+/// Returned by [`SegmentBuffer::iter_from`]. Materialises up to `limit`
+/// items eagerly (memory cost `O(limit)`); for a lending iterator that
+/// passes in-memory items by reference without cloning, use
+/// [`SegmentBuffer::for_each_from`].
+///
+/// The iterator borrows the buffer for `'a`. Drop it before calling any
+/// other `&self` method on the same buffer — the re-entrancy contract is
+/// the same as [`SegmentBuffer::for_each_from`].
+///
+/// # Example
+///
+/// ```
+/// use segment_buffer::{SegmentBuffer, SegmentConfig};
+/// use tempfile::tempdir;
+///
+/// let dir = tempdir()?;
+/// let buf: SegmentBuffer<u64> =
+///     SegmentBuffer::open(dir.path(), SegmentConfig::default())?;
+/// buf.append(7)?;
+/// buf.append(8)?;
+/// buf.flush()?;
+///
+/// let collected: Vec<u64> = buf.iter_from(0, 100)?
+///     .map(|(_seq, item)| item)
+///     .collect();
+/// assert_eq!(collected, vec![7, 8]);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub struct SegmentIter<'a, T> {
+    inner: std::vec::IntoIter<(u64, T)>,
+    // Tie the iterator's lifetime to the buffer borrow so callers can't
+    // outlive the buffer or sneak in a `flush`/`append`/`delete_acked`
+    // call while the iterator is live (those methods would panic via
+    // assert_not_reentered anyway, but the borrow makes it a compile-time
+    // guarantee for &self methods that don't take the inner lock).
+    _phantom: std::marker::PhantomData<&'a SegmentBuffer<T>>,
+}
+
+impl<T> Iterator for SegmentIter<'_, T> {
+    type Item = (u64, T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<T> std::iter::FusedIterator for SegmentIter<'_, T> {}
+
 impl<T> Drop for SegmentBuffer<T> {
     /// Releases the single-process flock by explicitly calling `unlock` and
     /// then dropping the lock file handle. The kernel would release the
@@ -1803,6 +2003,32 @@ impl<T> Drop for SegmentBuffer<T> {
             drop(lock_file);
         }
     }
+}
+
+/// Probe whether the filesystem at `dir` updates a file's mtime on a
+/// sub-second write-after-write window.
+///
+/// Writes a sentinel file twice with a ~15ms sleep between, then compares
+/// the kernel-reported mtime. Modern local filesystems (ext4/xfs/btrfs/
+/// apfs/ntfs) all qualify; some FUSE mounts, network filesystems with
+/// coarse granularity, and memoised-overlay filesystems pin mtime to a
+/// constant and would fail the probe.
+///
+/// Returns `false` on ANY failure (write error, stat error, mtime
+/// unchanged) — the caller treats a `false` as "do not consult mtime when
+/// validating the scan cache" (the cache stays warm until an in-process
+/// mutation invalidates it). This is the safe default: comparing two
+/// `0 == 0` mtimes would falsely confirm cache validity on a no-mtime
+/// filesystem, silently serving stale data forever.
+fn probe_mtime_capability(dir: &std::path::Path) -> bool {
+    let sentinel = dir.join(".segment-buffer.mtime-probe");
+    let _ = std::fs::write(&sentinel, b"a");
+    let t1 = std::fs::metadata(&sentinel).and_then(|m| m.modified()).ok();
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    let _ = std::fs::write(&sentinel, b"b");
+    let t2 = std::fs::metadata(&sentinel).and_then(|m| m.modified()).ok();
+    let _ = std::fs::remove_file(&sentinel);
+    matches!((t1, t2), (Some(a), Some(b)) if a != b)
 }
 
 // ---------------------------------------------------------------------------

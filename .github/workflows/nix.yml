@@ -9,7 +9,15 @@ on:
 jobs:
   flake-check:
     name: nix flake check
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Run `nix flake check` on every system the flake declares via
+        # nix-systems/default. macOS runners are slower and scarcer than
+        # linux, but catching aarch64-darwin / x86_64-darwin regressions
+        # here is cheaper than discovering them after a release.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31

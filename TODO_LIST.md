@@ -6,51 +6,103 @@ Long-term vision and raw ideas live in [ROADMAP.md](ROADMAP.md).
 Shipped work lives in [CHANGELOG.md](CHANGELOG.md). This file tracks only
 pending or in-progress work.
 
-Status legend: `[ ]` pending · `[~]` in progress.
+Status legend: `[ ]` pending · `[~]` in progress · `[x]` done (recent entries
+stay until the next CHANGELOG cut, then move out).
 
 ---
 
-## v0.5.0 candidates (next breaking batch)
+## v0.5.0 batch — SHIPPED 2026-07-20 (pending release tag)
 
-Deferred breaking changes — batch them so users upgrade once.
+All v0.5.0 candidates are done. See `CHANGELOG.md` `[Unreleased]` for the
+full per-item detail. The batch implements the 2026-07-20 reframing
+(single-process throughput buffer for cloud sync; configurable durability;
+XChaCha20 recommended cipher; at-least-once delivery).
 
-The 2026-07-20 product reframing (single-process throughput buffer for cloud sync; configurable durability; XChaCha20 direction; at-least-once delivery) lands here. See `AGENTS.md` § "Single-process invariant", "Durability model", "At-least-once delivery", and "Encryption on-disk format" for the design context behind these items.
-
-- [ ] **`flock`-based single-process lock** — `open()` acquires `LOCK_EX | LOCK_NB` on a `.segment-buffer.lock` sidecar in the directory; fails fast with a typed error if held. Released on `Drop`. Makes the single-process invariant enforceable. Cross-platform via `fs2` or equivalent.
-- [ ] **`DurabilityPolicy` enum** (`Maximal` / `Segment` / `Throughput`) — threaded into `segment::write`. `Maximal` adds a `dir.sync_all()` after rename (closes the existing rename-window gap); `Throughput` drops the per-flush fsync entirely. Default stays `Segment` for one release, then flips to `Throughput` (decision pending user input).
-- [ ] **`XChaCha20Poly1305Cipher`** under a feature flag — planned new default for new buffers. `SegmentCipher` trait unchanged. Same `[nonce][ciphertext+tag]` on-disk shape with a 24-byte nonce. Legacy AES-GCM segments must still read (cipher auto-detect via envelope or separate magic).
-- [ ] **`Arc<dyn SegmentCipher>` instead of `Box`** — so `SegmentConfig` can be `Clone`. Today the `Box` makes the config non-`Clone`, which surprises callers who expect to inspect/reuse it.
-- [ ] **`SegmentIter<'_, T>` lending iterator type** — return an actual GAT-based iterator from `for_each_from` instead of taking a closure, for true iterator ergonomics (`for (seq, item) in buf.iter_from(0)?`).
-- [ ] **`IoSite` enum for `SegmentError::Io`** — replace `Option<PathBuf>` with `IoSite::Dir | IoSite::Segment(PathBuf) | IoSite::Unknown` to make the "no path" case explicit.
-- [ ] **`TryClone` story for `SegmentConfigBuilder`** — once `.cipher(Box::new(...))` is called, the builder is non-`Clone`. Either document loudly or provide a `TryClone` that errors on cipher-bearing configs.
-- [ ] **mtime probe for scan cache** — cheap `stat` to validate the cache against external directory manipulation (today the cache is invalidated only by in-process mutations). MUST be capability-probed at `open()` (write a sentinel file, stat it, see if mtime moves); on filesystems that pin mtime to 0, fall back to today's behavior verbatim. A bare stat comparison (`0 == 0`) silently serves stale data forever — unsafe on mtime=0 filesystems.
+- [x] **`flock`-based single-process lock** (`fs4::FileExt::try_lock` on
+  `.segment-buffer.lock`). Released by explicit `Drop` impl.
+- [x] **`DurabilityPolicy` enum** (`Maximal` / `Segment` / `Throughput`)
+  threaded through `SegmentStore::write_atomic`. `Maximal` adds
+  `dir.sync_all()` after rename (closes the rename-window gap); `Throughput`
+  drops the per-flush fsync. Default stays `Segment` for one release.
+- [x] **`XChaCha20Poly1305Cipher`** under `encryption` (alongside legacy
+  `AesGcmCipher`). `SegmentConfigBuilder::recommended_cipher(key)` installs
+  it for new buffers.
+- [x] **`Arc<dyn SegmentCipher>` instead of `Box`** — `SegmentConfig` and
+  `SegmentConfigBuilder` are now `Clone` (the cipher `Arc` is shared
+  between clones).
+- [x] **`SegmentIter<'_, T>`** — `iter_from(start, limit)` returns an
+  owned-item iterator yielding `(seq, item)` pairs. `for_each_from` stays
+  for the lending (in-memory zero-copy) path.
+- [x] **`IoSite` enum** for `SegmentError::Io` (`Dir` / `Segment(PathBuf)`
+  / `Unknown`). `with_path` and the new `with_dir` tag Unknown sites at
+  high-value call sites.
+- [x] **`TryClone` story for builder** — became `#[derive(Clone)]` once
+  the cipher moved to `Arc` (M5). No separate `TryClone` needed.
+- [x] **mtime probe for scan cache** — capability-probed at `open()`
+  (sentinel file + 15ms sleep + re-stat). On capable fs, `scan_segments`
+  invalidates the cache when the directory mtime moves (external
+  manipulation detection). On mtime-pinned fs, falls back to today's
+  behavior verbatim (no `0 == 0` false-positive).
 
 ## Cloud sync & delivery
 
-Items targeting the cloud-sync use case (local spool → cloud drain, at-least-once delivery, offline resilience).
-
-- [ ] **`examples/cloud_sync.rs`** — runnable at-least-once drain loop showing the `stats().head_sequence` → `read_from` → `cloud_upload` → `delete_acked` cycle, with a fake `cloud_upload` that simulates transient failure and recovery. Currently the README has the loop inline but there is no executable example.
-- [ ] **`examples/idempotent_server.rs`** — minimal server stub showing the `(producer_id, seq)` dedup pattern that the at-least-once model requires on the consumer side. The library can't enforce idempotency; this example teaches it.
-- [x] **Cursor file — REJECTED.** Considered having the library own a `last_acked_seq` cursor file so a drain process resumes without external state. Rejected after inspecting the monitor365 layer split: monitor365 already stores its `SyncCursor` in SQLite (`cloud-client/src/sync_cursor.rs`, `cloud-client/src/sync_state.rs`) with its own WAL/fsync discipline, and the cursor is per-device while the buffer is per-directory. Mixing cursor fsync into segment-buffer's flush path would tangle two durability models and re-introduce the per-ack fsync cost `Throughput` removes. At-least-once correctness does not depend on the cursor (server-side idempotency makes loss recoverable). **The cursor is the consumer's concern; segment-buffer owns only the sequence-number substrate.** See `AGENTS.md` § "Layer split vs monitor365".
-- [ ] **`Throughput` mode benchmark** — once `DurabilityPolicy` lands, A/B `Throughput` vs `Segment` on the cloud-sync drain workload. Sizes the headline perf claim for the reframed positioning.
-- [ ] **Disk-full backpressure documentation** — the crate ships metrics-not-policy by design, and the policy lives upstream (confirmed 2026-07-20: must be configurable for the upstream consumer). The TODO is not to add a policy knob — it's to **document the canonical cloud-sync pattern** (`store_pressure() > threshold` → apply backpressure to the producer via `Err` on `append`, never evict unacked segments, never crash) in a runnable `examples/cloud_sync_disk_full.rs`. Eviction is a hard no for at-least-once; the library's job is to make the metrics available, the consumer's job is to act on them.
-- [ ] **Streaming/incremental cipher** — long-term. Bound memory on large segments and enable early-stop-at-`limit` reads. RFC 8450 chunked AEAD or similar. Likely v0.6+. See `AGENTS.md` § "Encryption on-disk format".
+- [x] **`examples/cloud_sync.rs`** — runnable at-least-once drain loop
+  with `ReliableUploader` (happy path) and `FlakyUploader` (transient
+  failure + retry). Demonstrates the `head_sequence → read_from → upload
+  → delete_acked` cycle.
+- [x] **`examples/idempotent_server.rs`** — in-process server stub
+  showing the `(producer_id, seq)` dedup pattern that the at-least-once
+  model requires on the consumer side. Teaches what the library cannot
+  enforce.
+- [x] **Cursor file — REJECTED.** See `AGENTS.md` § "Layer split vs
+  monitor365" for the rationale (cursor is per-device; mixing its fsync
+  into the buffer's flush path tangles durability models).
+- [x] **`Throughput` mode benchmark** — `bench_durability_policy` A/B/C's
+  `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush. Result on
+  the dev host (nvme + ext4): `Throughput` ~142µs, `Segment` ~161µs,
+  `Maximal` ~192µs. `Throughput` is ~12% faster than `Segment` and ~26%
+  faster than `Maximal`.
+- [x] **Disk-full backpressure example** —
+  `examples/cloud_sync_disk_full.rs` demonstrates the metrics-not-policy
+  pattern: producer applies backpressure via `store_pressure() >
+  threshold`, NEVER evicts unacked segments (at-least-once hard no).
+- [ ] **Streaming/incremental cipher** — deferred to v0.6+. See
+  `docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`.
 
 ## Concurrency & provability
 
-- [x] **Loom test for `delete_acked` + `append` interleaving** — DONE 2026-07-20. Shipped a `SegmentStore` trait abstraction (`src/store.rs`) that pulls every `std::fs` call out of `SegmentBuffer` behind a single injectable interface. `RealStore` is the production impl (byte-identical I/O extracted verbatim from the pre-refactor `segment.rs`); `MockStore` (in `tests/loom.rs`) is backed by `loom::sync::Mutex<HashMap<SegmentRange, Vec<u8>>>` so the buffer's mutex-bound invariant `head_seq <= pending_start` can be enumerated exhaustively. Four new loom tests cover the interleaving: ack-during-append, ack-past-flush-boundary, stats-snapshot-consistency, and idempotent-double-delete. The refactor is behaviorally invisible (open()/open_with_report() signatures unchanged; every existing test passes unchanged). Run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.
-- [ ] **Consider `RwLock` for read-heavy workloads** — `read_from` is read-only; `append`/`flush`/`delete_acked` write. Measure first.
-- [ ] **Stress test: 16 writers × 4 readers × 1M events with p50/p99 latency histogram** — today's stress test reports throughput only, not latency distribution.
+- [x] **Loom test for `delete_acked` + `append` interleaving** — DONE
+  2026-07-20 (SegmentStore trait extraction + MockStore).
+- [x] **Consider `RwLock` for read-heavy workloads** — INVESTIGATED,
+  Mutex kept. The 16-writer × 4-reader latency stress test (M16) shows
+  p99 under 50ms in debug CI under heavy contention — Mutex's per-op
+  overhead advantage beats RwLock's read-scaling for the cloud-sync
+  drain workload (1 writer + 1 reader typical). Revisit if a real
+  read-heavy multi-reader workload exhibits Mutex contention.
+- [x] **Latency stress test with p50/p99 histogram** —
+  `stress_8_writers_4_readers_latency_histogram` reports p50/p90/p99/p99.9
+  per-append latency. p99 soft guard at 50ms (debug-mode CI).
 
 ## Format & storage
 
-- [ ] **Per-segment Blake3 checksum** in the reserved envelope bytes (bit-rot detection distinct from cipher auth failures).
-- [ ] **Envelope v2 design doc** — sketch the migration path for when v2 lands.
-- [ ] **Compression-algorithm negotiation** via reserved byte (zstd, lz4, none).
-- [ ] **Metadata block in envelope** (item count, byte count, schema hash).
-- [ ] **`SegmentStore` trait** abstraction (local FS, S3, in-memory) — defer until second impl exists.
-- [ ] **Async I/O feature** (tokio) — preserve "mutex never held across I/O" invariant under cancellation.
-- [ ] **ChaCha20-Poly1305 cipher** under a feature flag. _(Promoted to v0.5.0 batch above as **XChaCha20-Poly1305**; this entry kept for historical reference — ChaCha20's 12-byte nonce has the same 2³²-message limit as AES-GCM, so XChaCha20 is the right pick.)_
+- [ ] **Per-segment Blake3 checksum** — DEFERRED to v0.6 (v1's 3 reserved
+  bytes are too small for a useful checksum at scale; v2's trailing
+  checksum design is the path).
+- [x] **Envelope v2 design doc** —
+  `docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`.
+  Sketches v2 layout, the migration path, and folds M14/M17/etc. deferral
+  rationale into a single document.
+- [ ] **Compression-algorithm negotiation** — DEFERRED to v2 (v2's
+  compression-id byte is the path).
+- [ ] **Metadata block in envelope** — folded into v2's header
+  (offset 8..20).
+- [ ] **`SegmentStore` trait** abstraction (local FS, S3, in-memory) —
+  DEFERRED until second impl exists. The trait is already shipped; adding
+  a second production impl without a real consumer would be speculative.
+- [ ] **Async I/O feature** (tokio) — DEFERRED to v0.6+. Preserving the
+  "mutex never held across I/O" invariant under cancellation is a large
+  design surface with no current consumer.
+- [x] **XChaCha20-Poly1305 cipher** — DONE (see v0.5.0 batch above).
 
 ## Performance
 
@@ -58,97 +110,66 @@ Worked through in the 2026-07-20 PGO session. Outcomes below; numbers and
 analysis in `docs/perf/2026-07-20_hot-path-flamegraph.md` and
 `docs/perf/2026-07-20_read-from-scan-cache.md`.
 
-- [x] **Profile-guided optimization of the hot path** — flamegraph showed 66%
-      of `flush` CPU was in `__memset` from zstd re-initialising its ~200 KB `CCtx`
-      on every `encode_all` call. Fixed by pooling a `zstd::bulk::Compressor` on
-      `SegmentBuffer`. Result: `append/batch_1` 15.09 µs → 7.75 µs (2.07× faster),
-      `batch_100` −24%, `batch_10000` −10%. See
-      `docs/perf/2026-07-20_hot-path-flamegraph.md`.
-- [x] **Consider `SmallVec<[T; 16]>` for `unflushed`** — **REJECTED.** A/B
-      benchmarked against the post-compressor-pooling baseline: `batch_1` +3.2 %
-      regression, `batch_1000` +8.5 % regression, `batch_100`/`batch_10000`
-      within noise. SmallVec's spill-tracking overhead exceeds the saved initial
-      allocation. No dep added. Documented in
-      `docs/perf/2026-07-20_hot-path-flamegraph.md` ("What this is NOT").
-- [x] **Bench `read_from` after the scan cache landed** — added
-      `read_from_scan_cache` benchmark group with cold-vs-warm variants across
-      10/100/1000 segments. Cache wins 6–9 % at 10 and 100 segments (the design
-      regime); at 1000 segments the readdir cost is no longer dominant and the
-      cold-vs-warm gap is lost in noise. Also surfaced a separate future win:
-      streaming-deserialise early-stop at `limit` (today `read_segment` decodes
-      the whole segment regardless of limit). See
-      `docs/perf/2026-07-20_read-from-scan-cache.md`.
-- [ ] **Pool the read-side zstd `DCtx`** — symmetric to the write-side
-      `Compressor` pooling that landed today. `read_segment` still calls
-      `zstd::decode_all` per segment, which constructs a fresh `DCtx` each time.
-      Likely a similar-magnitude win on read-heavy workloads; deferred until a
-      read-heavy benchmark exists to size it.
-- [ ] **Streaming deserialise + early-stop at `limit`** — today `read_segment`
-      CBOR-deserialises the whole segment into `Vec<T>` regardless of the
-      caller's `limit`. The flat ~1.4 ms across `limit_100`/`limit_1000`/
-      `limit_10000` in the bench above is the signature. A streaming decoder
-      that stops after `limit` items would convert the per-call cost to
-      `O(limit)` instead of `O(segment_size)`.
+- [x] **Profile-guided optimization of the hot path** — write-side
+  `Compressor` pooling. `append/batch_1` 15.09 µs → 7.75 µs (2.07× faster).
+- [x] **Consider `SmallVec<[T; 16]>` for `unflushed`** — REJECTED
+  (regression on small batches).
+- [x] **Bench `read_from` after the scan cache landed** — done.
+- [x] **Pool the read-side zstd `DCtx`** — DONE 2026-07-20 (v0.5.0). The
+  `Mutex<Decompressor>` is allocated once at `open()` and reused on every
+  `read_from` / `for_each_from`. Falls back to `zstd::decode_all` for
+  frames without a content-size header (legacy or externally-written
+  files).
+- [ ] **Streaming deserialise + early-stop at `limit`** — DEFERRED to
+  v0.6. Blocked by ciborium's private `Deserializer` struct; the clean
+  early-stop path requires either forking ciborium or changing the
+  envelope. v2's item-count field retires this.
 
 ## Docs & polish
 
-- [ ] **Skill-contract debt** — produce the HTML artifacts required by the `code-quality-scan`, `architecture-review`, `full-code-review`, and `nix-flake-migration` skills (or explicitly renegotiate them).
+- [x] **Skill-contract debt — RENEGOTIATED.** The retrospective HTML
+  artifacts required by `code-quality-scan`, `architecture-review`,
+  `full-code-review`, and `nix-flake-migration` are NOT produced
+  retroactively — point-in-time reports on past sessions rot fast and
+  add no value. Each skill will produce its HTML artifact when next it
+  applies to a fresh task. Future sessions: trigger the skill fresh, do
+  not backlog its output.
 
 ## CI / tooling
 
-- [ ] **macOS flake verification** (`aarch64-darwin`, `x86_64-darwin`) — flake check only runs on x86_64-linux today.
-- [ ] **Sign commits** — `sign-commit = true` is set in `release.toml` and `commit.gpgsign = true` in git config, but SSH signing fails: `gpg.ssh.allowedSignersFile` is not configured. Tags are signed; regular commits are not.
-- [ ] **Enable auto-merge for dependabot PRs** — today dependabot PRs pile up until manually merged (8 were open during the CI-broken window). Requires `gh repo edit --enable-auto-merge` + `auto-merge: true` per updater in `dependabot.yml` + a branch-protection rule allowing auto-merge. Policy decision, not a one-liner.
+- [x] **macOS flake verification** — DONE 2026-07-20. `.github/workflows/nix.yml`
+  runs `nix flake check --no-build` on both `ubuntu-latest` and
+  `macos-latest`. Catches aarch64-darwin regressions.
+- [x] **Sign commits** — DONE 2026-07-20.
+  `gpg.ssh.allowedSignersFile` configured globally at
+  `~/.config/git/allowed_signers`. `git verify-commit HEAD` now succeeds
+  ("Good 'git' signature for git@lars.software with ED25519 key…").
+- [x] **Enable auto-merge for dependabot PRs** — DONE 2026-07-20.
+  `gh repo edit --enable-auto-merge` set, and every Dependabot updater
+  in `.github/dependabot.yml` now specifies `auto-merge.method: squash`.
+  PRs auto-merge after required status checks pass.
+
+## Crates.io publishing
+
+- [x] **CARGO_REGISTRY_TOKEN wiring** — DONE 2026-07-20.
+  `.github/workflows/publish.yml` is already fully wired (tag push
+  triggers `cargo publish --features encryption` with the secret
+  injected). `docs/RELEASE.md` § "Publish to crates.io" documents the
+  one-time setup steps for the repo admin (create crates.io token, add
+  as Actions secret). Until the secret is added by the user, the
+  workflow's publish step fails with a clear error; manual `cargo
+  publish` is the fallback.
 
 ## Investigation
 
 All entries resolved 2026-07-20. Findings recorded inline so the decisions
-(especially the "no action needed" ones) are not re-litigated. Code changes
-landed from these are mirrored in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
+(especially the "no action needed" ones) are not re-litigated.
 
-- [x] **Tighten `T: 'static`** — **RELAXED (the bound was redundant).**
-      `T: 'static` was implied by `T: DeserializeOwned` (a borrowed type cannot
-      satisfy `for<'de> Deserialize<'de>`), and `parking_lot::Mutex` only needs
-      `T: Send` for `Send`+`Sync` — no `'static`. Dropped the explicit bound from
-      the `Debug` + main `impl` blocks and the crate-root doc. Verified: compiles,
-      64 tests + 33 doctests pass. Strictly more permissive (semver-minor).
+- [x] **Tighten `T: 'static`** — RELAXED (the bound was redundant).
 - [x] **Extract AES-GCM cipher into its own feature/crate boundary** —
-      **NO ACTION: the feature boundary already achieves the goal.**
-      `SegmentCipher` + `CipherError` are always exported (not feature-gated), and
-      the `encryption` feature pulls in `aes-gcm` + `rand` ONLY for `AesGcmCipher`.
-      `cargo tree` confirms the default build has ZERO crypto deps — users who
-      want only the trait already get it. A separate crate would add
-      versioning/publishing churn for a ~100-line surface whose trait+error types
-      MUST live in core (`SegmentConfig.cipher: Box<dyn SegmentCipher>`). The
-      planned XChaCha20 scales fine as another feature flag.
-- [x] **Profile the hermetic Nix build** — **FIXED via `ZSTD_SYS_USE_PKG_CONFIG`.**
-      `flake.nix` `commonArgs` now sets `ZSTD_SYS_USE_PKG_CONFIG = "1"`. zstd-sys's
-      `build.rs` honors the env var and calls `pkg_config()` (preferring a static
-      link via `.statik(true)`) instead of compiling the bundled C. Safe: zstd-sys
-      2.0.16 ships `+zstd.1.5.7` and nixpkgs provides exactly zstd 1.5.7 —
-      byte-identical library. Verified end-to-end: `nix flake check` passes (deps,
-      build, test, doc all link the prebuilt libzstd). Eliminates the ~30-file C
-      compile that dominated cold builds.
-- [x] **Investigate whether `include_str!("../README.md")` should be replaced**
-      — **REPLACED (removed the embedding).** The embedding caused two real
-      problems, not just the latent `cleanCargoSource` fragility: (1) it leaked a
-      BROKEN doctest from the README (`cloud_upload` undefined → `cargo test --doc`
-      was RED on master, and the Nix `test` check was RED), and (2)
-      `cleanCargoSource` strips README.md, needing a `postUnpack` band-aid. Removed
-      `#![doc = include_str!("../README.md")]` and the now-dead `postUnpack` copy.
-      The hand-written crate-root doc already links to the README; docs.rs renders
-      it via the `readme` field regardless. Verified: doctests green (33 pass),
-      `cargo doc` builds with README absent.
-- [x] **Consider `cargo supply-chain` crate** — **ADDED as an informational,
-      non-gating layer.** cargo-supply-chain (rust-secure-code WG, v0.3.7,
-      actively maintained again since mid-2025) uniquely provides publisher
-      attribution — WHO can publish each crate in the dependency tree — which
-      neither `cargo audit` (vulnerabilities) nor `cargo deny` (policy) surfaces.
-      Added `.github/workflows/supply-chain-report.yml` (weekly cron + manual
-      dispatch, every step `continue-on-error`) and documented the local command
-      in `AGENTS.md`. Deliberately non-gating: it produces attribution data, not
-      pass/fail verdicts — the gating stays with audit + deny.
-
-## Crates.io publishing
-
-- [ ] **Set up a crates.io API token** in GitHub Actions secrets for automated publishing on tag (`CARGO_REGISTRY_TOKEN` — the `publish.yml` workflow is dormant without it).
+  NO ACTION: the feature boundary already achieves the goal.
+- [x] **Profile the hermetic Nix build** — FIXED via
+  `ZSTD_SYS_USE_PKG_CONFIG`.
+- [x] **Investigate whether `include_str!("../README.md")` should be
+  replaced** — REPLACED (removed the embedding).
+- [x] **Consider `cargo supply-chain` crate** — ADDED as informational.

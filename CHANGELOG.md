@@ -7,6 +7,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The **v0.5.0 cloud-sync throughput batch** — the first release that makes
+the 2026-07-20 reframing (single-process throughput buffer for cloud sync,
+with optional performant encryption, durability-configurable, at-least-once
+delivery) **literally true** rather than aspirational. Breaking changes are
+batched so users upgrade once. See
+`docs/planning/2026-07-20_03-40_v0.5.0-cloud-sync-throughput-batch.md` for
+the full Pareto plan and `docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`
+for the deferred-to-v0.6 items with rationale.
+
+### Added (v0.5.0)
+
+- **`DurabilityPolicy` enum** (`Maximal` / `Segment` / `Throughput`) —
+  selects per-flush fsync behavior. `Segment` (today's behavior) stays the
+  default for one release for backward compatibility; cloud-sync deployments
+  switch to `Throughput` to eliminate the per-flush fsync from the hot path
+  (~12% faster than `Segment`, ~26% faster than `Maximal` on the
+  `bench_durability_policy` benchmark). `Maximal` adds `dir.sync_all()`
+  after the rename, closing the rename-window gap that today's `Segment`
+  already has. Threaded through `SegmentStore::write_atomic` as a third
+  parameter; the trait signature change is a breaking change (the trait is
+  documented as not-stable-semver-surface under the `loom` feature, but
+  external implementors must update).
+- **`flock`-based single-process lock** — `open()` acquires an exclusive
+  `flock` on `<dir>/.segment-buffer.lock` via `fs4::FileExt::try_lock`,
+  fail-fast with the new `SegmentError::Locked { path }` if another process
+  holds it. The lock file handle is held for the lifetime of the buffer and
+  released by an explicit `Drop` impl (the kernel would release it on fd
+  close regardless). Loom tests bypass the lock via `open_with_store`
+  (loom does not model the filesystem).
+- **`XChaCha20Poly1305Cipher`** under the `encryption` feature (alongside
+  the legacy-compatible `AesGcmCipher`). Writes `[24-byte nonce][ciphertext
+  + 16-byte Poly1305 tag]`. Eliminates AES-GCM's 2³²-message-per-key limit
+  via the 24-byte extended nonce; constant-time in software (no AES-NI
+  dependency). The `SegmentConfigBuilder::recommended_cipher(key)` helper
+  installs `XChaCha20Poly1305Cipher` — the recommended choice for new
+  buffers. Legacy AES-GCM segments still read via `AesGcmCipher`.
+- **`IoSite` enum** (`Dir` / `Segment(PathBuf)` / `Unknown`) replaces the
+  `Option<PathBuf>` on `SegmentError::Io`. Makes the "no path" case
+  explicit (was an overload of `None` covering both "directory-level
+  failure" and "no context attached yet"); `with_path` and the new
+  `with_dir` tag Unknown Io errors at high-value call sites.
+- **`SegmentError::Locked { path }`** — the typed error returned when the
+  single-process lock is contended. Distinct from `Io` so callers can
+  pattern-match the contention case without sniffing error strings.
+- **`SegmentIter<'_, T>`** — owned-item iterator yielded by
+  `SegmentBuffer::iter_from(start, limit)`. Returns `(seq, item)` pairs;
+  works with standard `Iterator` combinators (`.take`, `.filter`, `.map`)
+  and the `for` loop. Materialises up to `limit` items eagerly; the
+  existing `for_each_from` lending iterator stays for the zero-copy
+  in-memory tail.
+- **mtime capability probe for the scan cache** — `open()` writes a
+  sentinel file twice with a 15ms sleep and checks whether the kernel
+  updated its mtime. On filesystems where the probe succeeds (ext4/xfs/
+  btrfs/apfs/ntfs defaults), `scan_segments` stat-checks the directory
+  mtime against the cached value and re-scans if it moved (detects
+  external manipulation: backup tools, manual `rm`, operator
+  quarantine). On filesystems where the probe fails (some FUSE, network
+  fs with coarse granularity), the cache stays warm until an in-process
+  mutation invalidates it — the safe default that avoids the `0 == 0`
+  false-positive.
+- **Pooled read-side zstd `Decompressor`** — symmetric to the write-side
+  `Compressor` pooling that landed in v0.4.x. Cloud-sync drain loops are
+  read-heavy, so the DCtx pooling matters symmetrically. Falls back to
+  `zstd::decode_all` only when the frame header lacks a content size
+  (legacy or externally-written files).
+- **Three new examples**:
+  - `examples/cloud_sync.rs` — runnable at-least-once drain loop with
+    both a `ReliableUploader` (happy path) and a `FlakyUploader` (transient
+    failure + retry demonstration).
+  - `examples/cloud_sync_disk_full.rs` — the metrics-not-policy pattern:
+    producer applies backpressure via `store_pressure() > threshold`,
+    NEVER evicts unacked segments (the at-least-once hard no).
+  - `examples/idempotent_server.rs` — the consumer-side `(producer_id,
+    seq)` dedup pattern the at-least-once model requires on the server.
+- **`bench_durability_policy`** — criterion A/B benchmark comparing
+  `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush. Sizes the
+  headline perf claim for the reframed positioning.
+
+### Changed (v0.5.0 — BREAKING)
+
+- **`SegmentStore::write_atomic` signature** now takes
+  `policy: DurabilityPolicy` as a third parameter. The trait is reachable
+  only under the `loom` feature (documented as not-stable-semver-surface);
+  external implementors must update.
+- **`SegmentError::Io` field rename** — `path: Option<PathBuf>` is now
+  `site: IoSite`. Pattern-matching callers must update; the
+  `with_path` method keeps its name but now produces `Segment(path)` site.
+  New `with_dir` method tags Unknown Io errors as `Dir` site.
+- **`SegmentConfig.cipher` type** changed from `Option<Box<dyn
+  SegmentCipher>>` to `Option<Arc<dyn SegmentCipher + Send + Sync>>`.
+  Callers using `.cipher(Box::new(cipher))` must update to
+  `.cipher(Arc::new(cipher))`. The benefit: `SegmentConfig` and
+  `SegmentConfigBuilder` are now `Clone` (M12) — the cipher `Arc` is
+  shared between clones rather than deep-copied.
+- **`SegmentConfig` new field `pub durability: DurabilityPolicy`** —
+  `#[non_exhaustive]` struct, so direct struct-literal construction was
+  already forbidden externally; the builder pattern is unaffected.
+  Internal callers using struct literals must add `durability:
+  DurabilityPolicy::Segment` (or `Default::default()`).
+
+### Internal (v0.5.0)
+
+- **`fs4` dep added** for cross-platform advisory file locking (replaces
+  the unmaintained `fs2`). Pure-Rust via `rustiy`, no `libc` dep.
+- **`chacha20poly1305` dep added** under the `encryption` feature.
+- **Nix CI runs on macOS** (aarch64-darwin via macos-latest runner) in
+  addition to linux — catches platform-specific regressions earlier.
+- **Dependabot auto-merge enabled** for github-actions, cargo, and fuzz
+  workspaces. PRs auto-squash-merge after required status checks pass
+  (prevented 8-PR pile-up during the 2026-07-20 CI-broken window).
+- **Latency histogram stress test** —
+  `stress_8_writers_4_readers_latency_histogram` reports p50/p90/p99/p99.9
+  per-append latency so tail-regressions are visible in CI output. p99
+  soft guard at 50ms (debug-mode CI).
+- **Commit signing verification** — `gpg.ssh.allowedSignersFile` now
+  configured globally so `git verify-commit` succeeds (was failing with
+  a confusing "needs to be configured" error).
+
+### Deferred to v0.6+ (with rationale)
+
+See `docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`
+for the full migration path. Summary:
+
+- **Streaming CBOR deserialise + early-stop at limit (M14)** — blocked
+  by ciborium's private `Deserializer` struct. The format itself encodes
+  no item count; the clean early-stop path requires either forking
+  ciborium or changing the envelope. v0.6's envelope v2 includes an
+  item-count field that retires this.
+- **Per-segment Blake3 checksum (M17)** — v1's 3 reserved bytes are too
+  small for a useful checksum at scale. v0.6's envelope v2 ships a
+  trailing-checksum design that covers this.
+- **Compression-algorithm negotiation, metadata block, streaming cipher,
+  async I/O, `SegmentStore` second impl** — all deferred pending a
+  concrete consumer request that forces the surface area; the envelope
+  v2 design doc explains each in detail.
+
+---
+
+### Earlier [Unreleased] items (pre-v0.5.0)
+
 ### Fixed
 
 - **CI hang**: `stress_8_writers_2_readers_throughput` and

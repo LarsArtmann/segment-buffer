@@ -118,9 +118,31 @@ with before/after code snippets.
 
 ### 7. Publish to crates.io
 
+The publish is automated via `.github/workflows/publish.yml`: pushing a tag
+`v*.*.*` triggers `cargo publish --features encryption` with
+`CARGO_REGISTRY_TOKEN` injected from GitHub Actions secrets. The workflow
+verifies the tag matches `Cargo.toml`'s version before publishing.
+
+**One-time setup (repo admin):**
+
+1. Create a crates.io API token at
+   <https://crates.io/settings/api-tokens> with `publish-new` and
+   `publish-update` scopes.
+2. Add it as a repository secret named `CARGO_REGISTRY_TOKEN` at
+   <https://github.com/LarsArtmann/segment-buffer/settings/secrets/actions>.
+3. Verify the next tag push triggers the publish workflow in the Actions
+   tab.
+
+**If the secret is not configured,** the publish workflow fails at the
+`cargo publish` step with a clear error; the tag still exists and the
+GitHub release still lands, but the crate is not on crates.io. Manual
+fallback:
+
 ```bash
-cargo publish          # for real this time
+cargo publish --features encryption
 ```
+
+(You will be prompted for your crates.io API token interactively.)
 
 Verify at https://crates.io/crates/segment-buffer and
 https://docs.rs/segment-buffer (docs.rs takes ~5 minutes to build).
