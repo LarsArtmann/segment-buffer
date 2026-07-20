@@ -10,7 +10,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
-    # rust-overlay gives us pinned MSRV (1.85) and nightly toolchains
+    # rust-overlay gives us pinned MSRV (1.86) and nightly toolchains
     # alongside whatever nixpkgs' default stable happens to be.
     rust-overlay = {
       url = "github:oxalica/rust-overlay";

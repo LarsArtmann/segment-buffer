@@ -73,6 +73,8 @@ if [[ "$RUN_LOOM" == "1" ]]; then
   run "loom"        env RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release
 fi
 
+run "nix flake check"  nix flake check --no-build
+
 printf '\n========================================\n'
 printf 'verify-gate: %d passed, %d failed\n' "$PASS" "$FAIL"
 if [[ "$FAIL" -gt 0 ]]; then

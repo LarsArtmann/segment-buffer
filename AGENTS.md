@@ -233,7 +233,7 @@ src/
   lib.rs           SegmentBuffer, SegmentConfig, BufferStats, BufferInner; orchestrates lock + flush policy + Arc<dyn SegmentStore>
   segment.rs       On-disk format (PURE, no I/O): envelope, SegmentRange, filename/parse, encode_segment, decode_segment, encode_payload, decode_payload, wrap/unwrap_envelope
   store.rs         SegmentStore trait + RealStore impl: the I/O boundary. create_dir_all / scan / clean_tmp / segment_size / remove_segment / write_atomic / read_bytes
-  cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + ErrorExt upcast for MSRV 1.85), AesGcmCipher (feature-gated impl in `mod private`)
+  cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher (feature-gated impl in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
   tests.rs         `mod tests` — 32 unit tests
   property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues (8 properties)
@@ -259,10 +259,10 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 
 ## CI / MSRV
 
-- Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.85`.
-- **MSRV is 1.85** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.85.0.
-- **Local MSRV verification (verified 2026-07-19):** `nix develop .#msrv -c cargo check --all-targets --features encryption` plus `cargo test --no-fail-fast --features encryption` and `cargo clippy --all-targets --features encryption -- -D warnings` were all run on Rust 1.85.0 via the `rust-overlay`-pinned `devShells.msrv` in `flake.nix`. All three returned exit 0 with no warnings. The MSRV claim is now backed by local evidence, not just CI.
-- **Pre-1.86 trait-upcasting workaround:** `CipherError::source()` uses a private `ErrorExt` trait in `src/cipher.rs` to upcast `Arc<dyn ErrorExt + Send + Sync>` → `&dyn Error` because Rust 1.85 cannot coerce `dyn ErrorExt` to `dyn Error` directly. Once the MSRV moves to 1.86+, this trait can be deleted and `source()` simplified to `self.source.as_deref()` (tracked in TODO_LIST.md under the v0.3.0 batch).
+- Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.86`.
+- **MSRV is 1.86** (also the `rust-version` in `Cargo.toml`). There is a dedicated `msrv` job that runs `cargo check --all-targets --features encryption` on 1.86.0.
+- **Local MSRV verification:** `nix develop .#msrv -c cargo check --all-targets --features encryption`. The `devShells.msrv` in `flake.nix` pins `rust-bin.stable."1.86.0"` via rust-overlay.
+- **MSRV consistency guard:** `scripts/check-msrv.sh` asserts that `Cargo.toml rust-version`, `ci.yml` matrix + msrv job, `flake.nix` msrv shell pin, and `docs/MSRV.md` headline all agree. Run by the CI `msrv-consistency` job to prevent drift.
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
 - **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. Covers only the in-memory append + `stats()` snapshot path — loom does not model the filesystem, so `flush`/`delete_acked`/`read_from`/`recover` are covered by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs` instead. Use `--release` — loom's schedule enumeration is slow in debug.
@@ -283,6 +283,7 @@ for any future agent (or human) working in this repo.
 7. **Concurrency tests must use `FlushPolicy::Manual`.** With `Batch(4)` the stress test creates 20 000 segment files (80 000 items / 4), causing pathological I/O under parallel test execution that hung CI for hours. `Manual` keeps items in-memory so the test stresses mutex contention, not the filesystem.
 8. **Doctests that need `--features encryption` must be cfg-gated.** A `rust,no_run` code fence referencing `AesGcmCipher` fails to compile under `cargo test` (default features). Use the hidden `#[cfg(feature = "encryption")] fn main() {}` pattern — see the README encryption example.
 9. **Before `git tag` for a release, the most recent CI + Nix runs on the target branch must be green.** Run `gh run list --limit 4` and confirm every run on the branch you are tagging shows `success`. Local-only verification (rule 4) is NOT sufficient: v0.4.1 and v0.4.2 both shipped with a "verification gate" that never checked GitHub Actions, leaving CI broken for 48+ hours while status reports claimed "all green". A release tag on an unverified commit is a lie of omission.
+10. **CI-red is a stop-work condition.** If `gh run list --limit 4` shows red on the target branch, the first work item is "turn it green," not "add features on top." Local-only green is never a green claim; check `gh run list` before ANY "done" claim, not just before releases. The investigation sweep of 2026-07-20 documented this exact failure mode: a session claimed "all gates green" while CI was on its 5th consecutive red run due to MSRV drift the session had noticed and dismissed as "out of scope."
 
 ### Session-end checklist
 
@@ -291,6 +292,7 @@ Before writing any closing summary, status report, or "done" claim:
 - [ ] `git status` — clean? Or have I explained every modified/untracked file?
 - [ ] `git log --format='%h %ci %s' -10` — do the commits match what I think I did?
 - [ ] Verification gate run with non-zero exit codes captured (see rule 4)?
+- [ ] **`gh run list --limit 4` — is CI green on the target branch?** (Rule 10.) If red, the first work item is turning it green. Local-only green is never a "done" claim.
 - [ ] Every doc claim that says "passes"/"verified"/"green" cites a commit hash or a literal command output in this session?
 - [ ] No fabricated numbers — every "was X / now Y" has a citation or has been rewritten to "first audit" / "no baseline"?
 - [ ] TODO_LIST updated for anything completed or partially completed this session?

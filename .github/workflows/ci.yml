@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [stable, "1.85"]
+        rust: [stable, "1.86"]
     steps:
       - uses: actions/checkout@v7
       # Pinned to commit hash for supply-chain hygiene (vs @master which drifts).
@@ -51,16 +51,24 @@ jobs:
         run: cargo doc --no-deps --features encryption
 
   msrv:
-    name: Verify MSRV (1.85)
+    name: Verify MSRV (1.86)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
-          toolchain: "1.85"
+          toolchain: "1.86"
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --all-targets --features encryption
+
+  msrv-consistency:
+    name: MSRV consistency guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check MSRV is consistent across all declarations
+        run: bash scripts/check-msrv.sh
 
   supply-chain:
     name: cargo audit + cargo deny
