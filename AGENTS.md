@@ -24,8 +24,33 @@ The library provides the substrate for at-least-once delivery; **idempotency liv
 - `delete_acked(seq)` is the commit point — it removes every segment whose `end <= seq` and advances `head_seq`.
 - Between `read_from(start, ...)` and `delete_acked(start + count - 1)`, a crash leaves the batch on disk. On restart, `read_from(start, ...)` returns it again.
 - `read_from` returns `Vec<T>` — items, not `(seq, T)` pairs. The caller tracks `start` and increments it by `batch.len()`. The starting cursor is `buf.stats().head_sequence` after recovery.
-- The library does NOT own a cursor file. Cursor persistence is the caller's concern (see [TODO_LIST.md](TODO_LIST.md) — `cursor_file` is a possible future feature; today it is a documented pattern, not an API).
+- The library does NOT own a cursor file. Cursor persistence is the caller's concern (see [Layer split vs monitor365](#layer-split-vs-monitor365)).
 - Only the unflushed in-memory tail is at risk of loss. `flush()` drains it to disk.
+
+## Layer split vs monitor365
+
+segment-buffer is the **producer-side local buffer**. Everything cloud-facing lives upstream. This split was verified against monitor365's source on 2026-07-20 after the user flagged potential scope creep. Respect it: do not pull upstream concerns into this crate.
+
+| Concern                                            | Owner                 | Location                          |
+| -------------------------------------------------- | --------------------- | --------------------------------- |
+| Queue: `append`/`flush`/`read_from`/`delete_acked` | **segment-buffer**    | `src/lib.rs`                      |
+| Sequence numbers (stable, monotonic, gap-free)     | **segment-buffer**    | `SegmentBuffer::append` return    |
+| Segment file format, crash recovery                | **segment-buffer**    | `src/segment.rs`                  |
+| `SyncCursor` (newtype around `u64`)                | **monitor365**        | `cloud-client/src/sync_cursor.rs` |
+| Cursor persistence (SQLite + WAL)                  | **monitor365**        | `cloud-client/src/sync_state.rs`  |
+| Cloud sync orchestration loop                      | **monitor365**        | `cli/src/cloud_sync.rs`           |
+| Server-side idempotency (`event_id` dedup)         | **monitor365 server** | (not in client)                   |
+
+**Consequences for this crate:**
+
+- **No cursor file.** The cursor is the consumer's concern. monitor365 stores it in SQLite with its own fsync discipline; pulling cursor persistence into segment-buffer would tangle two durability models, re-introduce the per-ack fsync cost `Throughput` removes, and mis-model the per-device vs per-directory cardinality. See TODO_LIST.md — the cursor-file item is REJECTED with rationale.
+- **No backpressure policy.** The crate ships `store_pressure()` / `is_overloaded()` metrics only. The decision to block, sample, drop, or crash on disk-full is the upstream consumer's. segment-buffer just makes the metrics available. See `examples/backpressure.rs` for the canonical pattern.
+- **No cloud client.** No HTTP, no retry policy, no auth. The drain loop is the consumer's `read_from → upload → delete_acked` cycle.
+- **No server-side dedup.** Idempotency on `(producer_id, seq)` lives in the consumer's server. The library delivers at-least-once; the server makes it effectively-once.
+
+If a proposed feature pulls any of the above into segment-buffer, reject it and document it as upstream's concern.
+
+**Future cloud-sync extraction.** Cloud-sync may one day be extracted from monitor365 into its own crate. That extracted crate would sit _between_ segment-buffer and the cloud — it would consume segment-buffer, not be merged with it. segment-buffer stays the focused producer-side local buffer regardless. Do not use "cloud-sync will eventually be extracted" as a rationale for pulling sync logic, cursors, retry policy, or HTTP into this crate — that is scope creep in either direction.
 
 ## Durability model (proposed)
 
