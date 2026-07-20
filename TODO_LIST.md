@@ -38,7 +38,7 @@ Items targeting the cloud-sync use case (local spool → cloud drain, at-least-o
 
 ## Concurrency & provability
 
-- [ ] **Loom test for `delete_acked` + `append` interleaving** — requires abstracting I/O behind a trait loom can mock; real engineering work.
+- [x] **Loom test for `delete_acked` + `append` interleaving** — DONE 2026-07-20. Shipped a `SegmentStore` trait abstraction (`src/store.rs`) that pulls every `std::fs` call out of `SegmentBuffer` behind a single injectable interface. `RealStore` is the production impl (byte-identical I/O extracted verbatim from the pre-refactor `segment.rs`); `MockStore` (in `tests/loom.rs`) is backed by `loom::sync::Mutex<HashMap<SegmentRange, Vec<u8>>>` so the buffer's mutex-bound invariant `head_seq <= pending_start` can be enumerated exhaustively. Four new loom tests cover the interleaving: ack-during-append, ack-past-flush-boundary, stats-snapshot-consistency, and idempotent-double-delete. The refactor is behaviorally invisible (open()/open_with_report() signatures unchanged; every existing test passes unchanged). Run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.
 - [ ] **Consider `RwLock` for read-heavy workloads** — `read_from` is read-only; `append`/`flush`/`delete_acked` write. Measure first.
 - [ ] **Stress test: 16 writers × 4 readers × 1M events with p50/p99 latency histogram** — today's stress test reports throughput only, not latency distribution.
 

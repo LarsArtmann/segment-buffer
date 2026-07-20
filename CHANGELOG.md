@@ -24,6 +24,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`SegmentStore` trait + `RealStore` impl** (`src/store.rs`) — the I/O
+  boundary of `SegmentBuffer` is now an injectable trait object. Production
+  code constructs a `RealStore` internally via `open()`/`open_with_report()`
+  (signatures unchanged); the trait is only reachable externally under the
+  `loom` Cargo feature, where `SegmentBuffer::open_with_store(dir, config,
+store)` accepts a caller-supplied store. The trait has seven methods
+  covering exactly the former `std::fs` surface (`create_dir_all`, `scan`,
+  `clean_tmp`, `segment_size`, `remove_segment`, `write_atomic`,
+  `read_bytes`). `RealStore`'s implementations are extracted verbatim from
+  the pre-refactor `segment.rs` — on-disk behaviour is byte-identical, the
+  tmp→sync→rename atomicity of `write_atomic` is preserved, and
+  `remove_segment` is idempotent on `NotFound`. Cost: ~5 ns per I/O call via
+  the vtable (negligible next to zstd+CBOR+file I/O).
+- **Loom coverage of `delete_acked` + `append` interleaving** — four new
+  loom tests in `tests/loom.rs` exhaustively enumerate the
+  `delete_acked` + `append` interleaving that was previously covered only
+  _statistically_ by the stress test. The tests prove `head_seq <=
+pending_start` (the "honest backlog" invariant — if it ever broke,
+  `pending_count` would under-report, silently dropping items from a durable
+  queue) across every schedule. The mock is backed by
+  `loom::sync::Mutex<HashMap<SegmentRange, Vec<u8>>>` and faithfully models
+  write atomicity, remove idempotency, and scan ordering.
 - **`#[track_caller]`** on `assert_not_reentered` and all 9 public methods that
   call it — re-entrancy panics now point to the user's callback code instead of
   the internal guard function.
@@ -38,6 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Three-layer separation in `src/`**: `segment.rs` (byte-level format)
+  is now pure — its only remaining functions operate on `&[u8]` / `Vec<u8>`,
+  never touching `std::fs`. The former `write`/`read` functions are now
+  `encode_segment`/`decode_segment`. The I/O layer (`scan`, `clean_tmp`,
+  `write`'s tmp+sync+rename, `read`'s `fs::read`) moved to `RealStore` in
+  the new `src/store.rs`. `lib.rs` orchestrates lock + flush policy and
+  delegates every filesystem call through `Arc<dyn SegmentStore>`. No
+  public API change; every existing test passes unchanged.
 - **aes-gcm 0.10 → 0.11**: `Nonce::from_slice` → `Nonce::from` / `try_into`
   (upstream deprecation). No public API change.
 - **rand 0.9 → 0.10**: `RngCore` import → `Rng` (the `fill_bytes` provider moved

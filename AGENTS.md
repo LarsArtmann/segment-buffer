@@ -130,16 +130,28 @@ append(item) ─► unflushed: Vec<T>  (in-memory, inside Mutex)
             take() the batch, compute start_seq/end_seq INSIDE the lock
                    │
                    ▼  (lock released)
-            CBOR-serialize  ─►  zstd compress  ─►  [optional cipher.encrypt]   (src/segment.rs)
+            segment::encode_segment  ─►  CBOR → zstd → [optional cipher.encrypt] → prepend 8-byte SBF1 envelope   (pure, src/segment.rs)
                    │
                    ▼
-            prepend 8-byte SBF1 envelope  ─►  write to seg_*.zst.tmp
-                   │                          ─►  sync_all  ─►  rename to seg_*.zst
+            store.write_atomic(range, bytes)  ─►  tmp → sync_all → rename to seg_*.zst   (src/store.rs)
+                   │
                    ▼  (lock re-acquired)
             approx_disk_bytes += len
 ```
 
-`read_from(start, limit)` scans on-disk segments first (sorted by `start`), then drains the in-memory pending tail. `delete_acked(seq)` removes every segment whose `end <= seq` and advances `head_seq`. Read path strips the envelope (auto-detecting legacy v1 files) before decryption.
+`read_from(start, limit)` scans on-disk segments first (sorted by `start`), then drains the in-memory pending tail. `delete_acked(seq)` removes every segment whose `end <= seq` and advances `head_seq`. Read path calls `store.read_bytes` then `segment::decode_segment`, which strips the envelope (auto-detecting legacy v1 files) before decryption.
+
+### Three-layer separation (since 2026-07-20)
+
+The crate has a deliberate three-layer split:
+
+| Layer             | Module           | Knows about                                                                                                                                                                          |
+| ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Format**        | `src/segment.rs` | Bytes only — envelope, filename, CBOR/zstd/cipher pipeline. Pure functions, zero `std::fs`.                                                                                          |
+| **I/O**           | `src/store.rs`   | The `SegmentStore` trait + `RealStore` impl. Owns the on-disk representation: `create_dir_all`, `scan`, `clean_tmp`, `segment_size`, `remove_segment`, `write_atomic`, `read_bytes`. |
+| **Orchestration** | `src/lib.rs`     | `SegmentBuffer`: mutex, flush policy, sequence-number invariants. Holds `Arc<dyn SegmentStore + Send + Sync>` and delegates every filesystem call through it.                        |
+
+`open()` / `open_with_report()` construct `RealStore` internally; the trait is reachable externally only under the `loom` Cargo feature (via `SegmentBuffer::open_with_store`). The trait-object approach (~5 ns vtable cost per I/O call, negligible next to zstd+CBOR+file I/O) was chosen over a type parameter `SegmentBuffer<T, S: SegmentStore>` because the latter would force every example, bench, fuzz target, and doc test to spell `<T, RealStore>` (~20 callsites of churn for a testing-only improvement).
 
 ### Crash recovery (the defining design choice)
 
@@ -157,7 +169,18 @@ If you change the filename format, `segment::filename` and `segment::parse_filen
 
 This was a real race fixed post-extraction (see CHANGELOG `[0.1.0]` → "Fixed"). The previous code re-read `next_seq` in a second lock and produced corrupted segment filenames under concurrent `append()`.
 
-The `parking_lot::Mutex` is **never held across file I/O** — `flush()` drops it before `write_segment` and re-acquires it only to bump `approx_disk_bytes`; `recover()` collects all segment metadata (file sizes via `fs::metadata`, head/next seq from filenames) before taking the lock once to publish the rebuilt state. There are no await points; all I/O is synchronous.
+The `parking_lot::Mutex` is **never held across file I/O** — `flush()` drops it before `write_segment` and re-acquires it only to bump `approx_disk_bytes`; `recover()` collects all segment metadata (file sizes via `store.segment_size`, head/next seq from filenames) before taking the lock once to publish the rebuilt state. There are no await points; all I/O is synchronous. The `SegmentStore` trait object is invoked outside the mutex exactly as `std::fs` was before the refactor.
+
+### `delete_acked` + `append` interleaving (loom-proven since 2026-07-20)
+
+The clamp at the end of `delete_acked`:
+
+```rust
+let pending_start = inner.next_seq.saturating_sub(inner.unflushed.len() as u64);
+inner.head_seq = new_head.unwrap_or(inner.next_seq).min(pending_start);
+```
+
+is exhaustively proven correct across every schedule of two threads by the loom tests `delete_acked_during_append_never_loses_head`, `delete_acked_past_flush_boundary_with_concurrent_append`, `stats_snapshot_consistent_under_delete_plus_append`, and `delete_acked_idempotent_under_concurrent_append` in `tests/loom.rs`. The proof depends on a `MockStore` (loom-aware in-memory stub) being injected via `open_with_store`; the production `RealStore` shares the same trait, so the proof transfers. The stress test `concurrency_4_writers_1_reader_10k_events` covers the same interleaving _statistically_; loom covers it _exhaustively_.
 
 ## Backpressure / overload policy
 
@@ -165,7 +188,7 @@ The crate **ships no admission policy**. `store_pressure()` returns `approx_disk
 
 ## Encryption on-disk format
 
-`AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]` as the segment **payload**. This payload is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `segment::read` rejects encrypted payloads shorter than `NONCE_LEN` (12) as `SegmentError::Integrity` with the offending path.
+`AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]` as the segment **payload**. This payload is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `segment::decode_segment` rejects encrypted payloads shorter than `NONCE_LEN` (12) as `SegmentError::Integrity` with the offending path.
 
 **Cipher evolution (2026-07-20 direction):**
 
@@ -196,8 +219,9 @@ If you need to evolve the format (new checksum, new compression, metadata block)
 
 ```
 src/
-  lib.rs           SegmentBuffer, SegmentConfig, BufferStats, BufferInner; orchestrates lock + flush policy
-  segment.rs       On-disk format: envelope, SegmentRange, filename/parse, encode/decode pipeline, scan, clean_tmp
+  lib.rs           SegmentBuffer, SegmentConfig, BufferStats, BufferInner; orchestrates lock + flush policy + Arc<dyn SegmentStore>
+  segment.rs       On-disk format (PURE, no I/O): envelope, SegmentRange, filename/parse, encode_segment, decode_segment, encode_payload, decode_payload, wrap/unwrap_envelope
+  store.rs         SegmentStore trait + RealStore impl: the I/O boundary. create_dir_all / scan / clean_tmp / segment_size / remove_segment / write_atomic / read_bytes
   cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + ErrorExt upcast for MSRV 1.85), AesGcmCipher (feature-gated impl in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
   tests.rs         `mod tests` — 32 unit tests
@@ -244,7 +268,7 @@ for any future agent (or human) working in this repo.
 3. **Line-number citations are banned.** Cite section names, item text, or commit hashes. Line numbers shift the moment any file above the citation is edited; they rot in the same session that wrote them.
 4. **Run the verification gate before declaring work done.** `cargo fmt --all -- --check` + `cargo clippy --all-targets --features encryption -- -D warnings` + `cargo test --no-fail-fast --features encryption` + `cargo doc --no-deps --features encryption`. Any claim that "tests pass" or "the build is green" must rest on a literal run of these in the current session, with the exit codes captured.
 5. **The supply-chain gate is BOTH `cargo audit` AND `cargo deny check`.** They pull from different advisory sources in edge cases. Running only one is not equivalent to running both. The CI `supply-chain` job runs both; the local pre-commit gate must too.
-6. **The loom gate is `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.** Files gated by `#![cfg(loom)]` are invisible to `cargo test` by default and silently rot without this explicit invocation. The CI `loom` job enforces it.
+6. **The loom gate is `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.** Files gated by `#![cfg(loom)]` are invisible to `cargo test` by default and silently rot without this explicit invocation. The CI `loom` job enforces it. Coverage (as of 2026-07-20): the in-memory hot path (`append`/`pending_count`/`latest_sequence`/`stats`/`append_all`) AND the `delete_acked` + `append` interleaving (4 tests, exhaustively enumerating every schedule of two threads via the `MockStore` injected through `open_with_store`). `flush`/`recover`/`read_from` still touch byte-level encode/decode that loom has no interest in enumerating; their concurrency contracts stay covered _statistically_ by the stress test `concurrency_4_writers_1_reader_10k_events`.
 7. **Concurrency tests must use `FlushPolicy::Manual`.** With `Batch(4)` the stress test creates 20 000 segment files (80 000 items / 4), causing pathological I/O under parallel test execution that hung CI for hours. `Manual` keeps items in-memory so the test stresses mutex contention, not the filesystem.
 8. **Doctests that need `--features encryption` must be cfg-gated.** A `rust,no_run` code fence referencing `AesGcmCipher` fails to compile under `cargo test` (default features). Use the hidden `#[cfg(feature = "encryption")] fn main() {}` pattern — see the README encryption example.
 9. **Before `git tag` for a release, the most recent CI + Nix runs on the target branch must be green.** Run `gh run list --limit 4` and confirm every run on the branch you are tagging shows `success`. Local-only verification (rule 4) is NOT sufficient: v0.4.1 and v0.4.2 both shipped with a "verification gate" that never checked GitHub Actions, leaving CI broken for 48+ hours while status reports claimed "all green". A release tag on an unverified commit is a lie of omission.

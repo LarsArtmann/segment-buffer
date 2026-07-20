@@ -34,11 +34,25 @@
 mod cipher;
 mod error;
 mod segment;
+mod store;
 
 #[cfg(feature = "encryption")]
 pub use cipher::AesGcmCipher;
 pub use cipher::{CipherError, SegmentCipher};
 pub use error::{Result, SegmentError};
+
+/// Test/loom-only re-exports: the I/O trait, production impl, and the
+/// range type used in trait signatures.
+///
+/// Reachable only when the `loom` Cargo feature is enabled (used by the
+/// `tests/loom.rs` integration test to inject a mock store). Not part of
+/// the stable semver surface: items reachable through this re-export may
+/// change in any release without a major bump. Mirrors the gating strategy
+/// used by `fuzz_hooks`.
+#[cfg(feature = "loom")]
+pub use segment::SegmentRange;
+#[cfg(feature = "loom")]
+pub use store::{RealStore, SegmentStore};
 
 /// Internal helpers exposed for in-tree fuzz targets and deep integration tests.
 ///
@@ -58,16 +72,14 @@ pub mod fuzz_hooks {
     };
 }
 
-use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::{debug, info};
-
-use segment::SegmentRange;
 
 /// When to auto-flush pending items from memory to a segment file.
 ///
@@ -422,6 +434,16 @@ pub struct SegmentBuffer<T> {
     /// pending events, and the re-entrancy guard serialises concurrent
     /// flushers against `for_each_from` anyway.
     compressor: Mutex<zstd::bulk::Compressor<'static>>,
+    /// I/O backend. Production uses [`RealStore`] (real filesystem via
+    /// `std::fs`); loom concurrency tests inject a mock backed by
+    /// `loom::sync::Mutex<HashMap<..>>` so `delete_acked` + `append`
+    /// interleavings can be enumerated exhaustively without modelling the
+    /// kernel filesystem. The trait object costs ~5 ns per I/O call
+    /// (negligible next to zstd+CBOR+file I/O) and is constructed internally
+    /// by [`open`](Self::open), so callers never see it. The store is always
+    /// called OUTSIDE the `inner` mutex — see [`flush`](Self::flush) and
+    /// [`delete_acked`](Self::delete_acked) for the lock-release boundaries.
+    store: Arc<dyn store::SegmentStore + Send + Sync>,
 }
 
 /// `Debug` mirrors the field set of [`BufferStats`] plus the directory path.
@@ -511,7 +533,49 @@ where
         config: SegmentConfig,
     ) -> Result<(Self, RecoveryReport)> {
         let dir = dir.into();
-        fs::create_dir_all(&dir)?;
+        let store: Arc<dyn store::SegmentStore + Send + Sync> =
+            Arc::new(store::RealStore::new(dir.clone()));
+        Self::open_internal(dir, config, store)
+    }
+
+    /// Open (or create) a buffer with a caller-supplied [`SegmentStore`].
+    ///
+    /// Production callers use [`open`](Self::open) (which constructs a
+    /// [`RealStore`] internally). This constructor exists for loom
+    /// concurrency tests, which inject a mock store backed by
+    /// `loom::sync::Mutex<HashMap<..>>` so `delete_acked` + `append`
+    /// interleavings can be enumerated without modelling the kernel
+    /// filesystem.
+    ///
+    /// Only reachable when the `loom` Cargo feature is enabled. Not part of
+    /// the stable semver surface.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if `store.create_dir_all()` fails or
+    /// recovery cannot scan the segment directory.
+    #[cfg(feature = "loom")]
+    pub fn open_with_store(
+        dir: impl Into<PathBuf>,
+        config: SegmentConfig,
+        store: Arc<dyn store::SegmentStore + Send + Sync>,
+    ) -> Result<Self> {
+        let dir = dir.into();
+        let (buffer, _report) = Self::open_internal(dir, config, store)?;
+        Ok(buffer)
+    }
+
+    /// Shared constructor used by both the production entry points
+    /// (`open`/`open_with_report`) and the test-only `open_with_store`.
+    /// Owns the invariant that the store is constructed before recovery
+    /// runs, and that `create_dir_all` goes through the store rather than
+    /// `std::fs` directly.
+    fn open_internal(
+        dir: PathBuf,
+        config: SegmentConfig,
+        store: Arc<dyn store::SegmentStore + Send + Sync>,
+    ) -> Result<(Self, RecoveryReport)> {
+        store.create_dir_all()?;
 
         // Allocate the pooled zstd CCtx once, at the configured compression
         // level. This is the allocation whose per-flush memset was 66% of
@@ -533,6 +597,7 @@ where
             scan_cache: Mutex::new(None),
             iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
             compressor: Mutex::new(compressor),
+            store,
         };
 
         let report = buffer.recover()?;
@@ -902,21 +967,20 @@ where
         for seg in &segments {
             if seg.end <= acked_seq {
                 let path = self.segment_path(seg.start, seg.end);
-                let file_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                let file_bytes = self.store.segment_size(*seg);
                 freed_bytes += file_bytes;
-                match fs::remove_file(&path) {
-                    Ok(()) => {
-                        deleted += 1;
-                        debug!(
-                            path = path.display().to_string(),
-                            seq = seg.start,
-                            end_seq = seg.end,
-                            bytes = file_bytes,
-                            "Deleted acked segment"
-                        );
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.into()),
+                // remove_segment is idempotent on NotFound so concurrent
+                // delete_acked calls do not race on the same segment file.
+                // Returns true iff THIS call actually removed the file.
+                if self.store.remove_segment(*seg)? {
+                    deleted += 1;
+                    debug!(
+                        path = path.display().to_string(),
+                        seq = seg.start,
+                        end_seq = seg.end,
+                        bytes = file_bytes,
+                        "Deleted acked segment"
+                    );
                 }
             } else if new_head.is_none() {
                 new_head = Some(seg.start);
@@ -1287,11 +1351,7 @@ where
     pub fn sync_disk_bytes(&self) -> Result<u64> {
         self.assert_not_reentered("sync_disk_bytes");
         let segments = self.scan_segments()?;
-        let total: u64 = segments
-            .iter()
-            .filter_map(|s| fs::metadata(self.segment_path(s.start, s.end)).ok())
-            .map(|m| m.len())
-            .sum();
+        let total: u64 = segments.iter().map(|s| self.store.segment_size(*s)).sum();
         self.approx_disk_bytes
             .store(total, std::sync::atomic::Ordering::Relaxed);
         Ok(total)
@@ -1392,19 +1452,15 @@ where
     }
 
     fn recover(&self) -> Result<RecoveryReport> {
-        let removed_tmp_files = segment::clean_tmp(&self.dir)?;
+        let removed_tmp_files = self.store.clean_tmp()?;
 
         let segments = self.scan_segments()?;
 
-        // All filesystem access (stat'ing each segment for its size) happens
-        // BEFORE the mutex is taken. The lock is held only long enough to
-        // publish the rebuilt in-memory state, honouring the invariant that
-        // the mutex is never held across file I/O.
-        let total_bytes: u64 = segments
-            .iter()
-            .filter_map(|s| fs::metadata(self.segment_path(s.start, s.end)).ok())
-            .map(|m| m.len())
-            .sum();
+        // All store access (sizing each segment) happens BEFORE the mutex is
+        // taken. The lock is held only long enough to publish the rebuilt
+        // in-memory state, honouring the invariant that the mutex is never
+        // held across I/O.
+        let total_bytes: u64 = segments.iter().map(|s| self.store.segment_size(*s)).sum();
 
         let (head_seq, next_seq) = match (segments.first(), segments.last()) {
             (Some(first), Some(last)) => (first.start, last.end + 1),
@@ -1445,27 +1501,31 @@ where
 
     fn write_segment(&self, start: u64, end: u64, events: &[T]) -> Result<u64> {
         let path = self.segment_path(start, end);
+        let range = segment::SegmentRange::new(start, end);
         // Lock the pooled compressor for the duration of the encode. The
         // mutex is uncontended in practice (see field doc) and the lock is
-        // NOT held across the file `write_all`/`sync_all`/`rename` calls
-        // below — `encode_payload` returns before any I/O begins.
+        // NOT held across the store's `write_atomic` call below —
+        // `encode_segment` returns bytes before any I/O begins.
         let mut compressor = self.compressor.lock();
-        segment::write(
-            &self.dir,
+        let bytes = segment::encode_segment(
             self.config.cipher.as_deref(),
             &mut compressor,
-            SegmentRange::new(start, end),
+            &path,
             events,
-        )
-        .map_err(|e| e.with_path(&path))
+        )?;
+        self.store
+            .write_atomic(range, &bytes)
+            .map_err(|e| e.with_path(&path))
     }
 
-    fn read_segment(&self, seg: SegmentRange) -> Result<Vec<T>> {
+    fn read_segment(&self, seg: segment::SegmentRange) -> Result<Vec<T>> {
         let path = self.segment_path(seg.start, seg.end);
-        segment::read(&self.dir, self.config.cipher.as_deref(), seg).map_err(|e| e.with_path(&path))
+        let raw = self.store.read_bytes(seg).map_err(|e| e.with_path(&path))?;
+        segment::decode_segment(self.config.cipher.as_deref(), &raw, &path)
+            .map_err(|e| e.with_path(&path))
     }
 
-    fn scan_segments(&self) -> Result<Vec<SegmentRange>> {
+    fn scan_segments(&self) -> Result<Vec<segment::SegmentRange>> {
         // Cache hit: clone under the cache lock and return.
         {
             let cache = self.scan_cache.lock();
@@ -1473,8 +1533,8 @@ where
                 return Ok(segments.clone());
             }
         }
-        // Cache miss: scan the directory, store, return.
-        let segments = segment::scan(&self.dir).map_err(|e| e.with_path(&self.dir))?;
+        // Cache miss: scan via the store, store, return.
+        let segments = self.store.scan().map_err(|e| e.with_path(&self.dir))?;
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());
         Ok(segments)

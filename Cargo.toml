@@ -29,9 +29,14 @@ fuzz = []
 #
 #   RUSTFLAGS="--cfg loom" cargo test --features loom --test loom -- --release
 #
-# Loom does NOT model the filesystem, so the loom test only exercises the
-# in-memory append/stats path; flush/delete_acked/recover (which touch disk)
-# stay covered by the stress test `concurrency_4_writers_1_reader_10k_events`.
+# Loom does NOT model the filesystem, so the loom test exercises the buffer
+# through a `SegmentStore` mock (loom::sync::Mutex<HashMap<..>>) injected via
+# `SegmentBuffer::open_with_store`. This covers BOTH the in-memory hot path
+# (append/pending_count/latest_sequence/stats/append_all) AND the
+# delete_acked + append interleaving (the head_seq <= pending_start clamp).
+# flush/recover/read_from still touch byte-level encode/decode that loom has
+# no interest in enumerating; their concurrency contracts stay covered by
+# the stress test `concurrency_4_writers_1_reader_10k_events`.
 loom = []
 
 [lints.rust]

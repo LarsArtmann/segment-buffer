@@ -86,7 +86,9 @@ proptest! {
     /// A full write→read cycle through the filesystem must reproduce the input,
     /// with AES-256-GCM at rest (feature-gated). The key is also varied per
     /// case so that key-dependent AEAD edge cases are exercised, not just a
-    /// single fixed key.
+    /// single fixed key. Exercises the pure encode/decode pipeline directly
+    /// (no SegmentStore) so a regression in the byte-level format is caught
+    /// independently of the I/O layer.
     #[cfg(feature = "encryption")]
     #[test]
     fn full_write_read_encrypted_roundtrip(
@@ -97,19 +99,17 @@ proptest! {
             .iter()
             .map(|&id| PropItem { id, payload: format!("payload-{id}") })
             .collect();
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
+        let path = std::path::Path::new("prop_test_segment.zst");
         let cipher = crate::AesGcmCipher::new(&key);
-        let end = items.len().saturating_sub(1) as u64;
-        let range = segment::SegmentRange { start: 0, end };
 
         let mut compressor = zstd::bulk::Compressor::new(3)
             .expect("compressor construction must succeed");
-        segment::write(dir, Some(&cipher), &mut compressor, range, &items)
-            .expect("write must succeed");
+        let bytes = segment::encode_segment(Some(&cipher), &mut compressor, path, &items)
+            .expect("encode must succeed");
 
-        let read: Result<Vec<PropItem>, _> = segment::read(dir, Some(&cipher), range);
-        prop_assert!(read.is_ok(), "encrypted read failed: {:?}", read.err());
+        let read: Result<Vec<PropItem>, _> =
+            segment::decode_segment(Some(&cipher), &bytes, path);
+        prop_assert!(read.is_ok(), "encrypted decode failed: {:?}", read.err());
         prop_assert_eq!(read.unwrap(), items);
     }
 

@@ -1,9 +1,14 @@
-//! On-disk segment format: filename layout, encode/decode pipeline, scanning.
+//! On-disk segment format: filename layout, encode/decode pipeline, envelope.
 //!
 //! A segment file is named `seg_{start:012}_{end:012}.zst` and contains an
-//! optional envelope header followed by the CBOR-serialized, zstd-compressed,
+//! 8-byte envelope header followed by the CBOR-serialized, zstd-compressed,
 //! optionally-encrypted events. This module owns the byte-level format so that
-//! [`crate::SegmentBuffer`] can focus on in-memory orchestration and locking.
+//! [`crate::SegmentBuffer`] can focus on in-memory orchestration and locking,
+//! and [`crate::store`] can own the I/O.
+//!
+//! The split is deliberate: every function here is pure (operates on bytes,
+//! never touches `std::fs`), so the encode/decode pipeline is testable without
+//! a filesystem and the I/O surface is isolated in [`crate::store`].
 //!
 //! ## Envelope (format evolution)
 //!
@@ -37,8 +42,6 @@
 //! for crash recovery, and existing monitor365 filenames must still parse. See
 //! [`filename`] / [`parse_filename`].
 
-use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -51,8 +54,6 @@ use crate::error::{Result, SegmentError};
 const SEGMENT_PREFIX: &str = "seg_";
 /// Filename suffix for finalized, zstd-compressed segment files.
 const SEGMENT_SUFFIX: &str = ".zst";
-/// Suffix for in-progress writes, treated as crash debris on recovery.
-const TMP_SUFFIX: &str = ".tmp";
 /// Bytes of the AEAD nonce prefix written by [`SegmentCipher`] implementations
 /// such as AES-256-GCM. Ciphertexts shorter than this cannot be valid.
 const NONCE_LEN: usize = 12;
@@ -68,7 +69,7 @@ const ENVELOPE_VERSION: u8 = 1;
 const ENVELOPE_LEN: usize = 8;
 
 /// Inclusive `[start, end]` range of sequence numbers stored in a segment file.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SegmentRange {
     /// First sequence number in the segment (inclusive).
     pub start: u64,
@@ -113,40 +114,6 @@ pub fn parse_filename(name: &str) -> Option<SegmentRange> {
     let start = start_str.parse().ok()?;
     let end = end_str.parse().ok()?;
     Some(SegmentRange { start, end })
-}
-
-/// Scan `dir` and return every segment range found, sorted by `start`.
-pub(crate) fn scan(dir: &Path) -> Result<Vec<SegmentRange>> {
-    let mut segments = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        if let Some(range) = parse_filename(&entry.file_name().to_string_lossy()) {
-            segments.push(range);
-        }
-    }
-    segments.sort_by_key(|s| s.start);
-    Ok(segments)
-}
-
-/// Delete leftover `*.tmp` files left behind by a crashed write.
-///
-/// Removal of individual files is best-effort (per-file errors are ignored);
-/// only directory-read errors propagate. This mirrors the crash-recovery
-/// contract: a half-written segment must not survive recovery.
-pub(crate) fn clean_tmp(dir: &Path) -> Result<usize> {
-    let mut removed = 0usize;
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path
-            .file_name()
-            .is_some_and(|n| n.to_string_lossy().ends_with(TMP_SUFFIX))
-            && fs::remove_file(&path).is_ok()
-        {
-            removed += 1;
-        }
-    }
-    Ok(removed)
 }
 
 /// Reserved bytes at envelope offset `5..8`. Always zero in envelope v1;
@@ -255,58 +222,44 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
     })
 }
 
-/// Write `events` for `range` to a segment file in `dir`.
+/// Encode `events` for `range` to enveloped bytes: CBOR → zstd → optional
+/// encrypt → prepend envelope.
 ///
-/// Bytes are written to a `.tmp` sidecar, `sync_all`'d, then atomically renamed
-/// to the final segment path so a crash never leaves a partial segment. The
-/// file is prefixed with the 8-byte [`envelope`](self#envelope-format-evolution)
-/// so the format can evolve without breaking legacy readers. Returns the number
-/// of bytes written (envelope + payload).
-pub(crate) fn write<T: Serialize>(
-    dir: &Path,
+/// Pure: no I/O. The caller persists the returned bytes via
+/// [`crate::store::SegmentStore::write_atomic`]. `path` is used only for
+/// error context on the encode pipeline (CBOR/zstd/cipher failures).
+///
+/// Returns the enveloped bytes (`wrap_envelope(encode_payload(events))`).
+pub(crate) fn encode_segment<T: Serialize>(
     cipher: Option<&dyn SegmentCipher>,
     compressor: &mut zstd::bulk::Compressor<'static>,
-    range: SegmentRange,
+    path: &Path,
     events: &[T],
-) -> Result<u64> {
-    let seg_name = filename(range.start, range.end);
-    let seg_path = dir.join(&seg_name);
-    let payload = encode_payload(cipher, compressor, &seg_path, events)?;
-    let final_bytes = wrap_envelope(&payload);
-    let tmp_path = dir.join(format!("{seg_name}{TMP_SUFFIX}"));
-
-    {
-        let mut file = fs::File::create(&tmp_path)?;
-        file.write_all(&final_bytes)?;
-        file.sync_all()?;
-    }
-
-    fs::rename(&tmp_path, &seg_path)?;
-    Ok(final_bytes.len() as u64)
+) -> Result<Vec<u8>> {
+    let payload = encode_payload(cipher, compressor, path, events)?;
+    Ok(wrap_envelope(&payload))
 }
 
-/// Read and decode the segment file for `range` from `dir`.
+/// Decode the enveloped bytes for a segment back to events: strip envelope
+/// (auto-detecting legacy v1 files) → optional decrypt → zstd → CBOR.
 ///
-/// Both enveloped (current) and legacy (pre-envelope, monitor365-compatible)
-/// files are accepted; see the [`envelope`](self#envelope-format-evolution)
-/// section. Encrypted payloads shorter than the AEAD nonce are rejected as
-/// [`SegmentError::Integrity`] with the offending path, before the cipher is
-/// invoked.
-pub(crate) fn read<T: DeserializeOwned>(
-    dir: &Path,
+/// Pure: no I/O. The caller obtains the raw bytes via
+/// [`crate::store::SegmentStore::read_bytes`]. Encrypted payloads shorter
+/// than the AEAD nonce are rejected as [`SegmentError::Integrity`] with the
+/// offending path, before the cipher is invoked.
+pub(crate) fn decode_segment<T: DeserializeOwned>(
     cipher: Option<&dyn SegmentCipher>,
-    range: SegmentRange,
+    raw: &[u8],
+    path: &Path,
 ) -> Result<Vec<T>> {
-    let path = dir.join(filename(range.start, range.end));
-    let raw = fs::read(&path)?;
-    let (_version, payload) = unwrap_envelope(&raw);
+    let (_version, payload) = unwrap_envelope(raw);
 
     if cipher.is_some() && payload.len() < NONCE_LEN {
         return Err(SegmentError::Integrity {
-            path,
+            path: path.to_path_buf(),
             reason: "encrypted payload too small for AEAD nonce",
         });
     }
 
-    decode_payload(cipher, payload, &path)
+    decode_payload(cipher, payload, path)
 }
