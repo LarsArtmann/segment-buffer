@@ -32,6 +32,15 @@
 //! or [docs.rs](https://docs.rs/segment-buffer).
 
 #![warn(missing_docs)]
+// Pin the html root URL so intra-doc links resolve against the published
+// docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
+// `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
+// Bump the version segment when cutting a release.
+#![doc(html_root_url = "https://docs.rs/segment-buffer/0.5.1")]
+// On docs.rs (nightly), enable the `doc_cfg` feature so feature-gated items
+// show an "Available on feature `encryption` only" badge. Inert on local
+// builds (stable) where `docsrs` is never set.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 // The crate-root rustdoc is the hand-written block above. The full README
 // (install, quickstart, encryption, comparison table, performance) is NOT
 // embedded here: it is rendered separately by docs.rs via the `readme` field
@@ -48,6 +57,7 @@ mod segment;
 mod store;
 
 #[cfg(feature = "encryption")]
+#[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
 pub use cipher::{AesGcmCipher, XChaCha20Poly1305Cipher};
 pub use cipher::{CipherError, SegmentCipher};
 pub use error::{IoSite, Result, SegmentError};
@@ -244,7 +254,7 @@ pub struct SegmentConfig {
     pub flush_policy: FlushPolicy,
     /// Max total disk usage before the buffer reports overload pressure (default: 10 GB).
     pub max_size_bytes: u64,
-    /// zstd compression level (1-22; 3 is fast with a good ratio).
+    /// zstd compression level (1-22; default **3**, fast with a good ratio).
     pub compression_level: i32,
     /// Per-flush fsync behavior. See [`DurabilityPolicy`] for the three
     /// policies and their crash-loss tradeoffs. Default is
@@ -350,7 +360,7 @@ impl SegmentConfigBuilder {
         self
     }
 
-    /// Override the zstd compression level (1–22; 3 is fast with a good ratio).
+    /// Override the zstd compression level (1-22; default 3, fast with a good ratio).
     pub fn compression_level(mut self, compression_level: i32) -> Self {
         self.inner.compression_level = compression_level;
         self
@@ -409,6 +419,7 @@ impl SegmentConfigBuilder {
     /// # }
     /// ```
     #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     pub fn recommended_cipher(self, key: [u8; 32]) -> Self {
         self.cipher(Arc::new(XChaCha20Poly1305Cipher::new(&key)))
     }
@@ -882,6 +893,19 @@ where
     /// assert_eq!(buf.append(3)?, 2);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only when the auto-flush triggered by this append
+    /// fails to write its segment file ([`SegmentError::Io`],
+    /// [`SegmentError::Cbor`], or [`SegmentError::Cipher`]). Appends that do
+    /// not cross the flush threshold never fail.
     #[track_caller]
     pub fn append(&self, event: T) -> Result<u64> {
         self.assert_not_reentered("append");
@@ -928,6 +952,18 @@ where
     /// assert_eq!(buf.pending_count(), 2);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`], [`SegmentError::Cbor`], or
+    /// [`SegmentError::Cipher`] if encoding or writing the segment file fails.
+    /// A no-op flush (nothing buffered) always succeeds.
     #[track_caller]
     pub fn flush(&self) -> Result<()> {
         self.assert_not_reentered("flush");
@@ -993,6 +1029,18 @@ where
     /// assert_eq!(tail, vec![30]);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if the segment directory cannot be scanned,
+    /// or [`SegmentError::Cbor`] / [`SegmentError::Cipher`] /
+    /// [`SegmentError::Integrity`] if a segment file cannot be decoded.
     #[track_caller]
     pub fn read_from(&self, start_seq: u64, limit: usize) -> Result<Vec<T>> {
         self.assert_not_reentered("read_from");
@@ -1209,6 +1257,17 @@ where
     /// they are flushed and acknowledged in a later call. `head_seq` is clamped
     /// so it never advances past the pending window, keeping the backlog count
     /// honest.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if the directory scan or a segment-file
+    /// removal fails.
     #[track_caller]
     pub fn delete_acked(&self, acked_seq: u64) -> Result<usize> {
         self.assert_not_reentered("delete_acked");
@@ -1291,6 +1350,12 @@ where
     /// assert_eq!(buf.latest_sequence(), 1);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
     #[must_use = "the sequence number is meaningless if discarded"]
     #[track_caller]
     pub fn latest_sequence(&self) -> u64 {
@@ -1328,6 +1393,12 @@ where
     /// assert_eq!(buf.pending_count(), 0);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
     #[must_use = "the backlog size is meaningless if discarded"]
     #[track_caller]
     pub fn pending_count(&self) -> u64 {
@@ -1480,6 +1551,12 @@ where
     /// assert!(snapshot.store_pressure < 0.01);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
     #[must_use = "the snapshot is meaningless if discarded"]
     #[track_caller]
     pub fn stats(&self) -> BufferStats {
@@ -1597,6 +1674,12 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
+    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be read.
@@ -1646,6 +1729,12 @@ where
     /// assert_eq!(buf.pending_count(), 4);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
     ///
     /// # Errors
     ///
@@ -1731,6 +1820,12 @@ where
     /// ]);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
+    /// callback — the buffer mutex is held across the callback, so re-entry
+    /// would deadlock.
     ///
     /// # Errors
     ///

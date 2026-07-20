@@ -14,6 +14,16 @@ keywords = ["queue", "cloud-sync", "spool", "segment", "buffer"]
 categories = ["data-structures", "filesystem"]
 exclude = ["/target", "/.github", "/fuzz", "/benches"]
 
+# Build docs.rs with the `encryption` feature so `AesGcmCipher` and
+# `XChaCha20Poly1305Cipher` appear on the published docs page. Without this,
+# docs.rs builds with `default = []` and the ciphers (the items the README
+# advertises) are invisible. `--cfg docsrs` enables the `doc(cfg(...))` badges
+# that annotate which items are feature-gated; `docsrs` is nightly-only so it is
+# accepted only on docs.rs, never in a local `cargo doc` run.
+[package.metadata.docs.rs]
+features = ["encryption"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = []
 encryption = ["dep:aes-gcm", "dep:chacha20poly1305", "dep:rand"]
@@ -42,7 +52,9 @@ loom = []
 [lints.rust]
 # `loom` is set via RUSTFLAGS, not Cargo features, so rustc's check-cfg needs
 # to be told it exists to avoid the `unexpected_cfgs` warning under loom runs.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+# `docsrs` is set only by docs.rs (via rustdoc-args above) to enable the
+# `doc(cfg(...))` feature-gate badges on the published docs page.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(docsrs)'] }
 
 [dependencies]
 ciborium = "0.2"
