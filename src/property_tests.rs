@@ -69,8 +69,10 @@ proptest! {
         let payload = segment::encode_payload(None, &mut compressor, path, &items)
             .expect("encode must succeed for valid items");
 
+        let mut decompressor = zstd::bulk::Decompressor::new()
+            .expect("decompressor construction must succeed");
         let decoded: Result<Vec<PropItem>, _> =
-            segment::decode_payload(None, &payload, path);
+            segment::decode_payload(None, &mut decompressor, &payload, path);
         prop_assert!(decoded.is_ok(), "decode failed: {:?}", decoded.err());
         prop_assert_eq!(decoded.unwrap(), items);
     }
@@ -107,8 +109,10 @@ proptest! {
         let bytes = segment::encode_segment(Some(&cipher), &mut compressor, path, &items)
             .expect("encode must succeed");
 
+        let mut decompressor = zstd::bulk::Decompressor::new()
+            .expect("decompressor construction must succeed");
         let read: Result<Vec<PropItem>, _> =
-            segment::decode_segment(Some(&cipher), &bytes, path);
+            segment::decode_segment(Some(&cipher), &mut decompressor, &bytes, path);
         prop_assert!(read.is_ok(), "encrypted decode failed: {:?}", read.err());
         prop_assert_eq!(read.unwrap(), items);
     }
@@ -134,8 +138,10 @@ proptest! {
         let bytes = segment::encode_segment(Some(&cipher), &mut compressor, path, &items)
             .expect("encode must succeed");
 
+        let mut decompressor = zstd::bulk::Decompressor::new()
+            .expect("decompressor construction must succeed");
         let read: Result<Vec<PropItem>, _> =
-            segment::decode_segment(Some(&cipher), &bytes, path);
+            segment::decode_segment(Some(&cipher), &mut decompressor, &bytes, path);
         prop_assert!(read.is_ok(), "XChaCha20 decode failed: {:?}", read.err());
         prop_assert_eq!(read.unwrap(), items);
     }
