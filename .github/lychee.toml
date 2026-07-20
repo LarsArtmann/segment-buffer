@@ -22,7 +22,10 @@ accept = ["200"]
 # Exclude GitHub /settings/ URLs — admin-only pages that 404 for anonymous
 # visitors (the lychee runner is unauthenticated). Referenced in
 # docs/RELEASE.md for the CARGO_REGISTRY_TOKEN setup runbook.
-exclude = ["^https://github\\.com/LarsArtmann/monitor365", "^https://github\\.com/.*/settings/"]
+# Exclude GitHub /compare/ URLs — the CHANGELOG [Unreleased] link points at
+# `vX.Y.Z...HEAD`, which transiently 404s when the release commit is pushed
+# before the tag exists (the tag is pushed seconds later, after CI starts).
+exclude = ["^https://github\\.com/LarsArtmann/monitor365", "^https://github\\.com/.*/settings/", "^https://github\\.com/.*/compare/"]
 
 # Exclude localhost / loopback
 exclude_loopback = true
