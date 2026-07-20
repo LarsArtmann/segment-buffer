@@ -582,6 +582,17 @@ pub struct SegmentBuffer<T> {
     /// pending events, and the re-entrancy guard serialises concurrent
     /// flushers against `for_each_from` anyway.
     compressor: Mutex<zstd::bulk::Compressor<'static>>,
+    /// Pooled zstd decompression context — the read-side mirror of
+    /// [`compressor`](Self::compressor). Allocated once at
+    /// [`SegmentBuffer::open`] and reused for every subsequent
+    /// [`SegmentBuffer::read_from`] / [`SegmentBuffer::for_each_from`] call.
+    /// Cloud-sync drain loops are read-heavy (draining the buffer is the
+    /// primary workload), so the DCtx pooling matters symmetrically to the
+    /// CCtx pooling on the write side. Falls back to `zstd::decode_all`
+    /// (fresh DCtx per call) only when the frame header lacks a content
+    /// size — the bulk::Compressor write path always includes it, so the
+    /// fallback is rare in practice (legacy or externally-written files).
+    decompressor: Mutex<zstd::bulk::Decompressor<'static>>,
     /// I/O backend. Production uses [`RealStore`] (real filesystem via
     /// `std::fs`); loom concurrency tests inject a mock backed by
     /// `loom::sync::Mutex<HashMap<..>>` so `delete_acked` + `append`
@@ -779,6 +790,10 @@ where
         // fixed for the lifetime of the buffer because `SegmentConfig` is
         // consumed by `open` and immutable thereafter.
         let compressor = zstd::bulk::Compressor::new(config.compression_level)?;
+        // Allocate the pooled zstd DCtx once — symmetric to the compressor
+        // above. Read paths (`read_from`, `for_each_from`) reuse this DCtx
+        // instead of constructing a fresh one per segment decode.
+        let decompressor = zstd::bulk::Decompressor::new()?;
 
         let buffer = Self {
             dir,
@@ -793,6 +808,7 @@ where
             scan_cache: Mutex::new(None),
             iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
             compressor: Mutex::new(compressor),
+            decompressor: Mutex::new(decompressor),
             store,
             lock_file,
         };
@@ -1719,7 +1735,8 @@ where
     fn read_segment(&self, seg: segment::SegmentRange) -> Result<Vec<T>> {
         let path = self.segment_path(seg.start, seg.end);
         let raw = self.store.read_bytes(seg).map_err(|e| e.with_path(&path))?;
-        segment::decode_segment(self.config.cipher.as_deref(), &raw, &path)
+        let mut decompressor = self.decompressor.lock();
+        segment::decode_segment(self.config.cipher.as_deref(), &mut decompressor, &raw, &path)
             .map_err(|e| e.with_path(&path))
     }
 

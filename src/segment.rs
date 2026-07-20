@@ -194,8 +194,17 @@ pub(crate) fn encode_payload<T: Serialize>(
 }
 
 /// Decode the v1 payload bytes back to events: optional decrypt → zstd → CBOR.
+///
+/// `decompressor` is a pooled `zstd::bulk::Decompressor` reused across reads
+/// to avoid re-initialising the ~200 KB zstd DCtx on every segment read
+/// (symmetric to the write-side `Compressor` pooling). When the frame
+/// includes its content size (the default for `bulk::Compressor` writes),
+/// the capacity is read from the frame header via
+/// `zstd_safe::get_frame_content_size`; otherwise the call falls back to
+/// `zstd::decode_all`, which allocates a fresh DCtx (the rare, non-hot path).
 pub(crate) fn decode_payload<T: DeserializeOwned>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
+    decompressor: &mut zstd::bulk::Decompressor<'static>,
     payload: &[u8],
     path: &Path,
 ) -> Result<Vec<T>> {
@@ -214,7 +223,22 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
         None => Cow::Borrowed(payload),
     };
 
-    let cbor_buf = zstd::decode_all(compressed.as_ref())?;
+    // Prefer the pooled Decompressor when the frame header advertises its
+    // content size (the bulk::Compressor default — all segments written
+    // through the pooled write path satisfy this). Fall back to
+    // `decode_all` for legacy files or frames without the size flag; the
+    // fallback path is rare and not on the hot read path of cloud-sync
+    // deployments.
+    let cbor_buf = match zstd::zstd_safe::get_frame_content_size(compressed.as_ref()) {
+        Ok(Some(size)) => {
+            let cap = usize::try_from(size).unwrap_or(compressed.len() * 8);
+            match decompressor.decompress(compressed.as_ref(), cap) {
+                Ok(buf) => buf,
+                Err(_) => zstd::decode_all(compressed.as_ref())?,
+            }
+        }
+        _ => zstd::decode_all(compressed.as_ref())?,
+    };
     ciborium::from_reader(cbor_buf.as_slice()).map_err(|e| SegmentError::Cbor {
         phase: "deserialize",
         path: path.to_path_buf(),
@@ -244,11 +268,14 @@ pub(crate) fn encode_segment<T: Serialize>(
 /// (auto-detecting legacy v1 files) → optional decrypt → zstd → CBOR.
 ///
 /// Pure: no I/O. The caller obtains the raw bytes via
-/// [`crate::store::SegmentStore::read_bytes`]. Encrypted payloads shorter
-/// than the AEAD nonce are rejected as [`SegmentError::Integrity`] with the
-/// offending path, before the cipher is invoked.
+/// [`crate::store::SegmentStore::read_bytes`] and supplies a pooled
+/// `&mut zstd::bulk::Decompressor` (see [`decode_payload`] for the pooling
+/// rationale). Encrypted payloads shorter than the AEAD nonce are rejected
+/// as [`SegmentError::Integrity`] with the offending path, before the
+/// cipher is invoked.
 pub(crate) fn decode_segment<T: DeserializeOwned>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
+    decompressor: &mut zstd::bulk::Decompressor<'static>,
     raw: &[u8],
     path: &Path,
 ) -> Result<Vec<T>> {
@@ -261,5 +288,5 @@ pub(crate) fn decode_segment<T: DeserializeOwned>(
         });
     }
 
-    decode_payload(cipher, payload, path)
+    decode_payload(cipher, decompressor, payload, path)
 }
