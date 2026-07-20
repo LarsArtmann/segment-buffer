@@ -14,11 +14,27 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 Deferred breaking changes — batch them so users upgrade once.
 
+The 2026-07-20 product reframing (single-process throughput buffer for cloud sync; configurable durability; XChaCha20 direction; at-least-once delivery) lands here. See `AGENTS.md` § "Single-process invariant", "Durability model", "At-least-once delivery", and "Encryption on-disk format" for the design context behind these items.
+
+- [ ] **`flock`-based single-process lock** — `open()` acquires `LOCK_EX | LOCK_NB` on a `.segment-buffer.lock` sidecar in the directory; fails fast with a typed error if held. Released on `Drop`. Makes the single-process invariant enforceable. Cross-platform via `fs2` or equivalent.
+- [ ] **`DurabilityPolicy` enum** (`Maximal` / `Segment` / `Throughput`) — threaded into `segment::write`. `Maximal` adds a `dir.sync_all()` after rename (closes the existing rename-window gap); `Throughput` drops the per-flush fsync entirely. Default stays `Segment` for one release, then flips to `Throughput` (decision pending user input).
+- [ ] **`XChaCha20Poly1305Cipher`** under a feature flag — planned new default for new buffers. `SegmentCipher` trait unchanged. Same `[nonce][ciphertext+tag]` on-disk shape with a 24-byte nonce. Legacy AES-GCM segments must still read (cipher auto-detect via envelope or separate magic).
 - [ ] **`Arc<dyn SegmentCipher>` instead of `Box`** — so `SegmentConfig` can be `Clone`. Today the `Box` makes the config non-`Clone`, which surprises callers who expect to inspect/reuse it.
 - [ ] **`SegmentIter<'_, T>` lending iterator type** — return an actual GAT-based iterator from `for_each_from` instead of taking a closure, for true iterator ergonomics (`for (seq, item) in buf.iter_from(0)?`).
 - [ ] **`IoSite` enum for `SegmentError::Io`** — replace `Option<PathBuf>` with `IoSite::Dir | IoSite::Segment(PathBuf) | IoSite::Unknown` to make the "no path" case explicit.
 - [ ] **`TryClone` story for `SegmentConfigBuilder`** — once `.cipher(Box::new(...))` is called, the builder is non-`Clone`. Either document loudly or provide a `TryClone` that errors on cipher-bearing configs.
-- [ ] **mtime probe for scan cache** — cheap `stat` to validate the cache against external directory manipulation (today the cache is invalidated only by in-process mutations).
+- [ ] **mtime probe for scan cache** — cheap `stat` to validate the cache against external directory manipulation (today the cache is invalidated only by in-process mutations). MUST be capability-probed at `open()` (write a sentinel file, stat it, see if mtime moves); on filesystems that pin mtime to 0, fall back to today's behavior verbatim. A bare stat comparison (`0 == 0`) silently serves stale data forever — unsafe on mtime=0 filesystems.
+
+## Cloud sync & delivery
+
+Items targeting the cloud-sync use case (local spool → cloud drain, at-least-once delivery, offline resilience).
+
+- [ ] **`examples/cloud_sync.rs`** — runnable at-least-once drain loop showing the `stats().head_sequence` → `read_from` → `cloud_upload` → `delete_acked` cycle, with a fake `cloud_upload` that simulates transient failure and recovery. Currently the README has the loop inline but there is no executable example.
+- [ ] **`examples/idempotent_server.rs`** — minimal server stub showing the `(producer_id, seq)` dedup pattern that the at-least-once model requires on the consumer side. The library can't enforce idempotency; this example teaches it.
+- [ ] **Cursor file (decision pending)** — should the library own a `last_acked_seq` cursor file so a drain process can resume without external state? Pros: trivial bootstrap on restart. Cons: another fsync-or-not decision (cursor fsync on every ack reintroduces the cost `Throughput` removes; cursor without fsync just defers to the same dirty window as the data). Alternative: leave cursor purely app-managed (today's shape). Open question — see vision chat 2026-07-20.
+- [ ] **`Throughput` mode benchmark** — once `DurabilityPolicy` lands, A/B `Throughput` vs `Segment` on the cloud-sync drain workload. Sizes the headline perf claim for the reframed positioning.
+- [ ] **Disk-full backpressure policy (decision pending)** — when `store_pressure()` hits 1.0 because the cloud is unreachable, what's the failure mode? Block new `append()` calls (return `Err`), evict oldest segments (violates at-least-once), or crash loud? The crate currently ships metrics-not-policy; cloud-sync mode may want a policy knob. Open question — see vision chat 2026-07-20.
+- [ ] **Streaming/incremental cipher** — long-term. Bound memory on large segments and enable early-stop-at-`limit` reads. RFC 8450 chunked AEAD or similar. Likely v0.6+. See `AGENTS.md` § "Encryption on-disk format".
 
 ## Concurrency & provability
 
@@ -34,8 +50,7 @@ Deferred breaking changes — batch them so users upgrade once.
 - [ ] **Metadata block in envelope** (item count, byte count, schema hash).
 - [ ] **`SegmentStore` trait** abstraction (local FS, S3, in-memory) — defer until second impl exists.
 - [ ] **Async I/O feature** (tokio) — preserve "mutex never held across I/O" invariant under cancellation.
-- [ ] **ChaCha20-Poly1305 cipher** under a feature flag.
-- [ ] **XChaCha20-Poly1305** for extended nonces (no 2^32 message limit per key).
+- [ ] **ChaCha20-Poly1305 cipher** under a feature flag. _(Promoted to v0.5.0 batch above as **XChaCha20-Poly1305**; this entry kept for historical reference — ChaCha20's 12-byte nonce has the same 2³²-message limit as AES-GCM, so XChaCha20 is the right pick.)_
 
 ## Performance
 

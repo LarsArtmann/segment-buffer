@@ -4,7 +4,46 @@ Concise, enduring context for working in `segment-buffer`. Read once, internaliz
 
 ## What this is
 
-A single-crate **Rust library** (not a binary): `SegmentBuffer<T>` — a durable, bounded, MPMC queue that spills in-memory batches to zstd-compressed CBOR segment files with ack-based deletion and filename-based crash recovery. Generic over `T: Serialize + DeserializeOwned + Clone + Send + 'static`. Extracted from monitor365.
+A single-crate **Rust library** (not a binary): `SegmentBuffer<T>` — a high-throughput **local buffer for cloud sync**. Single-process by design. Spools in-memory batches to zstd-compressed CBOR segment files with ack-based deletion, filename-based crash recovery, configurable durability, and optional encryption. Generic over `T: Serialize + DeserializeOwned + Clone + Send + 'static`. Extracted from monitor365.
+
+**Product positioning (2026-07-20 reframing):** the cloud is the durable layer; this crate is the local throughput buffer in front of it. The README leads with this. The old framing ("durable bounded queue ... crash recovery first") under-sold the actual target use case and over-promised on durability the code doesn't fully deliver (see [Durability model](#durability-model-proposed) below).
+
+## Single-process invariant (design, not yet enforced)
+
+**One owner process per buffer directory.** Multiple threads inside that process are supported (MPMC via `parking_lot::Mutex`). Multiple independent processes opening the same directory is **not supported** — they would race on segment filenames, double-deliver, and corrupt `head_seq`/`next_seq`.
+
+- Today this is a contract, not a mechanism. Nothing prevents a second process from `open()`ing the same directory.
+- **Planned for v0.5.0:** `open()` will acquire an exclusive `flock` on a `.segment-buffer.lock` sidecar in the directory, fail fast with a typed error if another process holds it, and release on `Drop` of the `SegmentBuffer`. A subprocess spawned by the owner process that inherits the lock via fd-passing is the user's concern, not the library's.
+- If you refactor `open()` or `open_with_report()`, the lock acquisition MUST happen before any filename parsing or state publication.
+
+## At-least-once delivery model
+
+The library provides the substrate for at-least-once delivery; **idempotency lives in the caller's server**.
+
+- `append()` returns the item's stable sequence number (`u64`, monotonic, gap-free across flushes).
+- `delete_acked(seq)` is the commit point — it removes every segment whose `end <= seq` and advances `head_seq`.
+- Between `read_from(start, ...)` and `delete_acked(start + count - 1)`, a crash leaves the batch on disk. On restart, `read_from(start, ...)` returns it again.
+- `read_from` returns `Vec<T>` — items, not `(seq, T)` pairs. The caller tracks `start` and increments it by `batch.len()`. The starting cursor is `buf.stats().head_sequence` after recovery.
+- The library does NOT own a cursor file. Cursor persistence is the caller's concern (see [TODO_LIST.md](TODO_LIST.md) — `cursor_file` is a possible future feature; today it is a documented pattern, not an API).
+- Only the unflushed in-memory tail is at risk of loss. `flush()` drains it to disk.
+
+## Durability model (proposed)
+
+**Today's behavior** fsyncs the segment file's data but NOT the directory inode after rename (`src/segment.rs` `write()`). This means a host crash within the kernel's dir-inode flush window (~5–30s on ext4/xfs defaults) can leave the renamed file's data on disk but unreachable through the directory. SQLite went through this exact lesson. So today's behavior is **already not fully durable** — the framing isn't "weaken durability for speed," it's "make the tradeoff explicit and configurable."
+
+Proposed `DurabilityPolicy` enum for v0.5.0:
+
+| Policy       | Fsync file | Fsync dir after rename | Worst-case crash loss                            |
+| ------------ | ---------- | ---------------------- | ------------------------------------------------ |
+| `Maximal`    | yes        | yes                    | last in-flight flush only                        |
+| `Segment`    | yes        | no                     | rename window (~5–30s of flushes) — today        |
+| `Throughput` | no         | no                     | entire OS dirty window (~30s) — cloud is durable |
+
+- `Throughput` is the correct default for cloud-sync deployments where the cloud endpoint holds the durable copy and the local disk is a throughput buffer.
+- `Maximal` is for standalone-queue deployments where this buffer is the last copy.
+- Backward compatibility: default stays `Segment` for one release after the enum lands, then flips to `Throughput` with a deprecation note. This is a policy decision pending user input — see open questions in the vision chat (2026-07-20).
+- Implementation: thread `policy: DurabilityPolicy` into `segment::write`. Branch there (not a callback). `Copy` enum, no allocation.
+- The `Mutex<Compressor>` invariant ("never held across I/O") is preserved: the fsync happens after compression is done and the mutex is released.
 
 ## Commands
 
@@ -102,6 +141,15 @@ The crate **ships no admission policy**. `store_pressure()` returns `approx_disk
 ## Encryption on-disk format
 
 `AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]` as the segment **payload**. This payload is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `segment::read` rejects encrypted payloads shorter than `NONCE_LEN` (12) as `SegmentError::Integrity` with the offending path.
+
+**Cipher evolution (2026-07-20 direction):**
+
+- **AES-256-GCM** stays — legacy byte-compat with monitor365 is a hard constraint. Not deprecated.
+- **XChaCha20-Poly1305** is the planned default for new buffers. Extended 24-byte nonce eliminates the 2³²-message limit per key that AES-GCM's 12-byte nonce imposes (relevant at high segment counts), and ChaCha20 avoids AES-NI timing side-channels on hosts without hardware acceleration (ARM, older CPUs). The `SegmentCipher` trait is already algorithm-agnostic — adding `XChaChaCipher` is a feature-gated impl, not a trait change.
+- **Streaming/incremental cipher** is a long-term direction. Today the whole segment is buffered (CBOR → zstd → encrypt as a blob); a streaming AEAD (e.g. RFC 8450 chunked format) would bound memory on large segments and enable early-stop-at-`limit` reads. Cost: format change. Likely v0.6+.
+- A future `SegmentConfigBuilder::recommended_cipher()` helper may pick XChaCha20 when available and AES-GCM as fallback. This is a v0.5.0 decision pending user input.
+
+When adding a cipher: feature-gate it, expose it under `src/cipher.rs` alongside `AesGcmCipher`, add property tests (roundtrip, tamper, short-payload), and document the on-disk format here.
 
 ## Segment file envelope (format evolution)
 

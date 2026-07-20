@@ -1,19 +1,22 @@
 # segment-buffer
 
-Durable bounded queue with zstd+CBOR segment files, ack-based deletion, and filename-based crash recovery.
+High-throughput **local buffer for cloud sync**. Single-process by design, durability-configurable, optional performant encryption, at-least-once delivery.
 
 **Extracted from monitor365 (private), proven on 597M+ events.**
 
 ## Why?
 
-There are many disk-backed queues in the Rust ecosystem, but none offer this combination:
+The cloud is the durable layer. This crate is the local throughput buffer in front of it — spool items to disk fast, drain them to your cloud endpoint at your own pace, and delete them only after the server acknowledges. When the cloud is unreachable (offline, partitioned, rate-limited), the buffer holds the backlog; when it comes back, drain resumes from where it left off.
 
-- **In-memory bounded buffer** that spills to disk on a batch/interval trigger (not always write-through)
-- **zstd + CBOR compression** for efficient storage
-- **Ack-based deletion** — segments are removed only after the consumer confirms receipt
-- **Filename-based crash recovery** — `ls` the directory and you see the state; no WAL, no metadata DB
-- **Optional AES-256-GCM encryption at rest** via a pluggable `SegmentCipher` trait
-- **MPMC** — multiple writers and readers via `parking_lot::Mutex`
+There are many disk-backed queues in the Rust ecosystem, but none target this shape:
+
+- **Single-process by design** — one owner per buffer directory; no cross-process or distributed coordination tax. A `flock`-based exclusive lock at `open()` will make this enforceable, not just documented (planned for v0.5.0).
+- **Throughput-first, durability-configurable** — pick your crash-resilience level (see [Crash behavior](#crash-behavior-configurable)). When the cloud is the durable copy, skip fsync; when this buffer is the last copy, fsync file + directory.
+- **At-least-once delivery built in** — `append()` returns a stable sequence number; `delete_acked(seq)` is the commit point. Crash before the ack and items are re-delivered on recovery. Your server-side handler MUST be idempotent on `(producer_id, seq)`; the library delivers at-least-once, never exactly-once.
+- **Optional performant encryption at rest** — AES-256-GCM today (byte-compatible with monitor365); XChaCha20-Poly1305 (extended nonce, no 2³²-message limit per key) is the planned default for new buffers. Streaming/incremental cipher is a long-term direction.
+- **zstd + CBOR segment files** — efficient storage, filename-based crash recovery. `ls` the directory and you see the state; no WAL, no metadata DB.
+
+For cross-machine replicated queues or server-side fanout, use a different tool — this crate is the producer-side local buffer.
 
 ## Install
 
@@ -76,6 +79,38 @@ let buffer = SegmentBuffer::<MyItem>::open("/tmp/my-buffer", config)?;
 
 See `examples/encrypted.rs` for a runnable end-to-end example.
 
+### Cloud sync: the at-least-once drain loop
+
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# #[derive(Serialize, Deserialize, Clone)]
+# struct MyItem { id: u64 }
+use segment_buffer::{SegmentBuffer, SegmentConfig};
+
+let buf = SegmentBuffer::<MyItem>::open("/tmp/spool", SegmentConfig::default())?;
+
+// Producer side: append as fast as you can; the buffer handles batching.
+for i in 0..10_000 {
+    buf.append(MyItem { id: i })?;
+}
+buf.flush()?; // ensure everything is on disk before draining
+
+// Drain side: read a batch, send to cloud, ack what the server confirmed.
+// The starting cursor comes from stats(); from then on, track it yourself.
+let mut next = buf.stats().head_sequence;
+loop {
+    let batch = buf.read_from(next, 1000)?;
+    if batch.is_empty() { break; }
+    let count = batch.len() as u64;
+    cloud_upload(&batch, next)?;          // YOUR idempotent call
+    buf.delete_acked(next + count - 1)?;  // commit point
+    next += count;
+}
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+**Crash semantics.** If the process dies between `cloud_upload` and `delete_acked`, the batch is still on disk. On restart, `read_from(next, ...)` returns it again — your `cloud_upload` will see the same `(producer, seq)` pairs a second time and must treat them as no-ops. Only the unflushed in-memory tail is at risk of loss; call `flush()` to drain it before crash-sensitive boundaries. The library provides the sequence-number substrate; idempotency lives in your server.
+
 ## How it works
 
 ```text
@@ -99,26 +134,44 @@ in-memory tail. `delete_acked(seq)` removes every segment whose `end <= seq` and
 advances `head_seq`. Crash recovery is just: delete `.tmp` debris, parse the
 remaining filenames. No WAL, no metadata database.
 
+## Crash behavior (configurable)
+
+> **Proposed for v0.5.0.** Today's behavior matches the `Segment` row. The enum is the design; the implementation lands in the next breaking batch.
+
+| `DurabilityPolicy`              | Fsync file | Fsync dir after rename | Worst-case crash loss                                         | Use case                                        |
+| ------------------------------- | ---------- | ---------------------- | ------------------------------------------------------------- | ----------------------------------------------- |
+| `Maximal`                       | yes        | yes                    | last in-flight flush only                                     | standalone queue — this buffer is the last copy |
+| `Segment` _(today's default)_   | yes        | no                     | the rename window (~5–30s of flushes, kernel-dependent)       | backwards-compatible default                    |
+| `Throughput` _(for cloud sync)_ | no         | no                     | entire OS dirty window (~30s); the cloud is the durable layer | high-throughput producer with cloud ack         |
+
+Note: today's code fsyncs the segment file's data but not the directory inode after rename, so `Segment` already has a real (small) crash window. `Maximal` closes it at the cost of one extra `dir.sync_all()` per flush. `Throughput` removes the per-flush fsync entirely.
+
 ## Backpressure
 
 The crate ships **metrics, not policy**. `store_pressure()` returns
 `approx_disk_bytes / max_size_bytes ∈ [0.0, 1.0]`; `is_overloaded()` is `> 0.9`.
-You define priority thresholds — see `examples/backpressure.rs`.
+You define priority thresholds — see `examples/backpressure.rs`. In cloud-sync
+deployments the typical policy is: when `store_pressure()` exceeds your
+threshold, apply backpressure to the producer (slow down, sample, drop) — the
+buffer is holding the backlog until the cloud endpoint recovers.
 
 ## Comparison
 
 _Comparison tables rot. This one was written against the versions current as of
 2026-07; verify against the upstream crates before making a storage decision._
 
-| Feature         | segment-buffer           | yaque                     | disk_backed_queue |
-| --------------- | ------------------------ | ------------------------- | ----------------- |
-| Segment files   | zstd+CBOR                | raw bytes                 | SQLite            |
-| Ack/delete      | `delete_acked()`         | `RecvGuard` commit/revert | partial           |
-| Crash recovery  | filename-based           | replay or loss            | SQLite WAL        |
-| Compression     | zstd                     | none                      | none              |
-| In-memory spill | yes (batch threshold)    | no (write-through)        | no                |
-| MPMC            | yes (Mutex)              | SPSC only                 | yes               |
-| Encryption      | optional (AES-GCM trait) | no                        | no                |
+_Reframed for the cloud-sync producer-side buffer target. Comparison tables rot; verify upstream before deciding._
+
+| Feature         | segment-buffer                              | yaque                     | disk_backed_queue      |
+| --------------- | ------------------------------------------- | ------------------------- | ---------------------- |
+| Target shape    | local spool for cloud sync                  | general queue             | general queue          |
+| Process model   | single-process (locked at open)             | SPSC                      | multi-process          |
+| Segment files   | zstd+CBOR                                   | raw bytes                 | SQLite                 |
+| Ack/delete      | `delete_acked()` (at-least-once)            | `RecvGuard` commit/revert | partial                |
+| Crash recovery  | filename-based                              | replay or loss            | SQLite WAL             |
+| Compression     | zstd                                        | none                      | none                   |
+| Durability knob | 3 policies (Maximal/Segment/Throughput)     | write-through             | SQLite full/normal/off |
+| Encryption      | optional (AES-GCM today, XChaCha20 planned) | no                        | no                     |
 
 ## Status
 
@@ -140,17 +193,18 @@ Non-breaking; drop-in upgrade from v0.4.0.
 See [CHANGELOG.md](CHANGELOG.md) for details.
 See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
 
-**Performance vs v0.1.0:** a controlled `git worktree` benchmark
-([docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md](docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md))
-shows append latency up 30–65% on small batches (the envelope + stats bookkeeping
-has a per-write cost) but recovery latency down ~40–45% across the board (the
-v0.2.0 recovery refactor). Net is roughly break-even for large-batch workloads
-and clearly better on cold starts; tiny-batch high-frequency writers may want
-to stay on `=0.1.0` until v0.4.0 hot-path work lands.
-_Methodology caveat: these are single-run, single-machine medians without
+**Performance:** the 2026-07-20 PGO session
+([docs/perf/2026-07-20_hot-path-flamegraph.md](docs/perf/2026-07-20_hot-path-flamegraph.md))
+found that ~66% of `flush` CPU was in zstd re-initialising its ~200 KB `CCtx`
+on every `encode_all` call. Pooling a `zstd::bulk::Compressor` on `SegmentBuffer`
+made `append/batch_1` **2.07× faster** (15.09 µs → 7.75 µs), with smaller wins
+at larger batches. The crate is now substantially faster than v0.1.0 on small
+batches; the previous "30–65% regression" framing is obsolete. A `Throughput`
+durability policy (above) would remove the per-flush fsync and open a further
+large gain on cloud-sync workloads.
+_Methodology caveat: single-run, single-machine criterion medians without
 statistical noise bars — indicative of direction, not publication-grade. See
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the methodology and how to
-reproduce._
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for methodology and reproduction._
 
 ## License
 
