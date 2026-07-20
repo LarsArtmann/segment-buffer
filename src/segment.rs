@@ -250,7 +250,7 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
 /// encrypt → prepend envelope.
 ///
 /// Pure: no I/O. The caller persists the returned bytes via
-/// [`crate::store::SegmentStore::write_atomic`]. `path` is used only for
+/// `SegmentStore::write_atomic`. `path` is used only for
 /// error context on the encode pipeline (CBOR/zstd/cipher failures).
 ///
 /// Returns the enveloped bytes (`wrap_envelope(encode_payload(events))`).

@@ -1,13 +1,21 @@
-# Ciphers: AES-GCM and bring-your-own AEAD
+# Ciphers: AES-256-GCM, XChaCha20-Poly1305, and bring-your-own AEAD
 
-`segment-buffer` ships with a single built-in cipher (`AesGcmCipher`, behind
-the `encryption` Cargo feature) and a trait (`SegmentCipher`) that lets you
-plug in any stateless AEAD or symmetric scheme. This doc covers:
+`segment-buffer` ships with two built-in ciphers behind the `encryption` Cargo
+feature — the legacy-compatible `AesGcmCipher` and the recommended
+`XChaCha20Poly1305Cipher` — plus a trait (`SegmentCipher`) that lets you plug in
+any stateless AEAD or symmetric scheme. This doc covers:
 
-1. The built-in AES-256-GCM cipher and its on-disk format.
+1. The two built-in ciphers and their on-disk formats.
 2. The `SegmentCipher` contract and what it requires.
-3. Worked examples for two common "bring your own" cases: ChaCha20-Poly1305
-   (via the `chacha20poly1305` crate) and a no-op cipher for testing.
+3. Worked examples for the "bring your own" case (a no-op cipher for testing).
+
+> **Cipher selection.** `SegmentConfigBuilder::recommended_cipher(key)` installs
+> `XChaCha20Poly1305Cipher` for new buffers (24-byte extended nonce, no 2³²-
+> message-per-key limit, constant-time in software). Legacy AES-GCM segments
+> still decrypt through `AesGcmCipher`. Both ciphers share the same `SegmentCipher`
+> trait; the on-disk formats are byte-distinguishable only by which cipher the
+> buffer was opened with (no envelope marker for the cipher type today — see the
+> envelope v2 design doc for the migration path).
 
 > See also: [`docs/DOMAIN_LANGUAGE.md` → `SegmentCipher`](./DOMAIN_LANGUAGE.md#segmentcipher)
 > for the trait's role in the architecture, and `examples/encrypted.rs` for a
@@ -37,13 +45,14 @@ so existing encrypted segment files read without migration.
 ### Usage
 
 ```rust
+use std::sync::Arc;
 use segment_buffer::{AesGcmCipher, SegmentBuffer, SegmentConfig};
 
 let key = [0u8; 32]; // 32-byte AES-256 key; generate via a KDF in production
 let cipher = AesGcmCipher::new(&key);
 
-let mut config = SegmentConfig::default();
-config.cipher = Some(Box::new(cipher));
+// As of the v0.5.0 batch, SegmentConfig.cipher is Option<Arc<dyn SegmentCipher + Send + Sync>>.
+let config = SegmentConfig::builder().cipher(Arc::new(cipher)).build();
 
 let buf = SegmentBuffer::<MyItem>::open("/tmp/encrypted-queue", config)?;
 ```
@@ -159,26 +168,34 @@ impl fmt::Debug for ChaChaCipher {
 }
 ```
 
-Wire it in exactly like the built-in:
+Wire it in exactly like the built-in (note the `Arc` wrapping, required since
+the v0.5.0 cipher field change):
 
 ```rust
+use std::sync::Arc;
 let cipher = ChaChaCipher::new(&key);
-let mut config = SegmentConfig::default();
-config.cipher = Some(Box::new(cipher));
+let config = SegmentConfig::builder().cipher(Arc::new(cipher)).build();
 let buf = SegmentBuffer::<MyItem>::open(dir, config)?;
 ```
 
-### Why prefer ChaCha20-Poly1305?
+> **Note: XChaCha20-Poly1305 is now built in.** If you previously used this
+> bring-your-own recipe for XChaCha20, prefer `XChaCha20Poly1305Cipher::new(&key)`
+> via `SegmentConfigBuilder::recommended_cipher(key)`. The recipe below remains
+> useful if you need a cipher variant this crate does not ship (e.g.
+> AES-256-GCM-SIV, or a hardware-accelerated impl you control).
+
+### Why prefer XChaCha20-Poly1305?
 
 - **No AES-NI dependency.** On platforms without hardware AES (some ARM
   chips, embedded targets, debug builds without target-features), ChaCha20
   is significantly faster.
 - **Constant-time by construction.** ChaCha20 is a software ARX cipher; it
   does not rely on lookup tables that vary by cache state.
-- **XChaCha20-Poly1305 variant** (24-byte nonce, available in the same
-  crate) allows random-nonce generation without collision risk across
-  essentially unbounded write counts — useful if you ever expose
-  user-supplied plaintexts that might be repeated.
+- **24-byte extended nonce** allows random-nonce generation without collision
+  risk across essentially unbounded write counts — useful if you ever expose
+  user-supplied plaintexts that might be repeated. This is why
+  `recommended_cipher(key)` installs `XChaCha20Poly1305Cipher`, not
+  `ChaCha20Poly1305`, for new buffers.
 
 ## Bring-your-own: no-op cipher (testing only)
 
@@ -253,7 +270,9 @@ disk fsync. Benchmarking ChaCha20 vs AES-GCM at the segment granularity is
 dominated by I/O, not by the cipher — choose based on platform and threat
 model, not microbenchmarks.
 
-The built-in `AesGcmCipher` uses `aes-gcm` 0.10 which auto-selects AES-NI
+The built-in `AesGcmCipher` uses `aes-gcm` 0.11 which auto-selects AES-NI
 on x86-64 with `target-feature = "aes"`. On other targets it falls back to
 a constant-time software implementation. Verify your `RUSTFLAGS` /
 `target-cpu` settings if encryption throughput matters in your deployment.
+The built-in `XChaCha20Poly1305Cipher` uses `chacha20poly1305` 0.10 and is
+constant-time in software regardless of target features.

@@ -145,23 +145,37 @@ When to auto-flush `unflushed` to disk:
 ### `SegmentCipher`
 
 Trait abstracting the encrypt/decrypt pair applied to the segment payload
-(after envelope strip, before zstd+CBOR decode). The shipped
-`AesGcmCipher` (behind the `encryption` feature) writes
-`[12-byte nonce][ciphertext + GCM tag]` per segment, byte-compatible with
-the original monitor365 format. Bring-your-own AEAD is supported — any
-stateless self-describing encrypt/decrypt pair fits the trait. See
-[`docs/CIPHERS.md`](./CIPHERS.md).
+(after envelope strip, before zstd+CBOR decode). Two built-in impls ship
+behind the `encryption` feature:
+
+- `AesGcmCipher` — writes `[12-byte nonce][ciphertext + GCM tag]`, byte-
+  compatible with the original monitor365 format. Legacy segments still read
+  through this cipher.
+- `XChaCha20Poly1305Cipher` — writes `[24-byte nonce][ciphertext + Poly1305
+tag]`. The 24-byte extended nonce eliminates AES-GCM's 2³²-message-per-key
+  limit; constant-time in software (no AES-NI dependency).
+  `SegmentConfigBuilder::recommended_cipher(key)` installs this cipher for
+  new buffers.
+
+Since the v0.5.0 batch, `SegmentConfig.cipher` is
+`Option<Arc<dyn SegmentCipher + Send + Sync>>` (was `Option<Box<…>>`), which
+makes `SegmentConfig` and its builder `Clone`. Bring-your-own AEAD is still
+supported — any stateless self-describing encrypt/decrypt pair fits the trait.
+See [`docs/CIPHERS.md`](./CIPHERS.md).
 
 ## Crash recovery
 
 On `open(dir, config)`:
 
-1. Scan `dir` for `*.zst` and `*.tmp` files.
-2. Delete `*.tmp` debris (interrupted flush).
-3. Parse remaining `seg_*.zst` filenames to recover `(start, end)` ranges.
-4. Set `head_seq` to the minimum start across all segments.
-5. Set `next_seq` to the maximum end + 1.
-6. Sum file sizes into `approx_disk_bytes`.
+1. Acquire an exclusive `flock` on `<dir>/.segment-buffer.lock` (since v0.5.0;
+   returns `SegmentError::Locked { path }` on contention — one owner process
+   per directory).
+2. Scan `dir` for `*.zst` and `*.tmp` files.
+3. Delete `*.tmp` debris (interrupted flush).
+4. Parse remaining `seg_*.zst` filenames to recover `(start, end)` ranges.
+5. Set `head_seq` to the minimum start across all segments.
+6. Set `next_seq` to the maximum end + 1.
+7. Sum file sizes into `approx_disk_bytes`.
 
 Recovery is **total and deterministic** — there is no partial state. Either
 the buffer opens with the correct seqs, or the directory was corrupt in a
@@ -174,6 +188,46 @@ post-open summary.
 clamped to `[0.0, 1.0]`. `is_overloaded()` returns `true` when this ratio
 exceeds `0.9`. The crate ships **metrics, not policy**: callers decide what
 to do with the number (drop, shed load, alert, etc.).
+
+## `DurabilityPolicy` (since v0.5.0)
+
+Selects per-flush fsync behaviour. Three variants:
+
+- `Maximal` — fsync the segment file AND `dir.sync_all()` after rename.
+  Closes the rename-window gap. Use when this buffer is the last durable copy.
+- `Segment` _(today's default)_ — fsync the segment file only. Already not
+  fully durable (the rename window is ~5–30s on ext4/xfs defaults).
+- `Throughput` — no fsync; the cloud is the durable layer. Use for cloud-sync
+  deployments where the local disk is a throughput buffer.
+
+Threaded through `SegmentStore::write_atomic` as a third parameter.
+
+## `SegmentStore` trait (since v0.5.0)
+
+The I/O boundary of `SegmentBuffer` is an injectable trait object
+(`Arc<dyn SegmentStore + Send + Sync>`). The trait covers exactly the former
+`std::fs` surface (`create_dir_all`, `scan`, `clean_tmp`, `segment_size`,
+`remove_segment`, `write_atomic`, `read_bytes`). Production code constructs a
+`RealStore` internally via `open()` / `open_with_report()`; the trait is
+reachable externally only under the `loom` Cargo feature
+(`SegmentBuffer::open_with_store(dir, config, store)`), and is documented as
+not-stable-semver-surface. A loom-aware `MockStore` is how the loom tests
+inject an in-memory store.
+
+## `SegmentIter<'_, T>` (since v0.5.0)
+
+Owned-item iterator yielded by `SegmentBuffer::iter_from(start, limit)`.
+Returns `(seq, item)` pairs; works with standard `Iterator` combinators
+(`.take`, `.filter`, `.map`) and the `for` loop. Materialises up to `limit`
+items eagerly. The existing `for_each_from` lending iterator stays for the
+zero-copy in-memory tail path.
+
+## `IoSite` (since v0.5.0)
+
+Enum tagging `SegmentError::Io` sites: `Dir`, `Segment(PathBuf)`, or `Unknown`.
+Replaces the pre-v0.5.0 `Option<PathBuf>` (where `None` overloaded both
+"directory-level failure" and "no context attached yet"). `with_path` and
+the new `with_dir` tag Unknown Io errors at high-value call sites.
 
 ## `fuzz_hooks`
 

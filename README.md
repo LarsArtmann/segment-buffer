@@ -10,10 +10,10 @@ The cloud is the durable layer. This crate is the local throughput buffer in fro
 
 There are many disk-backed queues in the Rust ecosystem, but none target this shape:
 
-- **Single-process by design** — one owner per buffer directory; no cross-process or distributed coordination tax. A `flock`-based exclusive lock at `open()` will make this enforceable, not just documented (planned for v0.5.0).
+- **Single-process by design** — one owner per buffer directory; no cross-process or distributed coordination tax. An exclusive `flock`-based lock at `open()` enforces this (shipped in master, pending the v0.5.0 release tag — see [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`).
 - **Throughput-first, durability-configurable** — pick your crash-resilience level (see [Crash behavior](#crash-behavior-configurable)). When the cloud is the durable copy, skip fsync; when this buffer is the last copy, fsync file + directory.
 - **At-least-once delivery built in** — `append()` returns a stable sequence number; `delete_acked(seq)` is the commit point. Crash before the ack and items are re-delivered on recovery. Your server-side handler MUST be idempotent on `(producer_id, seq)`; the library delivers at-least-once, never exactly-once.
-- **Optional performant encryption at rest** — AES-256-GCM today (byte-compatible with monitor365); XChaCha20-Poly1305 (extended nonce, no 2³²-message limit per key) is the planned default for new buffers. Streaming/incremental cipher is a long-term direction.
+- **Optional performant encryption at rest** — AES-256-GCM (byte-compatible with monitor365) and XChaCha20-Poly1305 (extended 24-byte nonce, no 2³²-message limit per key; constant-time in software). `SegmentConfigBuilder::recommended_cipher(key)` installs XChaCha20-Poly1305 for new buffers; legacy AES-GCM segments still decrypt. Streaming/incremental cipher is a long-term direction.
 - **zstd + CBOR segment files** — efficient storage, filename-based crash recovery. `ls` the directory and you see the state; no WAL, no metadata DB.
 
 For cross-machine replicated queues or server-side fanout, use a different tool — this crate is the producer-side local buffer.
@@ -65,14 +65,17 @@ migration.
 # use serde::{Deserialize, Serialize};
 # #[derive(Serialize, Deserialize, Clone)]
 # struct MyItem { id: u64 }
+use std::sync::Arc;
 use segment_buffer::{AesGcmCipher, SegmentBuffer, SegmentConfig};
 
 let key = [0u8; 32]; // 32-byte AES-256 key
 let cipher = AesGcmCipher::new(&key);
-// SegmentConfig is #[non_exhaustive]: Default + field reassignment.
-let mut config = SegmentConfig::default();
-config.cipher = Some(Box::new(cipher));
-let buffer = SegmentBuffer::<MyItem>::open("/tmp/my-buffer", config)?;
+// SegmentConfig is #[non_exhaustive]; the builder is the supported construction path.
+// As of the v0.5.0 batch in master, cipher is Arc<dyn SegmentCipher + Send + Sync>.
+let buffer = SegmentBuffer::<MyItem>::open(
+    "/tmp/my-buffer",
+    SegmentConfig::builder().cipher(Arc::new(cipher)).build(),
+)?;
 # Ok(())
 # }
 ```
@@ -175,21 +178,19 @@ _Reframed for the cloud-sync producer-side buffer target. Comparison tables rot;
 
 ## Status
 
+**master / `[Unreleased]`** — the **v0.5.0 cloud-sync throughput batch** lands the
+2026-07-20 reframing (single-process throughput buffer for cloud sync,
+durability-configurable, XChaCha20-Poly1305 recommended cipher, at-least-once
+delivery). Breaking changes are batched so users upgrade once. The release tag
+is **pending explicit approval** — see [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`
+for the full per-item detail. Cargo.toml is still at `0.4.2` until the tag is cut.
+
 **v0.4.2** — the "process debt + semver-leak closure" release. Gates
 `fuzz_hooks` behind a `#[cfg]` feature (closes the v0.4.1 semver leak), adds
 a CI `loom` job (prevents the v0.4.0-v0.4.1 silent rot of the loom test),
 adds 1 new fuzz target (`fuzz_append_all`) and 2 new property tests, and
 ships `docs/DOMAIN_LANGUAGE.md` + `docs/CIPHERS.md`. Non-breaking; drop-in
 upgrade from v0.4.1.
-See [CHANGELOG.md](CHANGELOG.md) for details.
-See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
-
-**v0.4.1** — the "safety + trust depth" release. Adds `for_each_from` re-entrancy
-guard (panics instead of silently deadlocking), `append_all` batch primitive,
-`path()`/`config()`/`sync_disk_bytes()` accessors, 2 new fuzz targets, 4 new
-property tests, nightly fuzz CI, supply-chain checks (cargo-audit + cargo-deny),
-and docs (`docs/PERFORMANCE.md`, `docs/RELEASE.md`, `docs/MSRV.md`).
-Non-breaking; drop-in upgrade from v0.4.0.
 See [CHANGELOG.md](CHANGELOG.md) for details.
 See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
 

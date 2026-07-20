@@ -263,10 +263,12 @@ pending_start` (the "honest backlog" invariant — if it ever broke,
 
 Process and verification hardening added after the 2026-07-20 session
 discovered that v0.4.1/v0.4.2 had shipped with CI silently broken for 48+
-hours (see `docs/status/2026-07-20_01-05_*`).- **Stress test regression guard** — `stress_8_writers_2_readers_throughput`
-now asserts zero `.zst` segment files are created during the concurrent
-phase under `FlushPolicy::Manual`. Catches any future reintroduction of the
-`Batch(4)` config that hung CI (commit `80257a0`).
+hours (see `docs/status/2026-07-20_01-05_*`).
+
+- **Stress test regression guard** — `stress_8_writers_2_readers_throughput`
+  now asserts zero `.zst` segment files are created during the concurrent
+  phase under `FlushPolicy::Manual`. Catches any future reintroduction of the
+  `Batch(4)` config that hung CI (commit `80257a0`).
 
 - **Stress throughput re-measured** under the corrected `Manual` config:
   ~2.29M events/sec (was ~397k, which was actually captured under `Batch(4)`

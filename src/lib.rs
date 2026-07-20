@@ -193,7 +193,7 @@ impl FlushPolicy {
 ///
 /// # Implementation
 ///
-/// The policy is branched on inside [`crate::store::SegmentStore::write_atomic`]
+/// The policy is branched on inside `SegmentStore::write_atomic`
 /// (not a callback): it is a `Copy` enum with no allocation, and the
 /// `Mutex<Compressor>` invariant ("never held across I/O") is preserved
 /// because the fsync happens after compression is done and the mutex is
@@ -208,7 +208,7 @@ pub enum DurabilityPolicy {
 
     /// Fsync the segment file's data, but not the directory inode after
     /// rename. This is the pre-v0.5.0 behavior. Kept as the
-    /// [`Default`](std::default::Default) for one release after the enum
+    /// [`Default`] for one release after the enum
     /// lands, then flips to [`Throughput`](Self::Throughput) with a
     /// deprecation note.
     #[default]

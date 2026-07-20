@@ -36,15 +36,16 @@ test, not the buffer construction.
 
 ## Available benchmarks
 
-| Bench                    | What it measures                                              |
-| ------------------------ | ------------------------------------------------------------- |
-| `bench_append`           | Append throughput at batch sizes 1, 100, 1k, 10k              |
-| `bench_read_from`        | `read_from` across flushed + in-memory items                  |
-| `bench_read_vs_for_each` | `read_from` vs `for_each_from` (lending iterator) on 1k items |
-| `bench_delete_acked`     | `delete_acked` at 100 and 10k segments                        |
-| `bench_recover`          | Cold-start recovery over a populated directory                |
-| `bench_stats`            | `stats()` snapshot vs 3 individual accessors                  |
-| `bench_append_all`       | `append_all` batch primitive vs loop of `append`              |
+| Bench                     | What it measures                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `bench_append`            | Append throughput at batch sizes 1, 100, 1k, 10k                                                       |
+| `bench_read_from`         | `read_from` across flushed + in-memory items (incl. cold-vs-warm `read_from_scan_cache` group, v0.4.0) |
+| `bench_read_vs_for_each`  | `read_from` vs `for_each_from` (lending iterator) on 1k items                                          |
+| `bench_delete_acked`      | `delete_acked` at 100 and 10k segments                                                                 |
+| `bench_recover`           | Cold-start recovery over a populated directory                                                         |
+| `bench_stats`             | `stats()` snapshot vs 3 individual accessors                                                           |
+| `bench_append_all`        | `append_all` batch primitive vs loop of `append`                                                       |
+| `bench_durability_policy` | _(v0.5.0)_ A/B/C `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush                          |
 
 ## Interpreting the numbers
 
