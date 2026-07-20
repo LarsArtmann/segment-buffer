@@ -60,14 +60,12 @@ the buffer.
 - Structured recovery summary (`RecoveryReport`) shipped in v0.4.0 via `open_with_report()`. Returns segment_count, head_seq, next_seq, disk_bytes, removed_tmp_files.
 - v0.4.1 added `path()`, `config()`, `sync_disk_bytes()` accessors and a throughput stress test baseline. The originally reported ~397k events/sec was captured under a mislabeled `Batch(4)` config; the corrected `FlushPolicy::Manual` baseline is ~2.29M events/sec under 8-writer contention (see `docs/perf/2026-07-19_v0.4.1_stress_throughput.md` for the inline correction).
 
-### 6. v0.5.0 batch — SHIPPED in master (pending release tag)
+### 6. v0.5.0 batch — SHIPPED 2026-07-20
 
-The v0.5.0 "cloud-sync throughput batch" landed in master on 2026-07-20 and
+The v0.5.0 "cloud-sync throughput batch" shipped 2026-07-20 and
 implements the reframing (single-process throughput buffer for cloud sync;
 durability-configurable; XChaCha20 recommended cipher; at-least-once
-delivery). Release tag is pending explicit approval — see `CHANGELOG.md`
-`[Unreleased]` for the full per-item detail and `TODO_LIST.md` for the
-per-item status. Highlights:
+delivery). See `CHANGELOG.md` `[0.5.0]` for the full per-item detail. Highlights:
 
 - **`flock`-based single-process lock** + `SegmentError::Locked`.
 - **`DurabilityPolicy` enum** (`Maximal` / `Segment` / `Throughput`).

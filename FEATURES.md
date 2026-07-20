@@ -10,10 +10,9 @@ truth; this file tracks reality, not aspirations.
 | PLANNED              | Designed or discussed; no code yet.                          |
 | WORTH_CONSIDERING    | Raw idea, not yet designed.                                  |
 
-> **Versioning note.** Items marked _(v0.5.0)_ are present in `master` /
-> `CHANGELOG.md` `[Unreleased]` and ship the moment the v0.5.0 tag is cut.
-> `Cargo.toml` is still at `0.4.2` until that tag lands; until then, items in
-> the latest released crate (0.4.2) are the public crates.io surface.
+> **Versioning note.** Items marked _(v0.5.0)_ shipped in the v0.5.0 release
+> tag. If you depend on `segment-buffer = "0.4"`, these items are not in the
+> crate you resolved; upgrade to `"0.5"` to pick them up.
 
 ## Core queue
 

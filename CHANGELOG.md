@@ -145,7 +145,10 @@ for the full migration path. Summary:
 
 ---
 
-### Earlier [Unreleased] items (pre-v0.5.0)
+### Earlier changes in the v0.5.0 release window
+
+These items shipped between v0.4.2 and the v0.5.0 batch; all are part of the
+v0.5.0 release.
 
 ### Fixed
 
@@ -705,7 +708,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.0
 [0.4.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.2
 [0.4.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.1
 [0.4.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.0

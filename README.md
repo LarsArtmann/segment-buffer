@@ -10,7 +10,7 @@ The cloud is the durable layer. This crate is the local throughput buffer in fro
 
 There are many disk-backed queues in the Rust ecosystem, but none target this shape:
 
-- **Single-process by design** — one owner per buffer directory; no cross-process or distributed coordination tax. An exclusive `flock`-based lock at `open()` enforces this (shipped in master, pending the v0.5.0 release tag — see [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`).
+- **Single-process by design** — one owner per buffer directory; no cross-process or distributed coordination tax. An exclusive `flock`-based lock at `open()` enforces this (since v0.5.0).
 - **Throughput-first, durability-configurable** — pick your crash-resilience level (see [Crash behavior](#crash-behavior-configurable)). When the cloud is the durable copy, skip fsync; when this buffer is the last copy, fsync file + directory.
 - **At-least-once delivery built in** — `append()` returns a stable sequence number; `delete_acked(seq)` is the commit point. Crash before the ack and items are re-delivered on recovery. Your server-side handler MUST be idempotent on `(producer_id, seq)`; the library delivers at-least-once, never exactly-once.
 - **Optional performant encryption at rest** — AES-256-GCM (byte-compatible with monitor365) and XChaCha20-Poly1305 (extended 24-byte nonce, no 2³²-message limit per key; constant-time in software). `SegmentConfigBuilder::recommended_cipher(key)` installs XChaCha20-Poly1305 for new buffers; legacy AES-GCM segments still decrypt. Streaming/incremental cipher is a long-term direction.
@@ -165,25 +165,25 @@ _Comparison tables rot. This one was written against the versions current as of
 
 _Reframed for the cloud-sync producer-side buffer target. Comparison tables rot; verify upstream before deciding._
 
-| Feature         | segment-buffer                              | yaque                     | disk_backed_queue      |
-| --------------- | ------------------------------------------- | ------------------------- | ---------------------- |
-| Target shape    | local spool for cloud sync                  | general queue             | general queue          |
-| Process model   | single-process (locked at open)             | SPSC                      | multi-process          |
-| Segment files   | zstd+CBOR                                   | raw bytes                 | SQLite                 |
-| Ack/delete      | `delete_acked()` (at-least-once)            | `RecvGuard` commit/revert | partial                |
-| Crash recovery  | filename-based                              | replay or loss            | SQLite WAL             |
-| Compression     | zstd                                        | none                      | none                   |
-| Durability knob | 3 policies (Maximal/Segment/Throughput)     | write-through             | SQLite full/normal/off |
-| Encryption      | optional (AES-GCM today, XChaCha20 planned) | no                        | no                     |
+| Feature         | segment-buffer                          | yaque                     | disk_backed_queue      |
+| --------------- | --------------------------------------- | ------------------------- | ---------------------- |
+| Target shape    | local spool for cloud sync              | general queue             | general queue          |
+| Process model   | single-process (locked at open)         | SPSC                      | multi-process          |
+| Segment files   | zstd+CBOR                               | raw bytes                 | SQLite                 |
+| Ack/delete      | `delete_acked()` (at-least-once)        | `RecvGuard` commit/revert | partial                |
+| Crash recovery  | filename-based                          | replay or loss            | SQLite WAL             |
+| Compression     | zstd                                    | none                      | none                   |
+| Durability knob | 3 policies (Maximal/Segment/Throughput) | write-through             | SQLite full/normal/off |
+| Encryption      | optional (AES-GCM + XChaCha20-Poly1305) | no                        | no                     |
 
 ## Status
 
-**master / `[Unreleased]`** — the **v0.5.0 cloud-sync throughput batch** lands the
-2026-07-20 reframing (single-process throughput buffer for cloud sync,
+**v0.5.0** — the **cloud-sync throughput batch** ships the 2026-07-20
+reframing: single-process throughput buffer for cloud sync,
 durability-configurable, XChaCha20-Poly1305 recommended cipher, at-least-once
-delivery). Breaking changes are batched so users upgrade once. The release tag
-is **pending explicit approval** — see [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`
-for the full per-item detail. Cargo.toml is still at `0.4.2` until the tag is cut.
+delivery. Breaking changes are batched so users upgrade once — see
+[CHANGELOG.md](CHANGELOG.md) for the full per-item detail and migration notes.
+See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
 
 **v0.4.2** — the "process debt + semver-leak closure" release. Gates
 `fuzz_hooks` behind a `#[cfg]` feature (closes the v0.4.1 semver leak), adds
