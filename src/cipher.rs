@@ -12,21 +12,6 @@
 use std::fmt;
 use std::sync::Arc;
 
-/// Helper trait that lets a `dyn Error + Send + Sync` trait object be upcast
-/// to `&dyn Error` without requiring Rust 1.86's trait-upcasting coercion.
-/// The crate's MSRV is 1.85; once it moves to 1.86+ this can be removed and
-/// `source()` can be a plain `self.source.as_deref()`.
-trait ErrorExt: fmt::Debug + std::error::Error {
-    /// Upcast this error to a `dyn std::error::Error` reference.
-    fn as_std_error(&self) -> &(dyn std::error::Error + 'static);
-}
-
-impl<T: std::error::Error + 'static> ErrorExt for T {
-    fn as_std_error(&self) -> &(dyn std::error::Error + 'static) {
-        self
-    }
-}
-
 /// Error returned by [`SegmentCipher`] implementations.
 ///
 /// Deliberately minimal: the cipher operates on bytes, not files, so it has no
@@ -44,7 +29,7 @@ pub struct CipherError {
     /// Optional underlying cause (e.g. the AEAD crate's opaque error).
     /// `Arc` (not `Box`) so [`CipherError`] stays [`Clone`]. Surfaced via
     /// [`std::error::Error::source`].
-    source: Option<Arc<dyn ErrorExt + Send + Sync>>,
+    source: Option<Arc<dyn std::error::Error + Send + Sync>>,
 }
 
 impl CipherError {
@@ -116,10 +101,12 @@ impl fmt::Display for CipherError {
 
 impl std::error::Error for CipherError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // `Arc<dyn ErrorExt + Send + Sync>` cannot be coerced to
-        // `&dyn Error` until trait-upcasting stabilises for our MSRV (1.86+);
-        // `ErrorExt::as_std_error` does the upcast explicitly.
-        self.source.as_ref().map(|s| s.as_std_error())
+        // Trait-upcasting coercion (stable since Rust 1.86) turns
+        // `&(dyn Error + Send + Sync)` into `&dyn Error`. The explicit
+        // closure return type forces the coercion through `Option::map`.
+        self.source
+            .as_deref()
+            .map(|s| -> &(dyn std::error::Error + 'static) { s })
     }
 }
 
@@ -257,7 +244,7 @@ mod private {
     impl SegmentCipher for AesGcmCipher {
         fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CipherError> {
             use aes_gcm::aead::Aead;
-            use rand::RngCore;
+            use rand::Rng;
 
             let mut nonce_bytes = [0u8; 12];
             rand::rng().fill_bytes(&mut nonce_bytes);

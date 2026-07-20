@@ -40,11 +40,11 @@
           craneLib = inputs.crane.mkLib pkgs;
 
           # MSRV-pinned crane: proves `packages.default` builds on the crate's
-          # declared floor (1.85), not just on whatever nixpkgs stable ships.
+          # declared floor (1.86), not just on whatever nixpkgs stable ships.
           # The checks (test/clippy/doc) keep using `craneLib` (stable) for
           # broader coverage; only the shipped package is MSRV-locked.
           craneLibMsrv = (inputs.crane.mkLib pkgsRust).overrideToolchain (
-            p: p.rust-bin.stable."1.85.0".minimal
+            p: p.rust-bin.stable."1.86.0".minimal
           );
 
           # Source filtered to Cargo-relevant files for build caching.
@@ -110,17 +110,17 @@
               ];
             };
 
-            # MSRV verification shell — pinned Rust 1.85 (the floor declared in
+            # MSRV verification shell — pinned Rust 1.86 (the floor declared in
             # Cargo.toml's `rust-version`). Use this to validate that the crate
             # actually compiles on its declared MSRV:
             #
             #   nix develop .#msrv -c cargo check --all-targets --features encryption
             #
-            # (Note: `cargo +1.85.0` syntax is rustup-only and does NOT work
+            # (Note: `cargo +1.86.0` syntax is rustup-only and does NOT work
             # inside a Nix shell — use the shell's cargo directly.)
             msrv = pkgs.mkShell {
               packages = [
-                pkgsRust.rust-bin.stable."1.85.0".default
+                pkgsRust.rust-bin.stable."1.86.0".default
                 pkgs.pkg-config
                 pkgs.zstd
               ];

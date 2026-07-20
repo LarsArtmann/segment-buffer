@@ -28,15 +28,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call it — re-entrancy panics now point to the user's callback code instead of
   the internal guard function.
 
+### MSRV
+
+- **Bumped 1.85 → 1.86.** Driven by `criterion` 0.8 (requires rustc 1.86) and
+  `rand` 0.10 (edition 2024). Trait-upcasting coercion (stable in 1.86) lets
+  `CipherError::source()` upcast `Arc<dyn Error + Send + Sync>` to `&dyn Error`
+  directly — the `ErrorExt` workaround trait that existed solely to bridge this
+  gap under MSRV 1.85 has been deleted. See `docs/MSRV.md`.
+
 ### Changed
 
 - **aes-gcm 0.10 → 0.11**: `Nonce::from_slice` → `Nonce::from` / `try_into`
   (upstream deprecation). No public API change.
-- **rand 0.8 → 0.9**: `thread_rng()` → `rng()` (upstream rename). No public API
-  change.
-- **criterion 0.5** (dev-only): switched `criterion::black_box` →
-  `std::hint::black_box` (criterion deprecated the re-export). Kept at 0.5
-  because 0.8 requires rustc 1.86, above the declared MSRV of 1.85.
+- **rand 0.9 → 0.10**: `RngCore` import → `Rng` (the `fill_bytes` provider moved
+  to `Rng` in 0.10). No public API change.
+- **criterion 0.5 → 0.8** (dev-only): switched `criterion::black_box` →
+  `std::hint::black_box` (criterion deprecated the re-export) and adopted 0.8
+  now that MSRV is 1.86 (criterion 0.8 requires it).
 - **GitHub Actions**: bumped all workflows to latest major versions
   (`actions/checkout` v4→v7, `actions/upload-artifact` v4→v7,
   `peter-evans/create-pull-request` v6→v8, `cachix/install-nix-action` v27→v31,
@@ -67,13 +75,17 @@ hours (see `docs/status/2026-07-20_01-05_*`).
 - **`CONTRIBUTING.md`** gained an MSRV-check subsection: dependency bumps must
   be verified against the declared MSRV before pushing (lesson from the
   criterion 0.8 MSRV violation).
-- **`dependabot.yml`** now ignores `criterion >= 0.6` with a comment citing
-  the MSRV constraint, so dependabot stops re-proposing the MSRV-breaking bump.
+- **`dependabot.yml` criterion ignore retired** — the `criterion >= 0.6` block
+  is removed because MSRV is now 1.86 and criterion 0.8 is adopted.
 - **`publish.yml`** gained a `cargo publish --dry-run` job that runs on PRs
   touching `Cargo.toml`, surfacing packaging issues before a real tag.
+- **`ErrorExt` workaround deleted** — `src/cipher.rs` no longer carries the
+  `ErrorExt` trait + blanket impl that existed only to bridge the pre-1.86
+  trait-upcasting gap. `CipherError::source()` now uses native trait-upcasting
+  coercion. ~20 lines removed.
 - **MSRV audit**: `cargo check --all-targets --features encryption` on Rust
-  1.85.0 passes — no transitive dependency in `Cargo.lock` exceeds the
-  declared MSRV. The criterion 0.8 revert was the only fix needed.
+  1.86.0 passes — no transitive dependency in `Cargo.lock` exceeds the
+  declared MSRV.
 - **v0.4.2 status report annotated** (`docs/status/2026-07-19_22-48_*`) — the
   false "all green / Health 9/10" claims are now inline-corrected with
   pointers to the real fixes, per the update-old-docs non-destructive

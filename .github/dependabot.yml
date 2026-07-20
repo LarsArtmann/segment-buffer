@@ -29,14 +29,6 @@ updates:
       - cargo
     commit-message:
       prefix: "deps"
-    ignore:
-      # criterion 0.8 requires rustc 1.86, above this crate's declared MSRV of
-      # 1.85 (CI caught it: MSRV job + 1.85 matrix jobs failed on commit 031763d,
-      # reverted in c4be692). 0.6/0.7 MSRVs are unverified, so block all >= 0.6
-      # until MSRV is deliberately bumped to >= 1.86 (see docs/MSRV.md and the
-      # MSRV decision flagged in docs/status/2026-07-20_01-05_* §g Q1).
-      - dependency-name: "criterion"
-        versions: [">=0.6"]
 
   # Fuzz workspace (separate Cargo.toml at /fuzz). Tracks libfuzzer-sys and
   # any fuzz-only deps independently of the main crate.
