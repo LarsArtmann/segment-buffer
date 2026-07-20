@@ -19,6 +19,7 @@ use std::path::PathBuf;
 
 use crate::error::Result;
 use crate::segment::{filename, parse_filename, SegmentRange};
+use crate::DurabilityPolicy;
 
 /// Suffix for in-progress writes, treated as crash debris on recovery.
 /// Mirrors the constant that lived in `segment.rs` before the I/O split.
@@ -95,17 +96,28 @@ pub trait SegmentStore: Send + Sync {
     /// Returns [`SegmentError::Io`] on any error other than `NotFound`.
     fn remove_segment(&self, range: SegmentRange) -> Result<bool>;
 
-    /// Atomically write `payload` as the segment file for `range`. Returns
-    /// the number of bytes written (the length of `payload`).
+    /// Atomically write `payload` as the segment file for `range`, using the
+    /// fsync discipline selected by `policy`. Returns the number of bytes
+    /// written (the length of `payload`).
     ///
     /// "Atomic" means a concurrent reader never observes a partial write:
     /// either the previous content (or "missing") is visible, or the new
-    /// content is — never anything in between.
+    /// content is — never anything in between. Atomicity is achieved via the
+    /// tmp → rename sequence regardless of `policy`; `policy` only selects
+    /// which `fsync`s happen around the rename.
+    ///
+    /// See [`DurabilityPolicy`] for the per-policy fsync behavior and
+    /// crash-loss tradeoffs.
     ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] on any I/O failure.
-    fn write_atomic(&self, range: SegmentRange, payload: &[u8]) -> Result<u64>;
+    fn write_atomic(
+        &self,
+        range: SegmentRange,
+        payload: &[u8],
+        policy: DurabilityPolicy,
+    ) -> Result<u64>;
 
     /// Read the raw bytes of the segment file for `range`.
     ///
@@ -193,11 +205,19 @@ impl SegmentStore for RealStore {
         }
     }
 
-    fn write_atomic(&self, range: SegmentRange, payload: &[u8]) -> Result<u64> {
-        // Verbatim ordering from the pre-refactor `segment::write`:
-        // create tmp → write_all → sync_all → rename. The rename is the
-        // atomicity boundary; everything before it must be fsync'd so a
-        // crash never leaves a partial segment under the final name.
+    fn write_atomic(
+        &self,
+        range: SegmentRange,
+        payload: &[u8],
+        policy: DurabilityPolicy,
+    ) -> Result<u64> {
+        // The tmp → rename ordering is preserved for all policies so a
+        // concurrent reader never sees a partial write. The policy only
+        // selects which fsyncs happen around the rename:
+        //
+        //  - `Maximal`:  file.sync_all()  +  rename  +  dir.sync_all()
+        //  - `Segment`:  file.sync_all()  +  rename             (today's behavior)
+        //  - `Throughput`:                 rename              (no fsync at all)
         let seg_name = filename(range.start, range.end);
         let seg_path = self.dir.join(&seg_name);
         let tmp_path = self.dir.join(format!("{seg_name}{TMP_SUFFIX}"));
@@ -205,10 +225,33 @@ impl SegmentStore for RealStore {
         {
             let mut file = fs::File::create(&tmp_path)?;
             file.write_all(payload)?;
-            file.sync_all()?;
+            // Throughput skips the file-data fsync entirely; the kernel's
+            // dirty-page flusher handles when the bytes reach disk.
+            if !matches!(policy, DurabilityPolicy::Throughput) {
+                file.sync_all()?;
+            }
         }
 
         fs::rename(&tmp_path, &seg_path)?;
+
+        // Maximal additionally fsyncs the directory inode so the rename
+        // itself is durable. Without this, a host crash within the kernel's
+        // dir-inode flush window can leave the segment's data on disk but
+        // unreachable through the directory (the "rename-window gap" — see
+        // DurabilityPolicy docs). On Linux/macOS opening a directory as a
+        // File and fsyncing it is well-defined; on platforms that forbid it,
+        // Maximal degrades to Segment (best-effort, error logged via the
+        // returned Result — operators who need Maximal should not run on
+        // such platforms).
+        if matches!(policy, DurabilityPolicy::Maximal) {
+            // Best-effort: a directory fsync failure does not corrupt the
+            // segment (the data is already renamed into place); it only
+            // widens the rename window. Report the error so the caller can
+            // decide whether to downgrade to Segment or fix the filesystem.
+            let dir_file = fs::File::open(&self.dir)?;
+            dir_file.sync_all()?;
+        }
+
         Ok(payload.len() as u64)
     }
 
