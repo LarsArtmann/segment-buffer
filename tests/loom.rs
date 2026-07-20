@@ -59,7 +59,7 @@ use std::collections::HashMap;
 use loom::sync::{Arc, Mutex};
 use loom::thread;
 use segment_buffer::{
-    FlushPolicy, Result, SegmentBuffer, SegmentConfig, SegmentRange, SegmentStore,
+    DurabilityPolicy, FlushPolicy, Result, SegmentBuffer, SegmentConfig, SegmentRange, SegmentStore,
 };
 use serde::{Deserialize, Serialize};
 
@@ -143,10 +143,16 @@ impl SegmentStore for MockStore {
         Ok(self.files.lock().unwrap().remove(&range).is_some())
     }
 
-    fn write_atomic(&self, range: SegmentRange, payload: &[u8]) -> Result<u64> {
+    fn write_atomic(
+        &self,
+        range: SegmentRange,
+        payload: &[u8],
+        _policy: DurabilityPolicy,
+    ) -> Result<u64> {
         // Single lock acquisition = atomic. A concurrent reader observes
         // either the previous content or the new content, never a partial
-        // write.
+        // write. The durability policy is ignored: the mock models
+        // atomicity, not fsync behavior (loom does not model the disk).
         let len = payload.len() as u64;
         self.files.lock().unwrap().insert(range, payload.to_vec());
         Ok(len)
