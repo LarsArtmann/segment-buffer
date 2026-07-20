@@ -636,17 +636,20 @@ fn encrypted_roundtrip_preserves_event_data() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0], item);
 
-    // Verify the segment file on disk is NOT plaintext
-    let raw = fs::read(
-        tmp.path()
-            .read_dir()
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path(),
-    )
-    .unwrap();
+    // Verify the segment file on disk is NOT plaintext. Filter to .zst
+    // because the directory also contains the `.segment-buffer.lock`
+    // sidecar (held open by the flock since v0.5.0); the old
+    // `read_dir().next()` form grabbed whichever entry the kernel
+    // returned first, which is fs-dependent and sometimes the lock file.
+    let segment_path = tmp
+        .path()
+        .read_dir()
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "zst"))
+        .expect("segment file must exist after flush");
+    let raw = fs::read(&segment_path).unwrap();
     assert!(
         raw.len() > 12,
         "Encrypted segment should be nonce + ciphertext, not plaintext"

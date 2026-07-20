@@ -19,7 +19,10 @@ accept = ["200"]
 
 # Exclude the private monitor365 repo (referenced as text in README.md and
 # CHANGELOG.md but the URL is a 404 to anonymous visitors).
-exclude = ["^https://github\\.com/LarsArtmann/monitor365"]
+# Exclude GitHub /settings/ URLs — admin-only pages that 404 for anonymous
+# visitors (the lychee runner is unauthenticated). Referenced in
+# docs/RELEASE.md for the CARGO_REGISTRY_TOKEN setup runbook.
+exclude = ["^https://github\\.com/LarsArtmann/monitor365", "^https://github\\.com/.*/settings/"]
 
 # Exclude localhost / loopback
 exclude_loopback = true
