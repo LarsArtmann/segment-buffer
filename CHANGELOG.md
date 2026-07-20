@@ -38,11 +38,11 @@ for the deferred-to-v0.6 items with rationale.
   (loom does not model the filesystem).
 - **`XChaCha20Poly1305Cipher`** under the `encryption` feature (alongside
   the legacy-compatible `AesGcmCipher`). Writes `[24-byte nonce][ciphertext
-  + 16-byte Poly1305 tag]`. Eliminates AES-GCM's 2³²-message-per-key limit
-  via the 24-byte extended nonce; constant-time in software (no AES-NI
-  dependency). The `SegmentConfigBuilder::recommended_cipher(key)` helper
-  installs `XChaCha20Poly1305Cipher` — the recommended choice for new
-  buffers. Legacy AES-GCM segments still read via `AesGcmCipher`.
+  - 16-byte Poly1305 tag]`. Eliminates AES-GCM's 2³²-message-per-key limit
+via the 24-byte extended nonce; constant-time in software (no AES-NI
+dependency). The `SegmentConfigBuilder::recommended_cipher(key)`helper
+installs`XChaCha20Poly1305Cipher`— the recommended choice for new
+buffers. Legacy AES-GCM segments still read via`AesGcmCipher`.
 - **`IoSite` enum** (`Dir` / `Segment(PathBuf)` / `Unknown`) replaces the
   `Option<PathBuf>` on `SegmentError::Io`. Makes the "no path" case
   explicit (was an overload of `None` covering both "directory-level
@@ -80,7 +80,7 @@ for the deferred-to-v0.6 items with rationale.
     producer applies backpressure via `store_pressure() > threshold`,
     NEVER evicts unacked segments (the at-least-once hard no).
   - `examples/idempotent_server.rs` — the consumer-side `(producer_id,
-    seq)` dedup pattern the at-least-once model requires on the server.
+seq)` dedup pattern the at-least-once model requires on the server.
 - **`bench_durability_policy`** — criterion A/B benchmark comparing
   `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush. Sizes the
   headline perf claim for the reframed positioning.
@@ -96,7 +96,7 @@ for the deferred-to-v0.6 items with rationale.
   `with_path` method keeps its name but now produces `Segment(path)` site.
   New `with_dir` method tags Unknown Io errors as `Dir` site.
 - **`SegmentConfig.cipher` type** changed from `Option<Box<dyn
-  SegmentCipher>>` to `Option<Arc<dyn SegmentCipher + Send + Sync>>`.
+SegmentCipher>>` to `Option<Arc<dyn SegmentCipher + Send + Sync>>`.
   Callers using `.cipher(Box::new(cipher))` must update to
   `.cipher(Arc::new(cipher))`. The benefit: `SegmentConfig` and
   `SegmentConfigBuilder` are now `Clone` (M12) — the cipher `Arc` is
@@ -105,7 +105,7 @@ for the deferred-to-v0.6 items with rationale.
   `#[non_exhaustive]` struct, so direct struct-literal construction was
   already forbidden externally; the builder pattern is unaffected.
   Internal callers using struct literals must add `durability:
-  DurabilityPolicy::Segment` (or `Default::default()`).
+DurabilityPolicy::Segment` (or `Default::default()`).
 
 ### Internal (v0.5.0)
 
