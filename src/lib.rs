@@ -4,7 +4,9 @@
 //! to `seg_{start:012}_{end:012}.zst` files, and deleted once the consumer
 //! acknowledges receipt via [`SegmentBuffer::delete_acked`].
 //!
-//! The buffer is generic over any `T: Serialize + DeserializeOwned + Clone + Send + 'static`.
+//! The buffer is generic over any `T: Serialize + DeserializeOwned + Clone + Send`.
+//! (No explicit `'static` bound is required: `DeserializeOwned` already implies
+//! it, since a borrowed type cannot satisfy `for<'de> Deserialize<'de>`.)
 //! Crash recovery is filename-based: scanning the directory rebuilds `head_seq`
 //! and `next_seq` without any WAL or metadata database.
 //!
@@ -29,7 +31,15 @@
 //! or [docs.rs](https://docs.rs/segment-buffer).
 
 #![warn(missing_docs)]
-#![doc = include_str!("../README.md")]
+// The crate-root rustdoc is the hand-written block above. The full README
+// (install, quickstart, encryption, comparison table, performance) is NOT
+// embedded here: it is rendered separately by docs.rs via the `readme` field
+// in Cargo.toml, and embedding it via `include_str!` caused two real problems
+// — (1) `craneLib.cleanCargoSource` strips README.md from the Nix sandbox,
+// needing a `postUnpack` band-aid, and (2) the README's cloud-sync doctest
+// referenced an undefined `cloud_upload` fn, turning `cargo test --doc` red.
+// Readers reach the README through the links above plus the docs.rs landing
+// page; the crate-root stays a concise, self-contained API orientation.
 
 mod cipher;
 mod error;
@@ -451,7 +461,7 @@ pub struct SegmentBuffer<T> {
 /// sensitive), so `T` itself is not required to be `Debug`.
 impl<T> std::fmt::Debug for SegmentBuffer<T>
 where
-    T: Serialize + DeserializeOwned + Clone + Send + 'static,
+    T: Serialize + DeserializeOwned + Clone + Send,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let stats = self.stats();
@@ -470,7 +480,7 @@ where
 
 impl<T> SegmentBuffer<T>
 where
-    T: Serialize + DeserializeOwned + Clone + Send + 'static,
+    T: Serialize + DeserializeOwned + Clone + Send,
 {
     /// Open (or create) a buffer at `dir`, recovering from any existing
     /// segment files.

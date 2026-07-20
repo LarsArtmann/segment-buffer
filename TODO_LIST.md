@@ -102,11 +102,52 @@ analysis in `docs/perf/2026-07-20_hot-path-flamegraph.md` and
 
 ## Investigation
 
-- [ ] **Tighten `T: 'static`** — investigate whether it can be relaxed (needed for the mutex, but worth confirming).
-- [ ] **Extract AES-GCM cipher into its own feature/crate boundary** for users who want only the trait.
-- [ ] **Profile the hermetic Nix build** (~164s for test check; most is zstd-sys compiling bundled C). Could pre-build zstd as a Nix dependency via `ZSTD_SYS_USE_PKG_CONFIG=1`.
-- [ ] **Investigate whether `include_str!("../README.md")` should be replaced** — the crate-root rustdoc embeds README.md via `include_str!`, which `craneLib.cleanCargoSource` strips from the Nix sandbox (fixed by a `postUnpack` copy in `flake.nix`, commit `b2e7c4f`). A separate `src/README.md` snippet or a hand-written crate-level doc would dodge this class of bug entirely. Low priority — the `postUnpack` fix works.
-- [ ] **Consider `cargo supply-chain` crate** for downstream-auditable dependency provenance (belt-and-braces alongside `cargo deny` + `cargo audit`).
+All entries resolved 2026-07-20. Findings recorded inline so the decisions
+(especially the "no action needed" ones) are not re-litigated. Code changes
+landed from these are mirrored in [CHANGELOG.md](CHANGELOG.md) `[Unreleased]`.
+
+- [x] **Tighten `T: 'static`** — **RELAXED (the bound was redundant).**
+      `T: 'static` was implied by `T: DeserializeOwned` (a borrowed type cannot
+      satisfy `for<'de> Deserialize<'de>`), and `parking_lot::Mutex` only needs
+      `T: Send` for `Send`+`Sync` — no `'static`. Dropped the explicit bound from
+      the `Debug` + main `impl` blocks and the crate-root doc. Verified: compiles,
+      64 tests + 33 doctests pass. Strictly more permissive (semver-minor).
+- [x] **Extract AES-GCM cipher into its own feature/crate boundary** —
+      **NO ACTION: the feature boundary already achieves the goal.**
+      `SegmentCipher` + `CipherError` are always exported (not feature-gated), and
+      the `encryption` feature pulls in `aes-gcm` + `rand` ONLY for `AesGcmCipher`.
+      `cargo tree` confirms the default build has ZERO crypto deps — users who
+      want only the trait already get it. A separate crate would add
+      versioning/publishing churn for a ~100-line surface whose trait+error types
+      MUST live in core (`SegmentConfig.cipher: Box<dyn SegmentCipher>`). The
+      planned XChaCha20 scales fine as another feature flag.
+- [x] **Profile the hermetic Nix build** — **FIXED via `ZSTD_SYS_USE_PKG_CONFIG`.**
+      `flake.nix` `commonArgs` now sets `ZSTD_SYS_USE_PKG_CONFIG = "1"`. zstd-sys's
+      `build.rs` honors the env var and calls `pkg_config()` (preferring a static
+      link via `.statik(true)`) instead of compiling the bundled C. Safe: zstd-sys
+      2.0.16 ships `+zstd.1.5.7` and nixpkgs provides exactly zstd 1.5.7 —
+      byte-identical library. Verified end-to-end: `nix flake check` passes (deps,
+      build, test, doc all link the prebuilt libzstd). Eliminates the ~30-file C
+      compile that dominated cold builds.
+- [x] **Investigate whether `include_str!("../README.md")` should be replaced**
+      — **REPLACED (removed the embedding).** The embedding caused two real
+      problems, not just the latent `cleanCargoSource` fragility: (1) it leaked a
+      BROKEN doctest from the README (`cloud_upload` undefined → `cargo test --doc`
+      was RED on master, and the Nix `test` check was RED), and (2)
+      `cleanCargoSource` strips README.md, needing a `postUnpack` band-aid. Removed
+      `#![doc = include_str!("../README.md")]` and the now-dead `postUnpack` copy.
+      The hand-written crate-root doc already links to the README; docs.rs renders
+      it via the `readme` field regardless. Verified: doctests green (33 pass),
+      `cargo doc` builds with README absent.
+- [x] **Consider `cargo supply-chain` crate** — **ADDED as an informational,
+      non-gating layer.** cargo-supply-chain (rust-secure-code WG, v0.3.7,
+      actively maintained again since mid-2025) uniquely provides publisher
+      attribution — WHO can publish each crate in the dependency tree — which
+      neither `cargo audit` (vulnerabilities) nor `cargo deny` (policy) surfaces.
+      Added `.github/workflows/supply-chain-report.yml` (weekly cron + manual
+      dispatch, every step `continue-on-error`) and documented the local command
+      in `AGENTS.md`. Deliberately non-gating: it produces attribution data, not
+      pass/fail verdicts — the gating stays with audit + deny.
 
 ## Crates.io publishing
 

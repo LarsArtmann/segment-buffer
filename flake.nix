@@ -58,12 +58,23 @@
             nativeBuildInputs = [ pkgs.pkg-config ];
             buildInputs = [ pkgs.zstd ];
             strictDeps = true;
-            # cleanCargoSource strips README.md, but lib.rs uses
-            # include_str!("../README.md") to embed it in rustdoc.
-            # Copy it back in after unpacking.
-            postUnpack = ''
-              cp ${./README.md} "$sourceRoot/README.md"
-            '';
+            # (No postUnpack copy of README.md is needed. lib.rs used to embed
+            # it via include_str! for the crate-root rustdoc, which
+            # cleanCargoSource strips — that embedding was removed because it
+            # also leaked a broken doctest from the README into `cargo test --doc`.
+            # docs.rs renders the README via the `readme` field in Cargo.toml
+            # regardless, so no README is needed inside the sandbox.)
+            # Link against the Nix-provided libzstd instead of letting
+            # zstd-sys compile its bundled C from source on every cold build.
+            # zstd-sys's build.rs checks this env var and, when set, probes
+            # libzstd via pkg-config (preferring a static link), skipping the
+            # ~30-file C compile that dominated the cold test check (~164s →
+            # much faster). Safe because the versions are kept in lock-step:
+            # zstd-sys 2.0.16 ships `+zstd.1.5.7` and nixpkgs unstable provides
+            # exactly zstd 1.5.7. A future drift would surface as a pkg-config
+            # version-mismatch, never as silent corruption (the zstd frame
+            # format is forward/backward compatible across 1.5.x anyway).
+            ZSTD_SYS_USE_PKG_CONFIG = "1";
           };
 
           # Build dependencies once (with the encryption feature so aes-gcm and
@@ -181,7 +192,11 @@
               commonArgs
               // {
                 inherit cargoArtifacts;
-                cargoExtraArgs = "--no-deps --features encryption";
+                # Note: crane's cargoDoc already passes `--no-deps`, so it must
+                # NOT be repeated here — recent crane versions turned the
+                # duplicate into a hard `cargo doc` error
+                # ("the argument '--no-deps' cannot be used multiple times").
+                cargoExtraArgs = "--features encryption";
               }
             );
           };

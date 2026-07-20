@@ -1,0 +1,54 @@
+name: Supply-chain provenance
+
+# Informational publisher-attribution report, produced by cargo-supply-chain.
+#
+# This is the "belt-and-braces" layer that sits alongside the GATING
+# `cargo audit` + `cargo deny` job in ci.yml:
+#   - cargo audit  → known vulnerabilities (RustSec advisories)
+#   - cargo deny   → policy: licenses, bans, sources, advisories
+#   - cargo supply-chain → WHO can publish each crate in the dependency tree
+#
+# Neither audit nor deny surfaces publisher identity or ownership
+# concentration. cargo-supply-chain makes that trust surface visible (which
+# accounts can push updates, how concentrated ownership is, when a new
+# publisher or ownership transfer appears) — exactly the npm-style
+# compromised-maintainer vector that the other two tools cannot detect.
+#
+# This workflow is INTENTIONALLY non-gating: every step uses
+# `continue-on-error: true` so a tool install failure, a crates.io data-dump
+# outage, or a new publisher never fails a build. It runs on a weekly schedule
+# and on manual dispatch (e.g. trigger it while reviewing a Cargo.lock bump to
+# see which new publishers a dependency change would introduce).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch: # manual trigger during dependency review
+
+jobs:
+  publishers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to the same commit hash used in ci.yml for supply-chain hygiene.
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+      - name: Install cargo-supply-chain
+        continue-on-error: true
+        run: cargo install cargo-supply-chain --locked
+      - name: Publisher provenance (informational, non-blocking)
+        continue-on-error: true
+        run: |
+          {
+            echo "## Supply-chain publisher provenance";
+            echo "_Informational and non-blocking. Lists every crates.io account";
+            echo "that can publish crates in the dependency tree, grouped by publisher.";
+            echo "Review for unexpected new publishers or ownership concentration._";
+            echo "";
+            echo "### Default features";
+            cargo supply-chain publishers;
+            echo "";
+            echo "### With \`encryption\` feature";
+            cargo supply-chain publishers --features encryption;
+          } >> "$GITHUB_STEP_SUMMARY"

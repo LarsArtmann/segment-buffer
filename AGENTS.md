@@ -4,7 +4,7 @@ Concise, enduring context for working in `segment-buffer`. Read once, internaliz
 
 ## What this is
 
-A single-crate **Rust library** (not a binary): `SegmentBuffer<T>` — a high-throughput **local buffer for cloud sync**. Single-process by design. Spools in-memory batches to zstd-compressed CBOR segment files with ack-based deletion, filename-based crash recovery, configurable durability, and optional encryption. Generic over `T: Serialize + DeserializeOwned + Clone + Send + 'static`. Extracted from monitor365.
+A single-crate **Rust library** (not a binary): `SegmentBuffer<T>` — a high-throughput **local buffer for cloud sync**. Single-process by design. Spools in-memory batches to zstd-compressed CBOR segment files with ack-based deletion, filename-based crash recovery, configurable durability, and optional encryption. Generic over `T: Serialize + DeserializeOwned + Clone + Send` (`'static` is implied by `DeserializeOwned`, not required by the mutex — see TODO_LIST.md "Investigation"). Extracted from monitor365.
 
 **Product positioning (2026-07-20 reframing):** the cloud is the durable layer; this crate is the local throughput buffer in front of it. The README leads with this. The old framing ("durable bounded queue ... crash recovery first") under-sold the actual target use case and over-promised on durability the code doesn't fully deliver (see [Durability model](#durability-model-proposed) below).
 
@@ -103,6 +103,17 @@ cargo test --no-fail-fast --features encryption -- property
 # Fuzz (requires nightly; see fuzz/README.md)
 cargo +nightly fuzz run fuzz_corrupted_read -- -max_total_time=60
 cargo +nightly fuzz run fuzz_recovery       -- -max_total_time=60
+
+# Supply-chain publisher provenance (INFORMATIONAL — not part of the gate).
+# `cargo audit` + `cargo deny` flag vulnerabilities and policy violations but
+# neither shows WHO can publish the crates in the tree. This lists every
+# crates.io account with publish rights over the dependency graph — run it
+# when reviewing a Cargo.lock bump to spot unexpected new publishers or
+# ownership transfers (the npm-style compromised-maintainer vector). The
+# weekly `.github/workflows/supply-chain-report.yml` job runs the same thing.
+cargo install cargo-supply-chain --locked
+cargo supply-chain publishers
+cargo supply-chain publishers --features encryption
 ```
 
 ### Nix (reproducible)

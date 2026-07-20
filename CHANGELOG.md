@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the hidden-`fn main()` pattern so it compiles under both feature sets.
 - **Nix CI**: `cachix/cachix-action` failed because the binary cache does not
   exist. Added `continue-on-error: true` so builds proceed without caching.
+- **Broken README doctest leaked into `cargo test --doc`**: the crate-root
+  `#![doc = include_str!("../README.md")]` embedded the README, whose
+  cloud-sync example called an undefined `cloud_upload` fn — turning
+  `cargo test --doc` (and the Nix `test` check) red on master. Fixed by
+  removing the embedding entirely (see Removed).
+- **Nix `doc` check**: a recent crane version began emitting `--no-deps`
+  itself, duplicating the flake's explicit `--no-deps` and turning
+  `cargo doc` into a hard error ("`--no-deps` cannot be used multiple
+  times"). Removed the redundant arg from `cargoExtraArgs`. This had been
+  blocking `nix flake check`.
 
 ### Added
 
@@ -49,6 +59,14 @@ pending_start` (the "honest backlog" invariant — if it ever broke,
 - **`#[track_caller]`** on `assert_not_reentered` and all 9 public methods that
   call it — re-entrancy panics now point to the user's callback code instead of
   the internal guard function.
+- **`supply-chain-report.yml`** — a new informational, non-gating GitHub
+  Actions workflow (weekly cron + manual dispatch) that runs
+  `cargo supply-chain publishers` to report which crates.io accounts can
+  publish crates in the dependency tree. This is the publisher-attribution
+  layer that neither `cargo audit` (vulnerabilities) nor `cargo deny`
+  (policy) provides; it surfaces ownership concentration and new-publisher
+  events (the compromised-maintainer vector). Every step is
+  `continue-on-error`, so it never gates a release.
 
 ### MSRV
 
@@ -79,6 +97,27 @@ pending_start` (the "honest backlog" invariant — if it ever broke,
   (`actions/checkout` v4→v7, `actions/upload-artifact` v4→v7,
   `peter-evans/create-pull-request` v6→v8, `cachix/install-nix-action` v27→v31,
   `cachix/cachix-action` v15→v17).
+- **Relaxed `SegmentBuffer`'s `T` bound**: dropped the redundant `T: 'static`
+  (the bound is implied by `T: DeserializeOwned`, since a borrowed type
+  cannot satisfy `for<'de> Deserialize<'de>`; `parking_lot::Mutex` only
+  needs `T: Send` for `Send`+`Sync`). Strictly more permissive — a
+  semver-minor API widening.
+- **Nix flake links system libzstd**: `commonArgs` now sets
+  `ZSTD_SYS_USE_PKG_CONFIG = "1"`, so zstd-sys probes the Nix-provided
+  libzstd via pkg-config (preferring a static link) instead of compiling
+  its bundled C on every cold build. Safe because zstd-sys 2.0.16 ships
+  `+zstd.1.5.7` and nixpkgs provides exactly zstd 1.5.7. Eliminates the
+  ~30-file C compile that dominated cold `nix` builds.
+
+### Removed
+
+- **`#![doc = include_str!("../README.md")]`** — the crate-root rustdoc no
+  longer embeds the README. It caused the broken-doctest leak (see Fixed)
+  and required a `postUnpack` band-aid because `craneLib.cleanCargoSource`
+  strips README.md from the Nix sandbox. The hand-written crate-root doc
+  already links to the README on GitHub; docs.rs renders the README via
+  the `readme` field in `Cargo.toml` regardless. The dead `postUnpack`
+  copy in `flake.nix` was removed alongside it.
 
 ### Internal
 
