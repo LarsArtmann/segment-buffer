@@ -271,6 +271,15 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
 - **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. Covers only the in-memory append + `stats()` snapshot path — loom does not model the filesystem, so `flush`/`delete_acked`/`read_from`/`recover` are covered by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs` instead. Use `--release` — loom's schedule enumeration is slow in debug.
 
+## Releases
+
+**All 8 versions (0.1.0 through 0.5.1) are published on BOTH crates.io and GitHub releases** (synced 2026-07-20). Before that sync, three crates.io versions (0.2.0/0.3.0/0.4.0) and one GitHub release (v0.1.0) were missing — the gap existed because `publish.yml` auto-publishes to crates.io on tag push but does NOT create GitHub releases, and the workflow had not been set up yet when the early tags were pushed.
+
+Two surfaces, two responsibilities:
+
+- **crates.io:** `.github/workflows/publish.yml` publishes automatically on `git push origin v*.*.*` (needs `CARGO_REGISTRY_TOKEN` secret). To backfill a missing version manually, `git worktree add --detach <dir> <tag>` then `cargo publish --features encryption` from that worktree (the tag's `Cargo.toml` version must match the tag). Verify with `cargo publish --dry-run --features encryption` first.
+- **GitHub releases:** NOT automated by any workflow. They are created manually. `gh release create` fails on this repo demanding the `workflow` scope (a false-positive scope check); use `gh api --method POST repos/LarsArtmann/segment-buffer/releases -f tag_name=vX.Y.Z -f name=... -f body=...` instead (only `repo` scope needed). Do NOT pass `target_commitish` pointing at a tag name — it 404s; the tag is resolved from `tag_name` alone.
+
 ## Verification discipline (hard rules)
 
 These rules were installed after three consecutive same-day sessions produced
