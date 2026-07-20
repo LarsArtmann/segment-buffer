@@ -41,3 +41,26 @@ pub fn open_buffer(max_batch_events: usize) -> (SegmentBuffer<Item>, tempfile::T
     let buf = SegmentBuffer::<Item>::open(tmp.path(), config(max_batch_events)).unwrap();
     (buf, tmp)
 }
+
+/// Open a buffer and pre-populate it with `n_segments` segment files on disk,
+/// each holding `items_per_segment` items.
+///
+/// Used by `bench_read_from` to measure the `scan_segments` cache against a
+/// realistic directory size. The flush policy is set to `Batch(items_per_segment)`
+/// so each batch lands as its own segment file; the explicit `flush()` after
+/// every batch is belt-and-braces for the partial tail.
+#[allow(dead_code)] // only bench_read_from uses this; other bench binaries see it as dead
+pub fn open_buffer_with_segments(
+    n_segments: usize,
+    items_per_segment: usize,
+) -> (SegmentBuffer<Item>, tempfile::TempDir) {
+    let (buf, tmp) = open_buffer(items_per_segment);
+    for s in 0..n_segments {
+        let base = (s * items_per_segment) as u64;
+        for i in 0..items_per_segment as u64 {
+            buf.append(item(base + i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+    (buf, tmp)
+}

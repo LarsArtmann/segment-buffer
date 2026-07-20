@@ -64,7 +64,9 @@ proptest! {
             .collect();
         let path = std::path::Path::new("prop_test_segment.zst");
 
-        let payload = segment::encode_payload(None, 3, path, &items)
+        let mut compressor = zstd::bulk::Compressor::new(3)
+            .expect("compressor construction must succeed");
+        let payload = segment::encode_payload(None, &mut compressor, path, &items)
             .expect("encode must succeed for valid items");
 
         let decoded: Result<Vec<PropItem>, _> =
@@ -101,7 +103,9 @@ proptest! {
         let end = items.len().saturating_sub(1) as u64;
         let range = segment::SegmentRange { start: 0, end };
 
-        segment::write(dir, Some(&cipher), 3, range, &items)
+        let mut compressor = zstd::bulk::Compressor::new(3)
+            .expect("compressor construction must succeed");
+        segment::write(dir, Some(&cipher), &mut compressor, range, &items)
             .expect("write must succeed");
 
         let read: Result<Vec<PropItem>, _> = segment::read(dir, Some(&cipher), range);

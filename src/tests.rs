@@ -583,7 +583,8 @@ fn legacy_encrypted_file_without_envelope_still_reads() {
     let key = [0xABu8; 32];
     let cipher = AesGcmCipher::new(&key);
     let path = dir.join(segment::filename(101, 103));
-    let payload = segment::encode_payload(Some(&cipher), 3, &path, &items).unwrap();
+    let mut compressor = zstd::bulk::Compressor::new(3).unwrap();
+    let payload = segment::encode_payload(Some(&cipher), &mut compressor, &path, &items).unwrap();
     assert!(
         !payload.starts_with(b"SBF1"),
         "raw encrypted payload must not accidentally carry the magic"

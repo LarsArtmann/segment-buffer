@@ -191,9 +191,18 @@ pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
 }
 
 /// Encode `events` to the v1 payload bytes: CBOR → zstd → optional encrypt.
+///
+/// `compressor` is a pooled `zstd::bulk::Compressor` reused across flushes to
+/// avoid re-initialising the ~200 KB zstd CCtx on every segment write. A
+/// flamegraph on 2026-07-20 showed 66% of `flush` time was inside the
+/// `__memset` that `zstd::encode_all` triggers when it constructs a fresh
+/// CCtx per call; pooling drops that cost to a one-time `open` expense. The
+/// trade-off is one extra `Mutex` acquisition per flush (`segment-buffer`
+/// already serialises flushes via the re-entrancy guard, so this is
+/// uncontended in practice). See `docs/perf/2026-07-20_hot-path-flamegraph.md`.
 pub(crate) fn encode_payload<T: Serialize>(
     cipher: Option<&dyn SegmentCipher>,
-    level: i32,
+    compressor: &mut zstd::bulk::Compressor<'static>,
     path: &Path,
     events: &[T],
 ) -> Result<Vec<u8>> {
@@ -204,7 +213,7 @@ pub(crate) fn encode_payload<T: Serialize>(
         message: e.to_string(),
     })?;
 
-    let compressed = zstd::encode_all(cbor_buf.as_slice(), level)?;
+    let compressed = compressor.compress(&cbor_buf)?;
 
     match cipher {
         Some(cipher) => cipher
@@ -256,13 +265,13 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
 pub(crate) fn write<T: Serialize>(
     dir: &Path,
     cipher: Option<&dyn SegmentCipher>,
-    level: i32,
+    compressor: &mut zstd::bulk::Compressor<'static>,
     range: SegmentRange,
     events: &[T],
 ) -> Result<u64> {
     let seg_name = filename(range.start, range.end);
     let seg_path = dir.join(&seg_name);
-    let payload = encode_payload(cipher, level, &seg_path, events)?;
+    let payload = encode_payload(cipher, compressor, &seg_path, events)?;
     let final_bytes = wrap_envelope(&payload);
     let tmp_path = dir.join(format!("{seg_name}{TMP_SUFFIX}"));
 

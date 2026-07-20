@@ -405,6 +405,23 @@ pub struct SegmentBuffer<T> {
     /// a `for_each_from` callback into an immediate, diagnosable panic. The
     /// atomic load costs ~1 ns per locking op — negligible next to the mutex.
     iteration_in_progress: std::sync::atomic::AtomicBool,
+    /// Pooled zstd compression context, allocated once at [`SegmentBuffer::open`]
+    /// and reused for every subsequent [`SegmentBuffer::flush`]. The flamegraph
+    /// captured on 2026-07-20 (see `docs/perf/2026-07-20_hot-path-flamegraph.md`)
+    /// showed 66% of `flush` CPU time was inside the `__memset` that
+    /// `zstd::encode_all` triggers when it constructs a fresh ~200 KB `CCtx`
+    /// per call. Pooling the `CCtx` through `zstd::bulk::Compressor` reduces
+    /// that init cost to a one-time `open` expense; subsequent flushes reuse
+    /// the same internal tables and pay only the per-frame `SessionOnly` reset
+    /// (~0.2% of CPU in the same profile).
+    ///
+    /// Behind its own `Mutex` (rather than living inside `BufferInner`) so
+    /// that holding it during the compression step does not extend the
+    /// hot-path `inner` mutex hold time. The mutex is uncontended in
+    /// practice: `flush` already takes `inner.lock()` briefly to drain the
+    /// pending events, and the re-entrancy guard serialises concurrent
+    /// flushers against `for_each_from` anyway.
+    compressor: Mutex<zstd::bulk::Compressor<'static>>,
 }
 
 /// `Debug` mirrors the field set of [`BufferStats`] plus the directory path.
@@ -496,6 +513,13 @@ where
         let dir = dir.into();
         fs::create_dir_all(&dir)?;
 
+        // Allocate the pooled zstd CCtx once, at the configured compression
+        // level. This is the allocation whose per-flush memset was 66% of
+        // `flush` CPU before pooling (flamegraph 2026-07-20). The level is
+        // fixed for the lifetime of the buffer because `SegmentConfig` is
+        // consumed by `open` and immutable thereafter.
+        let compressor = zstd::bulk::Compressor::new(config.compression_level)?;
+
         let buffer = Self {
             dir,
             config,
@@ -508,6 +532,7 @@ where
             approx_disk_bytes: std::sync::atomic::AtomicU64::new(0),
             scan_cache: Mutex::new(None),
             iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
+            compressor: Mutex::new(compressor),
         };
 
         let report = buffer.recover()?;
@@ -1420,10 +1445,15 @@ where
 
     fn write_segment(&self, start: u64, end: u64, events: &[T]) -> Result<u64> {
         let path = self.segment_path(start, end);
+        // Lock the pooled compressor for the duration of the encode. The
+        // mutex is uncontended in practice (see field doc) and the lock is
+        // NOT held across the file `write_all`/`sync_all`/`rename` calls
+        // below — `encode_payload` returns before any I/O begins.
+        let mut compressor = self.compressor.lock();
         segment::write(
             &self.dir,
             self.config.cipher.as_deref(),
-            self.config.compression_level,
+            &mut compressor,
             SegmentRange::new(start, end),
             events,
         )

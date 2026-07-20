@@ -54,12 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Process and verification hardening added after the 2026-07-20 session
 discovered that v0.4.1/v0.4.2 had shipped with CI silently broken for 48+
-hours (see `docs/status/2026-07-20_01-05_*`).
+hours (see `docs/status/2026-07-20_01-05_*`).- **Stress test regression guard** — `stress_8_writers_2_readers_throughput`
+now asserts zero `.zst` segment files are created during the concurrent
+phase under `FlushPolicy::Manual`. Catches any future reintroduction of the
+`Batch(4)` config that hung CI (commit `80257a0`).
 
-- **Stress test regression guard** — `stress_8_writers_2_readers_throughput`
-  now asserts zero `.zst` segment files are created during the concurrent
-  phase under `FlushPolicy::Manual`. Catches any future reintroduction of the
-  `Batch(4)` config that hung CI (commit `80257a0`).
 - **Stress throughput re-measured** under the corrected `Manual` config:
   ~2.29M events/sec (was ~397k, which was actually captured under `Batch(4)`
   and mislabeled). Both numbers documented in
@@ -90,6 +89,41 @@ hours (see `docs/status/2026-07-20_01-05_*`).
   false "all green / Health 9/10" claims are now inline-corrected with
   pointers to the real fixes, per the update-old-docs non-destructive
   annotation discipline.
+
+### Performance
+
+Profile-guided optimisation session on 2026-07-20, captured in
+`docs/perf/2026-07-20_hot-path-flamegraph.md` and
+`docs/perf/2026-07-20_read-from-scan-cache.md`.
+
+- **Pooled zstd `CCtx` on `SegmentBuffer`** — flamegraph showed 66% of
+  `flush` CPU time was inside `__memset_avx512_unaligned_erms`, called from
+  `ZSTD_CCtx_init_compressStream2`. The cause: `segment::encode_payload`
+  called `zstd::encode_all` per flush, and `zstd::encode_all` allocates and
+  memsets a fresh ~200 KB `CCtx` on every call. Fixed by carrying a
+  `Mutex<zstd::bulk::Compressor<'static>>` on `SegmentBuffer`, allocated
+  once in `open_with_report` and reused for every subsequent flush.
+  Measured speedups on `bench_append`: `batch_1` 15.09 µs → 7.75 µs
+  (2.07×), `batch_100` 28.06 → 20.84 µs (1.32×), `batch_10000` 1.21 ms →
+  1.06 ms (1.11×). For the v0.1.0→v0.2.0 small-batch regression documented
+  in `docs/perf/2026-07-19_v0.1.0-vs-v0.2.0.md`, this is now a 2.3× net
+  speedup vs v0.1.0 (was a 30–65% slowdown).
+- **`read_from_scan_cache` benchmark group** — new criterion group in
+  `benches/bench_read_from.rs` measuring cold-vs-warm `read_from` across
+  10/100/1000 on-disk segment files. Quantifies the v0.4.0 scan-cache win:
+  6–9% faster at 10 and 100 segments (the bounded-queue design regime). At
+  1000 segments the readdir cost is no longer dominant and the cache
+  benefit is lost in noise.
+- **`SmallVec<[T; 16]>` for `unflushed` rejected.** A/B benchmarked against
+  the post-compressor-pooling baseline: `batch_1` regressed 3.2%,
+  `batch_1000` regressed 8.5%, `batch_100`/`batch_10000` within noise.
+  SmallVec's spill-tracking overhead exceeds the saved initial heap
+  allocation. No dependency added; the trade-off analysis is captured in
+  the flamegraph doc.
+- **`examples/hotpath_profile.rs`** — standalone driver for flamegraph
+  profiling of the append+flush hot path, used to capture the
+  `perf record` data behind the CCtx-pooling fix. Kept in-tree so future
+  profiling runs reproduce the same workload.
 
 ## [0.4.2] - 2026-07-19
 
