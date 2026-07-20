@@ -148,6 +148,73 @@ impl FlushPolicy {
     }
 }
 
+/// Per-flush durability tradeoff between throughput and crash safety.
+///
+/// Selects how many `fsync`s the write path performs when [`flush`](SegmentBuffer::flush)
+/// spills a batch to disk. Higher durability costs throughput; lower
+/// durability relies on the cloud (or wherever the durable copy lives) to
+/// absorb crash loss. The cloud-sync vision for this crate makes
+/// [`Throughput`](Self::Throughput) the natural default once callers opt in,
+/// but [`Segment`](Self::Segment) remains the default for one release after
+/// the enum lands to avoid silently changing crash semantics for existing
+/// users.
+///
+/// # Crash-loss semantics
+///
+/// | Policy                 | Fsync file data | Fsync dir after rename | Worst-case crash loss                                |
+/// | ---------------------- | --------------- | --------------------- | ---------------------------------------------------- |
+/// | [`Maximal`](Self::Maximal)    | yes             | yes                   | last in-flight flush only                            |
+/// | [`Segment`](Self::Segment)    | yes             | no                    | rename window (~5–30s of flushes on ext4/xfs)        |
+/// | [`Throughput`](Self::Throughput) | no              | no                    | entire OS dirty window (~30s) — cloud is durable     |
+///
+/// `Maximal` is for standalone-queue deployments where this buffer is the
+/// last copy. `Throughput` is the correct choice for cloud-sync deployments
+/// where the cloud endpoint holds the durable copy and the local disk is a
+/// throughput buffer. `Segment` is the pre-v0.5.0 behavior, kept as the
+/// default for one release for backward compatibility.
+///
+/// # The rename-window gap (why `Segment` is not "fully durable")
+///
+/// `Segment` (today's default) calls `file.sync_all()` on the segment data
+/// before `fs::rename`, but it does **not** `dir.sync_all()` after the
+/// rename. On ext4/xfs defaults, a host crash within the kernel's dir-inode
+/// flush window (~5–30s) can leave the renamed file's data on disk but
+/// unreachable through the directory. SQLite went through this exact lesson.
+/// So `Segment` was already not fully durable; the enum just makes the
+/// tradeoff explicit. `Maximal` closes the rename-window gap.
+///
+/// # Implementation
+///
+/// The policy is branched on inside [`crate::store::SegmentStore::write_atomic`]
+/// (not a callback): it is a `Copy` enum with no allocation, and the
+/// `Mutex<Compressor>` invariant ("never held across I/O") is preserved
+/// because the fsync happens after compression is done and the mutex is
+/// released.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum DurabilityPolicy {
+    /// Fsync the segment file's data **and** the parent directory inode
+    /// after rename. Closes the rename-window gap. Use when this buffer is
+    /// the last copy of the data (standalone-queue deployments).
+    Maximal,
+
+    /// Fsync the segment file's data, but not the directory inode after
+    /// rename. This is the pre-v0.5.0 behavior. Kept as the
+    /// [`Default`](std::default::Default) for one release after the enum
+    /// lands, then flips to [`Throughput`](Self::Throughput) with a
+    /// deprecation note.
+    #[default]
+    Segment,
+
+    /// Skip fsync entirely. The kernel's dirty-page flusher handles when the
+    /// bytes reach disk (~30s on default Linux). The rename is still atomic,
+    /// so concurrent readers never see a partial write — only a host crash
+    /// within the dirty window can lose the segment. Use when the cloud is
+    /// the durable layer and this buffer is the throughput buffer in front
+    /// of it.
+    Throughput,
+}
+
 /// Configuration knobs for [`SegmentBuffer`].
 ///
 /// This struct is `#[non_exhaustive]`: new fields may be added in any release
@@ -169,6 +236,13 @@ pub struct SegmentConfig {
     pub max_size_bytes: u64,
     /// zstd compression level (1-22; 3 is fast with a good ratio).
     pub compression_level: i32,
+    /// Per-flush fsync behavior. See [`DurabilityPolicy`] for the three
+    /// policies and their crash-loss tradeoffs. Default is
+    /// [`DurabilityPolicy::Segment`] (today's behavior) for backward
+    /// compatibility; cloud-sync deployments should switch to
+    /// [`DurabilityPolicy::Throughput`] once the cloud endpoint holds the
+    /// durable copy.
+    pub durability: DurabilityPolicy,
     /// Optional cipher for encrypting segment files at rest. When `None`,
     /// segments are written as plaintext zstd+CBOR.
     pub cipher: Option<Box<dyn SegmentCipher>>,
@@ -180,6 +254,7 @@ impl std::fmt::Debug for SegmentConfig {
             .field("flush_policy", &self.flush_policy)
             .field("max_size_bytes", &self.max_size_bytes)
             .field("compression_level", &self.compression_level)
+            .field("durability", &self.durability)
             .field("cipher", &self.cipher.as_ref().map(|_| "[set]"))
             .finish()
     }
@@ -191,6 +266,7 @@ impl Default for SegmentConfig {
             flush_policy: FlushPolicy::default(),
             max_size_bytes: 10 * 1024 * 1024 * 1024,
             compression_level: 3,
+            durability: DurabilityPolicy::default(),
             cipher: None,
         }
     }
@@ -265,6 +341,19 @@ impl SegmentConfigBuilder {
     /// Override the zstd compression level (1–22; 3 is fast with a good ratio).
     pub fn compression_level(mut self, compression_level: i32) -> Self {
         self.inner.compression_level = compression_level;
+        self
+    }
+
+    /// Override the per-flush durability policy. See [`DurabilityPolicy`] for
+    /// the three policies and their crash-loss tradeoffs.
+    ///
+    /// The default is [`DurabilityPolicy::Segment`] for backward
+    /// compatibility. For cloud-sync deployments where the cloud endpoint
+    /// holds the durable copy, [`DurabilityPolicy::Throughput`] eliminates
+    /// the per-flush fsync from the hot path (typically a 5–10× win on fast
+    /// storage).
+    pub fn durability(mut self, policy: DurabilityPolicy) -> Self {
+        self.inner.durability = policy;
         self
     }
 
@@ -1523,8 +1612,9 @@ where
             &path,
             events,
         )?;
+        drop(compressor);
         self.store
-            .write_atomic(range, &bytes)
+            .write_atomic(range, &bytes, self.config.durability)
             .map_err(|e| e.with_path(&path))
     }
 
