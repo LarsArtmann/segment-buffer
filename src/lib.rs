@@ -47,9 +47,9 @@ mod segment;
 mod store;
 
 #[cfg(feature = "encryption")]
-pub use cipher::AesGcmCipher;
+pub use cipher::{AesGcmCipher, XChaCha20Poly1305Cipher};
 pub use cipher::{CipherError, SegmentCipher};
-pub use error::{Result, SegmentError};
+pub use error::{IoSite, Result, SegmentError};
 
 /// Test/loom-only re-exports: the I/O trait, production impl, and the
 /// range type used in trait signatures.
@@ -90,6 +90,14 @@ use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::{debug, info};
+
+/// Filename of the single-process lock sidecar held open by every production
+/// [`SegmentBuffer`]. Lives inside the segment directory and is acquired
+/// exclusively at [`SegmentBuffer::open`]; the kernel releases the lock when
+/// the buffer is dropped (closing the fd). Loom-test opens
+/// ([`SegmentBuffer::open_with_store`]) skip the lock — loom does not model
+/// the filesystem, and a real lock file inside `loom::model` would deadlock.
+const LOCK_FILE_NAME: &str = ".segment-buffer.lock";
 
 /// When to auto-flush pending items from memory to a segment file.
 ///
@@ -229,6 +237,7 @@ pub enum DurabilityPolicy {
 /// config.max_size_bytes = 1024 * 1024;
 /// ```
 #[non_exhaustive]
+#[derive(Clone)]
 pub struct SegmentConfig {
     /// When to auto-flush pending items. See [`FlushPolicy`] for the options.
     pub flush_policy: FlushPolicy,
@@ -244,8 +253,10 @@ pub struct SegmentConfig {
     /// durable copy.
     pub durability: DurabilityPolicy,
     /// Optional cipher for encrypting segment files at rest. When `None`,
-    /// segments are written as plaintext zstd+CBOR.
-    pub cipher: Option<Box<dyn SegmentCipher>>,
+    /// segments are written as plaintext zstd+CBOR. Held as an [`Arc`] so a
+    /// [`SegmentConfig`] is [`Clone`] and the same cipher can be shared
+    /// across multiple buffers or cloned into a `recommended_cipher()` helper.
+    pub cipher: Option<Arc<dyn SegmentCipher + Send + Sync>>,
 }
 
 impl std::fmt::Debug for SegmentConfig {
@@ -358,9 +369,47 @@ impl SegmentConfigBuilder {
     }
 
     /// Install a [`SegmentCipher`] so segment payloads are encrypted at rest.
-    pub fn cipher(mut self, cipher: Box<dyn SegmentCipher>) -> Self {
+    ///
+    /// Accepts an [`Arc`] so the same cipher can be shared across multiple
+    /// buffers or cloned into a `recommended_cipher()` helper. The canonical
+    /// construction pattern is:
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "encryption")] {
+    /// use segment_buffer::{AesGcmCipher, SegmentConfig};
+    /// use std::sync::Arc;
+    /// let cfg = SegmentConfig::builder()
+    ///     .cipher(Arc::new(AesGcmCipher::new(&[0u8; 32])))
+    ///     .build();
+    /// # }
+    /// ```
+    pub fn cipher(mut self, cipher: Arc<dyn SegmentCipher + Send + Sync>) -> Self {
         self.inner.cipher = Some(cipher);
         self
+    }
+
+    /// Install the cipher this crate recommends for **new buffers**.
+    ///
+    /// Available only under the `encryption` feature. Picks
+    /// [`XChaCha20Poly1305Cipher`] (24-byte extended nonce, no 2³²-message
+    /// limit per key, constant-time on hosts without AES-NI). Legacy
+    /// AES-GCM segments still decrypt through [`AesGcmCipher`]; the two
+    /// formats are byte-distinguishable only by which cipher the buffer
+    /// was opened with.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "encryption")] {
+    /// use segment_buffer::SegmentConfig;
+    /// let cfg = SegmentConfig::builder()
+    ///     .recommended_cipher([0u8; 32])
+    ///     .build();
+    /// # }
+    /// ```
+    #[cfg(feature = "encryption")]
+    pub fn recommended_cipher(self, key: [u8; 32]) -> Self {
+        self.cipher(Arc::new(XChaCha20Poly1305Cipher::new(&key)))
     }
 
     /// Materialise the configured [`SegmentConfig`].
@@ -543,6 +592,20 @@ pub struct SegmentBuffer<T> {
     /// called OUTSIDE the `inner` mutex — see [`flush`](Self::flush) and
     /// [`delete_acked`](Self::delete_acked) for the lock-release boundaries.
     store: Arc<dyn store::SegmentStore + Send + Sync>,
+    /// File handle holding the exclusive single-process `flock` on
+    /// `<dir>/.segment-buffer.lock`. Acquired by `open_internal` BEFORE any
+    /// recovery scans or state publication; released by `Drop` (closing the
+    /// fd releases the kernel advisory lock). `None` only when the buffer
+    /// was constructed via the test-only `open_with_store` path, which
+    /// bypasses the lock (loom tests do not model the filesystem and would
+    /// otherwise deadlock on a real lock file inside `loom::model`).
+    ///
+    /// Holding the lock as a `File` rather than via `fs4::FileExt::unlock`
+    /// is intentional: the fd-holds-the-lock model is portable (Linux,
+    /// macOS, Windows) and survives panics automatically — the kernel
+    /// closes the fd on process termination, releasing the lock even if
+    /// `Drop` never runs.
+    lock_file: Option<std::fs::File>,
 }
 
 /// `Debug` mirrors the field set of [`BufferStats`] plus the directory path.
@@ -627,6 +690,8 @@ where
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be created or read.
+    /// Returns [`SegmentError::Locked`] if another process holds the
+    /// exclusive single-process lock on `<dir>/.segment-buffer.lock`.
     pub fn open_with_report(
         dir: impl Into<PathBuf>,
         config: SegmentConfig,
@@ -634,17 +699,42 @@ where
         let dir = dir.into();
         let store: Arc<dyn store::SegmentStore + Send + Sync> =
             Arc::new(store::RealStore::new(dir.clone()));
-        Self::open_internal(dir, config, store)
+        store.create_dir_all().map_err(|e| e.with_dir())?;
+
+        // Acquire the single-process lock BEFORE any filename parsing or
+        // state publication. A second opener on the same directory would
+        // race on segment filenames, double-deliver, and corrupt
+        // head_seq/next_seq — fail fast with a typed error instead. The
+        // lock is held for the lifetime of the returned SegmentBuffer
+        // (stored in the `lock_file` field); Drop closes the fd, which
+        // releases the kernel advisory lock.
+        let lock_path = dir.join(LOCK_FILE_NAME);
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|source| SegmentError::Io {
+                site: IoSite::Segment(lock_path.clone()),
+                source,
+            })?;
+        if fs4::FileExt::try_lock(&lock_file).is_err() {
+            return Err(SegmentError::Locked { path: lock_path });
+        }
+        Self::open_internal(dir, config, store, Some(lock_file))
     }
 
     /// Open (or create) a buffer with a caller-supplied [`SegmentStore`].
     ///
     /// Production callers use [`open`](Self::open) (which constructs a
-    /// [`RealStore`] internally). This constructor exists for loom
-    /// concurrency tests, which inject a mock store backed by
-    /// `loom::sync::Mutex<HashMap<..>>` so `delete_acked` + `append`
-    /// interleavings can be enumerated without modelling the kernel
-    /// filesystem.
+    /// [`RealStore`] internally AND acquires the single-process flock).
+    /// This constructor exists for loom concurrency tests, which inject a
+    /// mock store backed by `loom::sync::Mutex<HashMap<..>>` so
+    /// `delete_acked` + `append` interleavings can be enumerated without
+    /// modelling the kernel filesystem. It does NOT acquire the flock —
+    /// loom does not model the filesystem, and a real lock file inside
+    /// `loom::model` would deadlock.
     ///
     /// Only reachable when the `loom` Cargo feature is enabled. Not part of
     /// the stable semver surface.
@@ -660,7 +750,7 @@ where
         store: Arc<dyn store::SegmentStore + Send + Sync>,
     ) -> Result<Self> {
         let dir = dir.into();
-        let (buffer, _report) = Self::open_internal(dir, config, store)?;
+        let (buffer, _report) = Self::open_internal(dir, config, store, None)?;
         Ok(buffer)
     }
 
@@ -668,13 +758,20 @@ where
     /// (`open`/`open_with_report`) and the test-only `open_with_store`.
     /// Owns the invariant that the store is constructed before recovery
     /// runs, and that `create_dir_all` goes through the store rather than
-    /// `std::fs` directly.
+    /// `std::fs` directly. `lock_file` is `Some` for production opens
+    /// (the flock was acquired by the caller) and `None` for loom-test
+    /// opens (loom does not model the filesystem).
     fn open_internal(
         dir: PathBuf,
         config: SegmentConfig,
         store: Arc<dyn store::SegmentStore + Send + Sync>,
+        lock_file: Option<std::fs::File>,
     ) -> Result<(Self, RecoveryReport)> {
-        store.create_dir_all()?;
+        // `create_dir_all` was already run by the caller if it owned the
+        // store (production path). When the test harness passes a fresh
+        // store, run it here for symmetry. Idempotent, so a second call is
+        // a no-op.
+        store.create_dir_all().map_err(|e| e.with_dir())?;
 
         // Allocate the pooled zstd CCtx once, at the configured compression
         // level. This is the allocation whose per-flush memset was 66% of
@@ -697,6 +794,7 @@ where
             iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
             compressor: Mutex::new(compressor),
             store,
+            lock_file,
         };
 
         let report = buffer.recover()?;
@@ -1634,7 +1732,11 @@ where
             }
         }
         // Cache miss: scan via the store, store, return.
-        let segments = self.store.scan().map_err(|e| e.with_path(&self.dir))?;
+        let segments = self
+            .store
+            .scan()
+            .map_err(|e| e.with_dir())
+            .map_err(|e| e.with_path(&self.dir))?;
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());
         Ok(segments)
@@ -1660,6 +1762,29 @@ struct IterationGuard<'a>(&'a std::sync::atomic::AtomicBool);
 impl Drop for IterationGuard<'_> {
     fn drop(&mut self) {
         self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl<T> Drop for SegmentBuffer<T> {
+    /// Releases the single-process flock by explicitly calling `unlock` and
+    /// then dropping the lock file handle. The kernel would release the
+    /// advisory lock on fd close anyway, but the explicit call makes the
+    /// release point diagnosable in a flamegraph (vs. waiting for `File`'s
+    /// own `Drop` to run somewhere in the field-tear-down sequence).
+    ///
+    /// Deliberately no `T: Serialize + ...` bound: `Drop` impls must match
+    /// the struct's bounds (Rust rule E0367), and the struct itself has no
+    /// bounds — the bound lives on the API-impl block. The lock-release
+    /// logic doesn't touch `T` at all, so no bound is needed here.
+    fn drop(&mut self) {
+        if let Some(lock_file) = self.lock_file.take() {
+            // Best-effort unlock: if it fails (kernel EINTR, already closed,
+            // etc.) there is nothing useful to do — the fd is about to be
+            // dropped, which releases the lock unconditionally. Suppress the
+            // unused-result warning; we already have the strong guarantee.
+            let _ = fs4::FileExt::unlock(&lock_file);
+            drop(lock_file);
+        }
     }
 }
 

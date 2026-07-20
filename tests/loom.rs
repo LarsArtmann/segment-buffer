@@ -196,7 +196,9 @@ fn mock_store_write_scan_read_remove_roundtrip() {
 
         // Write atomic.
         let payload = b"hello world";
-        let written = store.write_atomic(range, payload).unwrap();
+        let written = store
+            .write_atomic(range, payload, DurabilityPolicy::Segment)
+            .unwrap();
         assert_eq!(written, payload.len() as u64);
 
         // Now visible.
@@ -225,13 +227,25 @@ fn mock_store_scan_returns_segments_sorted_by_start() {
         let store = MockStore::new();
         // Insert out of order.
         store
-            .write_atomic(SegmentRange { start: 10, end: 19 }, b"b")
+            .write_atomic(
+                SegmentRange { start: 10, end: 19 },
+                b"b",
+                DurabilityPolicy::Segment,
+            )
             .unwrap();
         store
-            .write_atomic(SegmentRange { start: 0, end: 9 }, b"a")
+            .write_atomic(
+                SegmentRange { start: 0, end: 9 },
+                b"a",
+                DurabilityPolicy::Segment,
+            )
             .unwrap();
         store
-            .write_atomic(SegmentRange { start: 20, end: 29 }, b"c")
+            .write_atomic(
+                SegmentRange { start: 20, end: 29 },
+                b"c",
+                DurabilityPolicy::Segment,
+            )
             .unwrap();
 
         let scanned = store.scan().unwrap();

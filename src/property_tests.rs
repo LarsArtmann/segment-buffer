@@ -113,6 +113,33 @@ proptest! {
         prop_assert_eq!(read.unwrap(), items);
     }
 
+    /// Same as `full_write_read_encrypted_roundtrip` but for the v0.5.0
+    /// recommended cipher (XChaCha20-Poly1305). Independent property so a
+    /// regression in either AEAD is caught in isolation.
+    #[cfg(feature = "encryption")]
+    #[test]
+    fn full_write_read_encrypted_xchacha20_roundtrip(
+        key in any::<[u8; 32]>(),
+        ids in proptest::collection::vec(any_seq(), 0..30)
+    ) {
+        let items: Vec<PropItem> = ids
+            .iter()
+            .map(|&id| PropItem { id, payload: format!("payload-{id}") })
+            .collect();
+        let path = std::path::Path::new("prop_test_segment_xchacha.zst");
+        let cipher = crate::XChaCha20Poly1305Cipher::new(&key);
+
+        let mut compressor = zstd::bulk::Compressor::new(3)
+            .expect("compressor construction must succeed");
+        let bytes = segment::encode_segment(Some(&cipher), &mut compressor, path, &items)
+            .expect("encode must succeed");
+
+        let read: Result<Vec<PropItem>, _> =
+            segment::decode_segment(Some(&cipher), &bytes, path);
+        prop_assert!(read.is_ok(), "XChaCha20 decode failed: {:?}", read.err());
+        prop_assert_eq!(read.unwrap(), items);
+    }
+
     /// CI-runnable analogue of `fuzz/fuzz_targets/fuzz_corrupted_read.rs`:
     /// after overwriting an on-disk segment with arbitrary bytes, `read_from`
     /// must return `Err` and must never panic. The dedicated cargo-fuzz

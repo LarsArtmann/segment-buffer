@@ -11,7 +11,7 @@
 //! alert, etc.) without parsing the rendered message:
 //!
 //! ```
-//! use segment_buffer::{SegmentBuffer, SegmentConfig, SegmentError};
+//! use segment_buffer::{SegmentBuffer, SegmentConfig, SegmentError, IoSite};
 //! use tempfile::tempdir;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,10 +41,19 @@
 //!     Err(SegmentError::Integrity { path, reason }) => {
 //!         eprintln!("integrity failure on {}: {reason}", path.display());
 //!     }
-//!     Err(SegmentError::Io { path, source }) => {
-//!         match path {
-//!             Some(p) => eprintln!("I/O failure on {}: {source}", p.display()),
-//!             None => eprintln!("unrelated I/O failure: {source}"),
+//!     Err(SegmentError::Io { site, source }) => {
+//!         match site {
+//!             IoSite::Dir => {
+//!                 eprintln!("directory-level I/O failure: {source}");
+//!             }
+//!             IoSite::Segment(p) => {
+//!                 eprintln!("I/O failure on {}: {source}", p.display());
+//!             }
+//!             IoSite::Unknown => {
+//!                 eprintln!("unspecified I/O failure: {source}");
+//!             }
+//!             // Forward-compat: future sites (e.g. lock file) fall through.
+//!             _ => eprintln!("I/O failure: {source}"),
 //!         }
 //!     }
 //!     // `SegmentError` is `#[non_exhaustive]`, so a catch-all is required
@@ -59,26 +68,59 @@
 
 use std::path::PathBuf;
 
+/// Which filesystem site an [`SegmentError::Io`] failure happened on.
+///
+/// Replaces the pre-v0.5.0 `Option<PathBuf>` on the Io variant with an
+/// explicit enumeration: directory operations (create_dir_all, scan,
+/// clean_tmp, dir fsync), segment-file operations (read/write/rename), and
+/// the catch-all for `?`-propagated io::Errors that have not yet been
+/// tagged with context.
+///
+/// `Dir` carries no path: the directory is reachable via
+/// [`crate::SegmentBuffer::path`], so the variant just records the *kind*
+/// of operation that failed. `Segment` carries the offending segment's
+/// path so an operator can quarantine, alert, or move it aside without
+/// re-deriving it. `Unknown` is what `?` produces before any high-value
+/// call site upgrades the error with [`SegmentError::with_path`] or
+/// [`SegmentError::with_dir`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IoSite {
+    /// The failure happened on the segment directory itself (create_dir_all,
+    /// scan, clean_tmp, directory fsync). The directory path is reachable
+    /// via [`crate::SegmentBuffer::path`].
+    Dir,
+    /// The failure happened on a specific segment file. Carries the file's
+    /// path so an operator can act on it (move aside, quarantine, alert)
+    /// without re-deriving it.
+    Segment(PathBuf),
+    /// The failure has no specific site attached — typically an io::Error
+    /// propagated via `?` before a high-value call site has upgraded it
+    /// via [`SegmentError::with_path`] or [`SegmentError::with_dir`].
+    Unknown,
+}
+
 /// Errors produced by segment-buffer operations.
 ///
-/// Every variant carries the [`path`](Self::Cbor) of the segment file
-/// involved (when one is in scope), so an operator can act on the failure
-/// without spelunking through logs.
+/// Every variant carries the [`site`](Self::Io) or
+/// [`path`](Self::Cbor) of the segment file involved (when one is in
+/// scope), so an operator can act on the failure without spelunking
+/// through logs.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SegmentError {
     /// Filesystem I/O failure (directory creation, segment read/write, rename, etc.).
     ///
-    /// Carries the offending `path` when one is in scope, plus the underlying
+    /// Carries the [`IoSite`] the failure happened on plus the underlying
     /// [`std::io::Error`] as `source`. When `?` propagates an `io::Error`
-    /// without context, `path` is `None`; use
-    /// [`with_path`](Self::with_path) (or construct the variant directly) to
-    /// attach the path at high-value call sites.
-    #[error("I/O error{path_clause}: {source}", path_clause = format_path_clause(path))]
+    /// without context, the site is [`IoSite::Unknown`]; use
+    /// [`with_path`](Self::with_path) (or
+    /// [`with_dir`](Self::with_dir)) to attach the site at high-value call
+    /// sites.
+    #[error("I/O error{site_clause}: {source}", site_clause = format_site_clause(site))]
     Io {
-        /// Path of the file the I/O failed on, when known. `None` for
-        /// directory-create or unspecified-path failures.
-        path: Option<PathBuf>,
+        /// Which site the I/O failed on. See [`IoSite`] for the variants.
+        site: IoSite,
         /// The underlying io::Error, reachable via [`std::error::Error::source`].
         #[source]
         source: std::io::Error,
@@ -114,17 +156,58 @@ pub enum SegmentError {
         /// What failed, in one short phrase.
         reason: &'static str,
     },
+
+    /// Another process holds the exclusive single-process lock on the buffer
+    /// directory. Returned by [`crate::SegmentBuffer::open`] when the
+    /// `flock` on `.segment-buffer.lock` cannot be acquired. See
+    /// `AGENTS.md` § "Single-process invariant".
+    #[error(
+        "buffer directory {path} is locked by another process \
+             (only one SegmentBuffer may open a directory at a time)"
+    )]
+    Locked {
+        /// Path of the lock file that was contended (typically
+        /// `<dir>/.segment-buffer.lock`).
+        path: PathBuf,
+    },
 }
 
 impl SegmentError {
-    /// Attach a path to an existing [`SegmentError::Io`] variant. Returns the
-    /// error unchanged for other variants. Useful for upgrading a `?`-propagated
-    /// io::Error to carry path context at a high-value call site.
+    /// Attach a segment-file path to an existing [`SegmentError::Io`] variant
+    /// whose site is [`IoSite::Unknown`]. Returns the error unchanged for
+    /// other variants or for Io errors already tagged (Dir or Segment) —
+    /// the first call site to attach context wins.
+    ///
+    /// Use [`SegmentError::with_dir`] for operations on the directory itself
+    /// (create_dir_all, scan, clean_tmp, dir fsync).
     #[must_use = "the upgraded error is meaningless if discarded"]
     pub fn with_path(self, path: impl Into<PathBuf>) -> Self {
         match self {
-            SegmentError::Io { path: _, source } => SegmentError::Io {
-                path: Some(path.into()),
+            SegmentError::Io {
+                site: IoSite::Unknown,
+                source,
+            } => SegmentError::Io {
+                site: IoSite::Segment(path.into()),
+                source,
+            },
+            other => other,
+        }
+    }
+
+    /// Tag an [`IoSite::Unknown`] Io error as a directory operation. Returns
+    /// the error unchanged for other variants or for Io errors already
+    /// tagged (Dir or Segment). Use this at directory-operation call sites
+    /// (create_dir_all, scan, clean_tmp, dir fsync) so operators can
+    /// distinguish "the directory itself failed" from "a specific segment
+    /// file failed."
+    #[must_use = "the upgraded error is meaningless if discarded"]
+    pub fn with_dir(self) -> Self {
+        match self {
+            SegmentError::Io {
+                site: IoSite::Unknown,
+                source,
+            } => SegmentError::Io {
+                site: IoSite::Dir,
                 source,
             },
             other => other,
@@ -134,17 +217,22 @@ impl SegmentError {
 
 impl From<std::io::Error> for SegmentError {
     fn from(source: std::io::Error) -> Self {
-        SegmentError::Io { path: None, source }
+        SegmentError::Io {
+            site: IoSite::Unknown,
+            source,
+        }
     }
 }
 
 /// Helper used by the `#[error]` attribute on [`SegmentError::Io`]. Produces
-/// ` for <path.display()>` when `path` is `Some`, or the empty string when
-/// `path` is `None` — so the rendered message has no spurious " for " clause.
-fn format_path_clause(path: &Option<PathBuf>) -> String {
-    match path {
-        Some(p) => format!(" for {}", p.display()),
-        None => String::new(),
+/// ` for the segment directory` for [`IoSite::Dir`], ` for {path.display()}`
+/// for [`IoSite::Segment`], or the empty string for [`IoSite::Unknown`] — so
+/// the rendered message has no spurious clause when no site is attached.
+fn format_site_clause(site: &IoSite) -> String {
+    match site {
+        IoSite::Dir => " for the segment directory".to_string(),
+        IoSite::Segment(p) => format!(" for {}", p.display()),
+        IoSite::Unknown => String::new(),
     }
 }
 

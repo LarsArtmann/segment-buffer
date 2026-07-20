@@ -4,6 +4,7 @@
 
 use segment_buffer::{AesGcmCipher, SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 struct SecretRecord {
@@ -21,7 +22,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .flush_at_batch_or_interval(256, std::time::Duration::from_secs(5))
         .max_size_bytes(1024 * 1024)
         .compression_level(3)
-        .cipher(Box::new(AesGcmCipher::new(&key)))
+        .cipher(Arc::new(AesGcmCipher::new(&key)))
         .build();
 
     let buffer = SegmentBuffer::<SecretRecord>::open(tmp.path(), config)?;

@@ -278,7 +278,112 @@ mod private {
                 .map_err(|e| wrap("AES-GCM decryption failed", e))
         }
     }
+
+    // -----------------------------------------------------------------------
+    // XChaCha20-Poly1305
+    // -----------------------------------------------------------------------
+
+    /// Nonce length for XChaCha20-Poly1305: 24 bytes. Public so callers can
+    /// reason about the on-disk payload shape without importing the AEAD crate.
+    const XCHACHA_NONCE_LEN: usize = 24;
+
+    /// XChaCha20-Poly1305 cipher with a random 24-byte nonce prepended to each
+    /// ciphertext.
+    ///
+    /// The on-disk payload format is:
+    /// `[24-byte nonce][ciphertext + 16-byte Poly1305 tag]`.
+    ///
+    /// # Why XChaCha20 over AES-GCM for new buffers
+    ///
+    /// - **No 2³²-message limit per key.** AES-GCM's 12-byte nonce collides
+    ///   after ~2³² messages under the same key (a collision breaks
+    ///   confidentiality). XChaCha20's 24-byte nonce makes random-nonce
+    ///   collision negligible well past 2⁴⁸ messages.
+    /// - **Constant-time on hosts without AES-NI.** ChaCha20 is constant-time
+    ///   in software; AES-GCM relies on hardware acceleration (AES-NI on
+    ///   x86, ARMv8 Crypto Extensions on aarch64) for performance and leaks
+    ///   timing on hosts without it (older CPUs, some embedded ARM).
+    ///
+    /// Legacy AES-GCM segments still decrypt through [`AesGcmCipher`]; the
+    /// two formats are byte-distinguishable only by which cipher the buffer
+    /// was opened with (no envelope marker for the cipher type today — see
+    /// the envelope v2 design doc for the migration path).
+    pub struct XChaCha20Poly1305Cipher {
+        cipher: chacha20poly1305::XChaCha20Poly1305,
+    }
+
+    impl XChaCha20Poly1305Cipher {
+        /// Create a new cipher from a 32-byte key.
+        ///
+        /// # Example
+        ///
+        /// ```
+        /// use segment_buffer::{SegmentCipher, XChaCha20Poly1305Cipher};
+        ///
+        /// let cipher = XChaCha20Poly1305Cipher::new(&[0u8; 32]);
+        /// let ciphertext = cipher.encrypt(b"hello").unwrap();
+        /// let plaintext = cipher.decrypt(&ciphertext).unwrap();
+        /// assert_eq!(plaintext, b"hello");
+        /// ```
+        pub fn new(key_bytes: &[u8; 32]) -> Self {
+            use chacha20poly1305::KeyInit;
+            Self {
+                cipher: chacha20poly1305::XChaCha20Poly1305::new_from_slice(key_bytes)
+                    .expect("32-byte key is always valid for XChaCha20-Poly1305"),
+            }
+        }
+
+        /// Create a new cipher from a 32-byte slice. Falls back to
+        /// [`CipherError`] when the slice is not exactly 32 bytes.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`CipherError`] if the key length is not 32 bytes.
+        pub fn from_slice(key_bytes: &[u8]) -> Result<Self, CipherError> {
+            use chacha20poly1305::KeyInit;
+            let cipher = chacha20poly1305::XChaCha20Poly1305::new_from_slice(key_bytes)
+                .map_err(|e| wrap("invalid XChaCha20 key", e))?;
+            Ok(Self { cipher })
+        }
+    }
+
+    impl SegmentCipher for XChaCha20Poly1305Cipher {
+        fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CipherError> {
+            use chacha20poly1305::aead::Aead;
+            use rand::Rng;
+
+            let mut nonce_bytes = [0u8; XCHACHA_NONCE_LEN];
+            rand::rng().fill_bytes(&mut nonce_bytes);
+            let nonce = chacha20poly1305::XNonce::from_slice(&nonce_bytes);
+
+            let ciphertext = self
+                .cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| wrap("XChaCha20 encryption failed", e))?;
+
+            let mut out = Vec::with_capacity(XCHACHA_NONCE_LEN + ciphertext.len());
+            out.extend_from_slice(&nonce_bytes);
+            out.extend_from_slice(&ciphertext);
+            Ok(out)
+        }
+
+        fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, CipherError> {
+            use chacha20poly1305::aead::Aead;
+
+            if ciphertext.len() < XCHACHA_NONCE_LEN {
+                return Err(CipherError::msg(
+                    "ciphertext too small for XChaCha20 nonce prefix (need 24 bytes)",
+                ));
+            }
+            let (nonce_bytes, encrypted) = ciphertext.split_at(XCHACHA_NONCE_LEN);
+            let nonce = chacha20poly1305::XNonce::from_slice(nonce_bytes);
+
+            self.cipher
+                .decrypt(nonce, encrypted)
+                .map_err(|e| wrap("XChaCha20 decryption failed", e))
+        }
+    }
 }
 
 #[cfg(feature = "encryption")]
-pub use private::AesGcmCipher;
+pub use private::{AesGcmCipher, XChaCha20Poly1305Cipher};

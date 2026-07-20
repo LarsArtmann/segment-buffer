@@ -136,7 +136,7 @@ remaining filenames. No WAL, no metadata database.
 
 ## Crash behavior (configurable)
 
-> **Proposed for v0.5.0.** Today's behavior matches the `Segment` row. The enum is the design; the implementation lands in the next breaking batch.
+> **Shipped in v0.5.0.** The default remains `Segment` (today's behavior) for one release for backward compatibility; cloud-sync deployments should switch to `Throughput` once the cloud endpoint holds the durable copy. Pick the policy at construction: `SegmentConfig::builder().durability(DurabilityPolicy::Throughput).build()`.
 
 | `DurabilityPolicy`              | Fsync file | Fsync dir after rename | Worst-case crash loss                                         | Use case                                        |
 | ------------------------------- | ---------- | ---------------------- | ------------------------------------------------------------- | ----------------------------------------------- |

@@ -29,6 +29,7 @@ fn test_config(max_size_bytes: u64) -> SegmentConfig {
         flush_policy: FlushPolicy::Batch(4),
         max_size_bytes,
         compression_level: 3,
+        durability: DurabilityPolicy::Segment,
         cipher: None,
     }
 }
@@ -438,6 +439,7 @@ fn time_based_auto_flush() {
             },
             max_size_bytes: 1024 * 1024,
             compression_level: 3,
+            durability: DurabilityPolicy::Segment,
             cipher: None,
         },
     )
@@ -613,7 +615,8 @@ fn encrypted_buffer(dir: &Path, key: [u8; 32]) -> TestBuffer {
             flush_policy: FlushPolicy::Batch(4),
             max_size_bytes: 1024 * 1024,
             compression_level: 3,
-            cipher: Some(Box::new(AesGcmCipher::new(&key))),
+            durability: DurabilityPolicy::Segment,
+            cipher: Some(Arc::new(AesGcmCipher::new(&key))),
         },
     )
     .expect("Failed to create encrypted buffer")
@@ -765,6 +768,220 @@ fn wrong_key_cipher_error_carries_source_chain() {
 }
 
 // =========================================================================
+// XChaCha20-Poly1305 cipher (encryption feature)
+// =========================================================================
+
+#[cfg(feature = "encryption")]
+fn encrypted_buffer_xchacha(dir: &Path, key: [u8; 32]) -> TestBuffer {
+    SegmentBuffer::open(
+        dir,
+        SegmentConfig {
+            flush_policy: FlushPolicy::Batch(4),
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: Some(Arc::new(XChaCha20Poly1305Cipher::new(&key))),
+        },
+    )
+    .expect("Failed to create XChaCha20-encrypted buffer")
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_roundtrip_preserves_event_data() {
+    let tmp = TempDir::new().unwrap();
+    let buf = encrypted_buffer_xchacha(tmp.path(), [0u8; 32]);
+
+    for i in 0..5 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+
+    let events = buf.read_from(0, 100).unwrap();
+    assert_eq!(events.len(), 5);
+    for (i, event) in events.iter().enumerate() {
+        assert_eq!(event.id, i as u64);
+    }
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_cipher_roundtrip_direct() {
+    // Direct trait-level roundtrip independent of the buffer: encrypt + decrypt
+    // must reproduce the input for arbitrary plaintexts.
+    let cipher = XChaCha20Poly1305Cipher::new(&[0xau8; 32]);
+    for plaintext in [b"".as_slice(), b"x", b"hello world", &[42u8; 4096]] {
+        let ct = cipher.encrypt(plaintext).expect("encrypt");
+        // The ciphertext must include the 24-byte nonce prefix.
+        assert!(ct.len() >= 24, "ciphertext must include nonce prefix");
+        let pt = cipher.decrypt(&ct).expect("decrypt");
+        assert_eq!(pt, plaintext, "roundtrip must reproduce plaintext");
+    }
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_tamper_detection() {
+    // Flip one byte of the ciphertext → AEAD tag must fail verification.
+    let cipher = XChaCha20Poly1305Cipher::new(&[0xbu8; 32]);
+    let mut ct = cipher.encrypt(b"secret payload").expect("encrypt");
+    // Flip the last byte (inside the Poly1305 tag region).
+    let last = ct.len() - 1;
+    ct[last] ^= 0x01;
+    let err = cipher
+        .decrypt(&ct)
+        .expect_err("tampered ciphertext must fail AEAD");
+    assert!(
+        err.to_string().contains("XChaCha20"),
+        "error should name XChaCha20: got {err}"
+    );
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_short_payload_rejected() {
+    // Payload shorter than the 24-byte nonce prefix must be rejected before
+    // the AEAD is invoked, with a clear CipherError (not an opaque AEAD error).
+    let cipher = XChaCha20Poly1305Cipher::new(&[0xcu8; 32]);
+    for short_len in 0..24 {
+        let payload = vec![0u8; short_len];
+        let err = cipher
+            .decrypt(&payload)
+            .expect_err("sub-nonce payload must error");
+        assert!(
+            err.to_string().contains("nonce"),
+            "error should mention nonce: got {err}"
+        );
+    }
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_buffer_segment_roundtrip_with_delete_acked() {
+    let tmp = TempDir::new().unwrap();
+    let buf = encrypted_buffer_xchacha(tmp.path(), [0xdu8; 32]);
+
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+    // Batch(4) triggers auto-flush on the 4th append.
+    assert_eq!(buf.pending_count(), 4);
+
+    // Acknowledge the first 3 items; one segment [0..=3] is too tall to
+    // ack with seq=2, so the segment survives.
+    let removed = buf.delete_acked(2).unwrap();
+    assert_eq!(removed, 0);
+    // Ack all 4: segment [0..=3] is fully covered.
+    let removed = buf.delete_acked(3).unwrap();
+    assert_eq!(removed, 1);
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_recommended_cipher_installs_xchacha() {
+    // The recommended_cipher() builder helper must install an XChaCha20
+    // cipher (the documented direction for new buffers).
+    let cfg = SegmentConfig::builder()
+        .recommended_cipher([0xeu8; 32])
+        .build();
+    assert!(
+        cfg.cipher.is_some(),
+        "recommended_cipher must install a cipher"
+    );
+    // Smoke: the cipher works for a roundtrip via the buffer.
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::<TestItem>::open(tmp.path(), cfg).unwrap();
+    buf.append(test_item(7)).unwrap();
+    buf.flush().unwrap();
+    let items = buf.read_from(0, 100).unwrap();
+    assert_eq!(items, vec![test_item(7)]);
+}
+
+// =========================================================================
+// Single-process flock (M2)
+// =========================================================================
+
+/// Second `open()` on the same directory while the first buffer is alive
+/// must fail fast with [`SegmentError::Locked`].
+#[test]
+fn flock_second_open_returns_locked_error() {
+    let tmp = TempDir::new().unwrap();
+    let _first = test_buffer(tmp.path());
+    let result = SegmentBuffer::<TestItem>::open(tmp.path(), test_config(1024 * 1024));
+    let err = result.expect_err("second open must fail");
+    assert!(
+        matches!(err, SegmentError::Locked { .. }),
+        "expected SegmentError::Locked, got {err:?}"
+    );
+    let rendered = format!("{err}");
+    assert!(
+        rendered.contains("locked by another process"),
+        "error should mention lock: got {rendered}"
+    );
+}
+
+/// After the first buffer is dropped, the lock releases and a new `open()`
+/// succeeds. This is the kernel-advisory-lock contract: dropping the fd
+/// releases the flock.
+#[test]
+fn flock_open_after_drop_succeeds() {
+    let tmp = TempDir::new().unwrap();
+    {
+        let _first = test_buffer(tmp.path());
+        assert!(SegmentBuffer::<TestItem>::open(tmp.path(), test_config(1024 * 1024)).is_err());
+        // _first dropped here: the flock is released.
+    }
+    let _second = test_buffer(tmp.path());
+    // If we reached here without panicking, the second open succeeded.
+}
+
+/// A lock file is created in the directory as a side-effect of `open()`.
+/// Operators can list it; recovery must ignore it (it does not match
+/// `seg_*_*.zst`).
+#[test]
+fn flock_creates_lock_sidecar_file() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    // Append + flush so a segment file exists alongside the lock file.
+    buf.append(test_item(0)).unwrap();
+    buf.flush().unwrap();
+
+    let entries: Vec<String> = std::fs::read_dir(tmp.path())
+        .expect("dir readable")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        entries.iter().any(|n| n == ".segment-buffer.lock"),
+        "lock sidecar must exist; dir contents: {entries:?}"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|n| n.starts_with("seg_") && n.ends_with(".zst")),
+        "segment file must exist; dir contents: {entries:?}"
+    );
+    // The lock file must not be confused with a segment: scan_segments returns
+    // exactly one segment (the lock is ignored).
+    assert_eq!(
+        buf.read_from(0, 100).unwrap().len(),
+        1,
+        "lock file must not show up as a segment"
+    );
+}
+
+/// Different directories are independently lockable. Two buffers in two
+/// directories must both succeed.
+#[test]
+fn flock_locks_are_per_directory() {
+    let tmp_a = TempDir::new().unwrap();
+    let tmp_b = TempDir::new().unwrap();
+    let _a = test_buffer(tmp_a.path());
+    let _b = test_buffer(tmp_b.path());
+    // No panic — both opens succeeded.
+}
+
+// =========================================================================
 // Debug impl for SegmentBuffer<T>
 // =========================================================================
 
@@ -816,19 +1033,19 @@ fn debug_impl_formats_cleanly() {
 
 #[test]
 fn segment_error_io_display_format_no_path() {
-    // Io constructed from a bare io::Error via `?` has path = None.
+    // Io constructed from a bare io::Error via `?` has site = Unknown.
     let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
     let err: SegmentError = io_err.into();
     let rendered = format!("{err}");
-    // No " for <path>" clause when path is None.
+    // No " for ..." clause when site is Unknown.
     assert_eq!(rendered, "I/O error: missing");
 }
 
 #[test]
-fn segment_error_io_display_format_with_path() {
-    // Io constructed with explicit path context renders the path clause.
+fn segment_error_io_display_format_with_segment_path() {
+    // Io constructed with explicit Segment site renders the path clause.
     let err = SegmentError::Io {
-        path: Some(std::path::PathBuf::from(
+        site: IoSite::Segment(std::path::PathBuf::from(
             "/var/data/seg_000000000000_000000000000.zst",
         )),
         source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
@@ -838,6 +1055,68 @@ fn segment_error_io_display_format_with_path() {
         rendered,
         "I/O error for /var/data/seg_000000000000_000000000000.zst: permission denied"
     );
+}
+
+#[test]
+fn segment_error_io_display_format_with_dir_site() {
+    // Io with site = Dir renders a fixed clause (no path payload — the
+    // directory is reachable via SegmentBuffer::path()).
+    let err = SegmentError::Io {
+        site: IoSite::Dir,
+        source: std::io::Error::new(std::io::ErrorKind::ReadOnlyFilesystem, "read-only"),
+    };
+    let rendered = format!("{err}");
+    assert_eq!(rendered, "I/O error for the segment directory: read-only");
+}
+
+#[test]
+fn segment_error_with_path_upgrades_unknown_to_segment() {
+    // with_path on an Unknown Io error upgrades the site to Segment.
+    let raw: SegmentError = std::io::Error::new(std::io::ErrorKind::Other, "boom").into();
+    let upgraded = raw.with_path("/tmp/seg.zst");
+    match upgraded {
+        SegmentError::Io {
+            site: IoSite::Segment(p),
+            ..
+        } => {
+            assert_eq!(p, std::path::PathBuf::from("/tmp/seg.zst"));
+        }
+        other => panic!("expected Io with Segment site, got {other:?}"),
+    }
+}
+
+#[test]
+fn segment_error_with_path_leaves_segment_alone() {
+    // First call site to attach context wins: calling with_path on a Segment
+    // site leaves the original path intact (no clobbering).
+    let err = SegmentError::Io {
+        site: IoSite::Segment(std::path::PathBuf::from("/original/path.zst")),
+        source: std::io::Error::new(std::io::ErrorKind::Other, "x"),
+    };
+    let upgraded = err.with_path("/wrong/attempt.zst");
+    match upgraded {
+        SegmentError::Io {
+            site: IoSite::Segment(p),
+            ..
+        } => {
+            assert_eq!(p, std::path::PathBuf::from("/original/path.zst"));
+        }
+        other => panic!("expected Io with original Segment site, got {other:?}"),
+    }
+}
+
+#[test]
+fn segment_error_with_dir_upgrades_unknown_to_dir() {
+    // with_dir on an Unknown Io error tags the site as Dir.
+    let raw: SegmentError = std::io::Error::new(std::io::ErrorKind::Other, "boom").into();
+    let tagged = raw.with_dir();
+    assert!(matches!(
+        tagged,
+        SegmentError::Io {
+            site: IoSite::Dir,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -1059,6 +1338,7 @@ fn config_accessor_returns_opened_config() {
         flush_policy: FlushPolicy::Batch(7),
         max_size_bytes: 42,
         compression_level: 9,
+        durability: DurabilityPolicy::Throughput,
         cipher: None,
     };
     let buf = test_buffer_with_config(tmp.path(), config);
@@ -1066,6 +1346,7 @@ fn config_accessor_returns_opened_config() {
     assert_eq!(cfg.flush_policy, FlushPolicy::Batch(7));
     assert_eq!(cfg.max_size_bytes, 42);
     assert_eq!(cfg.compression_level, 9);
+    assert_eq!(cfg.durability, DurabilityPolicy::Throughput);
 }
 
 fn test_buffer_with_config(dir: &Path, config: SegmentConfig) -> TestBuffer {
@@ -1217,5 +1498,193 @@ fn stress_8_writers_2_readers_throughput() {
          ({:.2} µs/event under 8-writer contention, {} items observed by readers)",
         elapsed_secs * 1_000_000.0 / TOTAL as f64,
         total_read.load(Ordering::Relaxed)
+    );
+}
+
+// =========================================================================
+// DurabilityPolicy
+// =========================================================================
+
+/// Config-builder helper: vary ONLY the durability policy, keeping the
+/// `test_config` defaults for everything else.
+fn durability_config(max_size_bytes: u64, policy: DurabilityPolicy) -> SegmentConfig {
+    SegmentConfig {
+        flush_policy: FlushPolicy::Manual,
+        max_size_bytes,
+        compression_level: 3,
+        durability: policy,
+        cipher: None,
+    }
+}
+
+/// All three policies must produce a readable, correct segment. This is a
+/// functional roundtrip test, NOT a crash-semantics test — proving the
+/// fsync branches fire correctly under a host crash requires killing the
+/// process mid-flush and is out of scope for unit tests. (The fsync calls
+/// are also exercised here: if a sync_all path is broken on the host, this
+/// test surfaces it as an Err.)
+#[test]
+fn durability_policy_segment_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::<TestItem>::open(
+        tmp.path(),
+        durability_config(1024 * 1024, DurabilityPolicy::Segment),
+    )
+    .expect("open with Segment policy");
+
+    for i in 0..10 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().expect("Segment flush must succeed");
+
+    let items = buf.read_from(0, 100).unwrap();
+    assert_eq!(items.len(), 10);
+    for (i, item) in items.iter().enumerate() {
+        assert_eq!(item.id, i as u64);
+    }
+}
+
+#[test]
+fn durability_policy_throughput_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::<TestItem>::open(
+        tmp.path(),
+        durability_config(1024 * 1024, DurabilityPolicy::Throughput),
+    )
+    .expect("open with Throughput policy");
+
+    for i in 0..10 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush()
+        .expect("Throughput flush must succeed (no fsync, but rename is real)");
+
+    let items = buf.read_from(0, 100).unwrap();
+    assert_eq!(items.len(), 10);
+    for (i, item) in items.iter().enumerate() {
+        assert_eq!(item.id, i as u64);
+    }
+}
+
+#[test]
+fn durability_policy_maximal_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::<TestItem>::open(
+        tmp.path(),
+        durability_config(1024 * 1024, DurabilityPolicy::Maximal),
+    )
+    .expect("open with Maximal policy");
+
+    for i in 0..10 {
+        buf.append(test_item(i)).unwrap();
+    }
+    // Maximal includes a dir.sync_all after rename; on Linux/macOS this is
+    // well-defined and must succeed. If it errors here, the host filesystem
+    // does not support directory fsync (Maximal is documented to require
+    // Linux/macOS for the dir-sync half).
+    buf.flush()
+        .expect("Maximal flush must succeed on a capable filesystem");
+
+    let items = buf.read_from(0, 100).unwrap();
+    assert_eq!(items.len(), 10);
+    for (i, item) in items.iter().enumerate() {
+        assert_eq!(item.id, i as u64);
+    }
+
+    // The directory must contain exactly one segment file (no .tmp debris
+    // left behind) — verifies the rename completed under every policy.
+    let zst_count = std::fs::read_dir(tmp.path())
+        .expect("temp dir readable")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "zst"))
+        .count();
+    assert_eq!(
+        zst_count, 1,
+        "exactly one .zst segment must exist after flush"
+    );
+}
+
+/// All three policies must be recoverable: re-open the directory and the
+/// segment file is visible (the rename is the atomicity boundary under
+/// every policy).
+#[test]
+fn durability_policy_all_policies_recover_after_reopen() {
+    for policy in [
+        DurabilityPolicy::Maximal,
+        DurabilityPolicy::Segment,
+        DurabilityPolicy::Throughput,
+    ] {
+        let tmp = TempDir::new().unwrap();
+        {
+            let buf =
+                SegmentBuffer::<TestItem>::open(tmp.path(), durability_config(1024 * 1024, policy))
+                    .expect("open");
+            buf.append(test_item(42)).unwrap();
+            buf.flush().expect("flush");
+        }
+        let (buf, report) = SegmentBuffer::<TestItem>::open_with_report(
+            tmp.path(),
+            durability_config(1024 * 1024, policy),
+        )
+        .expect("reopen");
+        assert_eq!(
+            report.segment_count, 1,
+            "policy {policy:?}: segment must be recovered"
+        );
+        assert_eq!(report.head_seq, 0);
+        assert_eq!(report.next_seq, 1);
+        let items = buf.read_from(0, 100).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, 42);
+    }
+}
+
+/// The default SegmentConfig must select `Segment` (the documented
+/// backward-compat default for one release after the enum lands).
+#[test]
+fn durability_policy_default_is_segment() {
+    let cfg = SegmentConfig::default();
+    assert_eq!(cfg.durability, DurabilityPolicy::Segment);
+}
+
+/// The builder `.durability(...)` setter must round-trip into the built config.
+#[test]
+fn durability_policy_builder_roundtrip() {
+    let cfg = SegmentConfig::builder()
+        .durability(DurabilityPolicy::Throughput)
+        .build();
+    assert_eq!(cfg.durability, DurabilityPolicy::Throughput);
+}
+
+/// `SegmentConfig` is `Clone` since the cipher moved from `Box` to `Arc`.
+/// A roundtrip through `.clone()` must preserve every field, including the
+/// cipher (the `Arc` is shared, not duplicated).
+#[test]
+fn segment_config_is_clone() {
+    let cfg = SegmentConfig::default();
+    let cloned = cfg.clone();
+    assert_eq!(cfg.flush_policy, cloned.flush_policy);
+    assert_eq!(cfg.max_size_bytes, cloned.max_size_bytes);
+    assert_eq!(cfg.compression_level, cloned.compression_level);
+    assert_eq!(cfg.durability, cloned.durability);
+    assert!(cfg.cipher.is_none() && cloned.cipher.is_none());
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn segment_config_clone_shares_cipher_arc() {
+    let cfg = SegmentConfig::builder()
+        .cipher(Arc::new(AesGcmCipher::new(&[0u8; 32])))
+        .build();
+    let cloned = cfg.clone();
+    // Both configs reference the SAME Arc — cipher state is shared, not
+    // duplicated. This is what makes `recommended_cipher()` and multi-buffer
+    // setups cheap.
+    let (Some(a), Some(b)) = (cfg.cipher.as_ref(), cloned.cipher.as_ref()) else {
+        panic!("cipher must be Some on both configs");
+    };
+    assert!(
+        std::ptr::addr_eq(a.as_ref() as *const _, b.as_ref() as *const _),
+        "Arc must be shared, not deep-copied"
     );
 }

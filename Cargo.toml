@@ -16,7 +16,7 @@ exclude = ["/target", "/.github", "/fuzz", "/benches"]
 
 [features]
 default = []
-encryption = ["dep:aes-gcm", "dep:rand"]
+encryption = ["dep:aes-gcm", "dep:chacha20poly1305", "dep:rand"]
 # Exposes the `fuzz_hooks` module (parse_filename, wrap/unwrap_envelope,
 # SegmentRange) so out-of-tree fuzz targets and deep integration tests can
 # drive byte-level invariants directly. **Not part of the semver contract**:
@@ -51,7 +51,9 @@ parking_lot = "0.12"
 tracing = "0.1"
 thiserror = "2"
 serde = "1"
+fs4 = "1.1"
 aes-gcm = { version = "0.11", optional = true }
+chacha20poly1305 = { version = "0.10", optional = true }
 rand = { version = "0.10", optional = true }
 
 [dev-dependencies]

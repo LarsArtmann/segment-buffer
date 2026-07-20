@@ -168,7 +168,7 @@ pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
 /// already serialises flushes via the re-entrancy guard, so this is
 /// uncontended in practice). See `docs/perf/2026-07-20_hot-path-flamegraph.md`.
 pub(crate) fn encode_payload<T: Serialize>(
-    cipher: Option<&dyn SegmentCipher>,
+    cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     compressor: &mut zstd::bulk::Compressor<'static>,
     path: &Path,
     events: &[T],
@@ -195,7 +195,7 @@ pub(crate) fn encode_payload<T: Serialize>(
 
 /// Decode the v1 payload bytes back to events: optional decrypt → zstd → CBOR.
 pub(crate) fn decode_payload<T: DeserializeOwned>(
-    cipher: Option<&dyn SegmentCipher>,
+    cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     payload: &[u8],
     path: &Path,
 ) -> Result<Vec<T>> {
@@ -231,7 +231,7 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
 ///
 /// Returns the enveloped bytes (`wrap_envelope(encode_payload(events))`).
 pub(crate) fn encode_segment<T: Serialize>(
-    cipher: Option<&dyn SegmentCipher>,
+    cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     compressor: &mut zstd::bulk::Compressor<'static>,
     path: &Path,
     events: &[T],
@@ -248,7 +248,7 @@ pub(crate) fn encode_segment<T: Serialize>(
 /// than the AEAD nonce are rejected as [`SegmentError::Integrity`] with the
 /// offending path, before the cipher is invoked.
 pub(crate) fn decode_segment<T: DeserializeOwned>(
-    cipher: Option<&dyn SegmentCipher>,
+    cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     raw: &[u8],
     path: &Path,
 ) -> Result<Vec<T>> {
