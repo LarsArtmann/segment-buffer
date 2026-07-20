@@ -1,4 +1,5 @@
-//! Durable bounded queue backed by zstd-compressed CBOR segment files.
+//! High-throughput **local buffer for cloud sync** — single-process by design,
+//! durability-configurable, optional performant encryption, at-least-once delivery.
 //!
 //! Items are accumulated in memory, flushed as zstd-compressed CBOR batches
 //! to `seg_{start:012}_{end:012}.zst` files, and deleted once the consumer
@@ -532,7 +533,9 @@ struct BufferInner<T> {
     last_flush: Instant,
 }
 
-/// Durable bounded queue of `T` backed by compressed segment files.
+/// High-throughput local buffer for cloud sync, holding items of `T` in
+/// memory and spilling them to compressed segment files for at-least-once
+/// delivery to a cloud endpoint.
 ///
 /// Thread-safe via `parking_lot::Mutex`. All file I/O is synchronous. The mutex
 /// is never held across an async boundary because there are no await points.

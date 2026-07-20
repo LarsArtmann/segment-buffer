@@ -25,7 +25,11 @@ accept = ["200"]
 # Exclude GitHub /compare/ URLs — the CHANGELOG [Unreleased] link points at
 # `vX.Y.Z...HEAD`, which transiently 404s when the release commit is pushed
 # before the tag exists (the tag is pushed seconds later, after CI starts).
-exclude = ["^https://github\\.com/LarsArtmann/monitor365", "^https://github\\.com/.*/settings/", "^https://github\\.com/.*/compare/"]
+exclude = [
+  "^https://github\\.com/LarsArtmann/monitor365",
+  "^https://github\\.com/.*/settings/",
+  "^https://github\\.com/.*/compare/",
+]
 
 # Exclude localhost / loopback
 exclude_loopback = true

@@ -5,12 +5,12 @@ edition = "2021"
 rust-version = "1.86"
 authors = ["Lars Artmann <lars@larsartmann.com>"]
 license = "Apache-2.0"
-description = "Durable bounded queue: batch-spills to zstd+CBOR segment files with ack-based deletion and filename-based crash recovery. No WAL, no metadata DB."
+description = "High-throughput local buffer for cloud sync: batch-spills to zstd+CBOR segment files with at-least-once delivery, ack-based deletion, filename-based crash recovery, configurable durability, and optional encryption. Single-process by design. No WAL, no metadata DB."
 repository = "https://github.com/LarsArtmann/segment-buffer"
 homepage = "https://github.com/LarsArtmann/segment-buffer"
 documentation = "https://docs.rs/segment-buffer"
 readme = "README.md"
-keywords = ["queue", "disk", "durable", "segment", "buffer"]
+keywords = ["queue", "cloud-sync", "spool", "segment", "buffer"]
 categories = ["data-structures", "filesystem"]
 exclude = ["/target", "/.github", "/fuzz", "/benches"]
 
