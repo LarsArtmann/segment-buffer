@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+---
+
+## [0.5.1] - 2026-07-20
+
+Metadata-only patch: fixes the crates.io discovery surface (description +
+keywords) and the crate-root rustdoc, which still carried the pre-v0.5.0
+"durable bounded queue" framing after the v0.5.0 release shipped. No API
+change, no on-disk format change, no migration.
+
+### Changed
+
+- **`Cargo.toml` description and keywords** updated to match the v0.5.0
+  reframing. The description now leads with "high-throughput local buffer
+  for cloud sync" (was "durable bounded queue"); keywords now include
+  `cloud-sync` and `spool` (dropped the generic `disk` and `durable`).
+  This fixes the crates.io search/landing surface — the #1 discovery path
+  for new users — which still showed the pre-reframing positioning after
+  v0.5.0 shipped.
+
+### Fixed
+
+- **Crate-root rustdoc** (`src/lib.rs` `//!`) and the `SegmentBuffer<T>`
+  struct doc comment still described the crate as a "durable bounded queue".
+  Both now lead with the cloud-sync positioning, matching the README and
+  `AGENTS.md` product-positioning section. Visible on the docs.rs module
+  page and in IDE hovers.
+
+---
+
+## [0.5.0] - 2026-07-20
+
 The **v0.5.0 cloud-sync throughput batch** — the first release that makes
 the 2026-07-20 reframing (single-process throughput buffer for cloud sync,
 with optional performant encryption, durability-configurable, at-least-once
@@ -708,7 +741,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.0
 [0.4.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.2
 [0.4.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.1
