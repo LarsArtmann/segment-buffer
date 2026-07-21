@@ -15,7 +15,10 @@ controlled `git worktree` baseline:
 
 The raw results live in [`perf/`](./perf/) with the date and the versions
 compared. Each file is a point-in-time snapshot — it is not auto-refreshed when
-new code lands.
+new code lands. The most recent end-to-end scaling + payload-entropy snapshot
+is [`2026-07-21_scaling-and-payload-entropy-sweep.md`](./perf/2026-07-21_scaling-and-payload-entropy-sweep.md)
+— read it before quoting any items/sec headline, because the uniform-payload
+baselines overstate real-world throughput by roughly an order of magnitude.
 
 ## Reproducing
 
@@ -54,16 +57,38 @@ per iteration). For real-world scaling — the full cloud-sync lifecycle at
 millions of items — run the standalone scaling driver:
 
 ```bash
-cargo run --release --example scaling                       # 1M items, batch 5000, zstd-3
-cargo run --release --example scaling -- 10000000           # 10M
-cargo run --release --example scaling -- 100000000 10000 1  # 100M, batch 10k, zstd-1
+cargo run --release --example scaling                                     # 1M, batch 5000, zstd-3, 64B, uniform
+cargo run --release --example scaling -- 10000000                         # 10M
+cargo run --release --example scaling -- 100000000 10000 1                # 100M, batch 10k, zstd-1
+cargo run --release --example scaling -- 1000000 5000 3 10 text           # 1M, 10x payload, semi-compressible text
+cargo run --release --example scaling -- 1000000 5000 3 10 random         # 1M, 10x payload, pseudo-random hex
 ```
 
-It runs three timed phases — **load** (`append_all` + `flush`), **recover**
-(drop + reopen), **drain** (`read_from` + `delete_acked`) — and verifies
-sequence integrity (gap-free, in-order, exactly `count` items, disk drained
-to zero) at the end. Throughput is reported as items/sec and uncompressed
-MiB/sec per phase, plus segment count and recovery cost.
+Args: `[count] [batch_size] [compression] [payload_mult] [payload_kind]`.
+
+It runs three timed phases — **load** (`append_all` + `flush`, payload
+generation excluded from timing), **recover** (drop + reopen), **drain**
+(`read_from` + `delete_acked`) — and verifies sequence integrity (gap-free,
+in-order, exactly `count` items, disk drained to zero) at the end. Throughput
+is reported as items/sec and uncompressed MiB/sec per phase, plus segment
+count, compression ratio, and recovery cost.
+
+### Payload kinds and why they matter
+
+The `payload_kind` arg selects the entropy of the payload, which dominates
+both the compression ratio and the CPU cost of zstd:
+
+| kind      | typical zstd ratio | models                               | load throughput         |
+| --------- | ------------------ | ------------------------------------ | ----------------------- |
+| `uniform` | 50-600x            | uniform fill — best-case ceiling     | highest (unrealistic)   |
+| `text`    | 3-6x               | log-line-like telemetry              | ~14x lower than uniform |
+| `json`    | 3-5x               | semi-structured event pipeline       | ~14x lower than uniform |
+| `random`  | ~1.1x              | pseudo-random hex — worst-case floor | ~16x lower than uniform |
+
+**The uniform baseline overstates throughput by ~14×.** zstd compression of
+high-entropy data is the dominant cost, not the buffer pipeline. Always
+benchmark with `text` or `json` (whichever models your workload) for a
+production-representative number.
 
 This is **not** part of the verification gate (it takes 15–45s at 100M scale
 and needs real disk). Run it on the target deployment machine for numbers that
