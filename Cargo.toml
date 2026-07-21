@@ -79,6 +79,10 @@ loom = "0.7"
 name = "encrypted"
 required-features = ["encryption"]
 
+[[example]]
+name = "bring_your_own_cipher"
+required-features = ["encryption"]
+
 [[bench]]
 name = "bench_append"
 harness = false
