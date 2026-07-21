@@ -80,6 +80,14 @@ fi
 if [[ "$RUN_LYCHEE" == "1" ]]; then
   # Link-check every markdown file CI checks. Mirrors .github/workflows/ci.yml's
   # lychee job so anchor/link drift is caught locally, not just in CI.
+  #
+  # Transient failures: lychee hits live URLs (GitHub, docs.rs, crates.io) and
+  # occasional 500/429/timeout responses DO happen even on green links. The
+  # `.github/lychee.toml` config sets `max_retries = 1` so a single transient
+  # blip is retried once. If this step still fails, re-run lychee standalone:
+  #   nix run nixpkgs#lychee -- --config .github/lychee.toml '*.md' 'docs/**/*.md' 'fuzz/README.md'
+  # A persistent failure on the SAME URL across 2+ standalone runs is a real
+  # broken link; a one-shot failure that clears on re-run is transient.
   run "lychee" nix run nixpkgs#lychee -- --config .github/lychee.toml '*.md' 'docs/**/*.md' 'fuzz/README.md'
 fi
 

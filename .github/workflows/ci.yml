@@ -70,6 +70,18 @@ jobs:
       - name: Check MSRV is consistent across all declarations
         run: bash scripts/check-msrv.sh
 
+  html-root-url:
+    name: html_root_url ↔ Cargo.toml version match
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assert html_root_url pin matches Cargo.toml version
+        # Catches the recurring rot where a release bumps Cargo.toml version
+        # but forgets to bump `#![doc(html_root_url = "...")]` in src/lib.rs,
+        # breaking intra-doc links on docs.rs. Local equivalent lives in
+        # scripts/verify-gate.sh (the "html_root_url" step).
+        run: bash scripts/check-html-root-url.sh
+
   supply-chain:
     name: cargo audit + cargo deny
     runs-on: ubuntu-latest
