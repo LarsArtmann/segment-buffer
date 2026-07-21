@@ -8,16 +8,20 @@ that claim is half-true.
 
 ```
 On branch master
-Changes to be committed:
-        modified:   README.md
+nothing to commit, working tree clean
 ```
 
-`README.md` is **staged** (+51/-48 vs `HEAD`). I did not run `git add` — an
-auto-stage hook (or the `nix fmt`/`cargo` invocations touching the file) put
-it in the index. My closing claim in the previous turn said "no commit made,
-only modified" — the "no commit" half is true, the "only modified" half is
-wrong: it is **staged**, not just modified. Process miss: I checked
-working-tree dirt, not the index.
+**The README changes were auto-committed by a repo hook as `01bd83d`**
+(`docs(readme): refresh trust signals, examples index, and Status block
+for v0.5.1 + [Unreleased]`) at 2026-07-21 15:24:13 +0200, AFTER the body
+of this report was drafted. At draft time I observed
+`Changes to be committed: modified README.md` and reported it as
+"staged, not committed" — that state was then auto-committed by the hook
+before I could decide whether to keep the staging or unstage it. The
+"TOTALLY FUCKED UP §1" critique below (staging-area miss) stands and is
+now worse: I not only mis-read the index, I lost the decision window to
+a hook I didn't know was there. **No tag was pushed. No remote push.**
+The commit sits on local master only.
 
 ---
 
