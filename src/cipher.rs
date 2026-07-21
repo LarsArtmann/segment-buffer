@@ -148,9 +148,22 @@ impl std::error::Error for CipherError {
 /// ```
 pub trait SegmentCipher: Send + Sync {
     /// Encrypt `plaintext`, returning self-describing ciphertext.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CipherError`] if the cipher fails to encrypt (e.g. RNG
+    /// failure, internal AEAD error). Implementations must be deterministic
+    /// in their failure modes — the same plaintext either always succeeds or
+    /// always fails.
     fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CipherError>;
 
     /// Decrypt previously-produced ciphertext back to the original plaintext.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CipherError`] if the ciphertext is too short for the cipher's
+    /// nonce, the authentication tag does not verify (wrong key or tampering),
+    /// or the underlying AEAD reports a decryption failure.
     fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, CipherError>;
 }
 
@@ -232,6 +245,13 @@ mod private {
         /// let plaintext = cipher.decrypt(&ciphertext).unwrap();
         /// assert_eq!(plaintext, b"hello");
         /// ```
+        ///
+        /// # Panics
+        ///
+        /// Never in practice — a 32-byte key is always valid for AES-256. The
+        /// internal `.expect()` is a defense-in-depth assertion against a future
+        /// logic bug (e.g. a key-type change); callers passing a correctly-sized
+        /// key will never hit it.
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use aes_gcm::KeyInit;
             Self {
@@ -325,6 +345,13 @@ mod private {
         /// let plaintext = cipher.decrypt(&ciphertext).unwrap();
         /// assert_eq!(plaintext, b"hello");
         /// ```
+        ///
+        /// # Panics
+        ///
+        /// Never in practice — a 32-byte key is always valid for XChaCha20-Poly1305.
+        /// The internal `.expect()` is a defense-in-depth assertion against a
+        /// future logic bug (e.g. a key-type change); callers passing a
+        /// correctly-sized key will never hit it.
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use chacha20poly1305::KeyInit;
             Self {

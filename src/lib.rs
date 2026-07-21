@@ -32,6 +32,11 @@
 //! or [docs.rs](https://docs.rs/segment-buffer).
 
 #![warn(missing_docs)]
+// Require every public function that can panic or return Result to document
+// the failure mode. Prevents the # Panics / # Errors sections from silently
+// rotting when new methods land. The 2026-07-20 doc-quality sweep added the
+// sections; these lints keep them there.
+#![warn(clippy::missing_panics_doc, clippy::missing_errors_doc)]
 // Pin the html root URL so intra-doc links resolve against the published
 // docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
 // `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
@@ -1132,6 +1137,18 @@ where
     /// a closure that captures a clone of the `Arc<SegmentBuffer<T>>` can
     /// still attempt re-entry — and will now get an immediate, diagnosable
     /// panic instead of a silent hang.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from inside another `for_each_from` callback on the
+    /// same buffer (re-entrancy guard converts a silent deadlock into a loud
+    /// failure).
+    ///
+    /// # Errors
+    ///
+    /// Returns `SegmentError::Io` if any on-disk segment in the requested range
+    /// cannot be read or decoded (corruption, missing file after recovery, cipher
+    /// failure on an encrypted segment).
     ///
     /// # Example
     ///
