@@ -15,11 +15,11 @@
 
 ## 1. Why these three items, and only these three
 
-`segment-buffer` is a local throughput buffer for cloud sync (see `AGENTS.md` "Product positioning"). The cloud endpoint is normally the bottleneck. The places this crate *can* become the limiter are narrow:
+`segment-buffer` is a local throughput buffer for cloud sync (see `AGENTS.md` "Product positioning"). The cloud endpoint is normally the bottleneck. The places this crate _can_ become the limiter are narrow:
 
 1. **p99 `append()` latency.** Today the threshold-crossing writer pays the full CBOR → zstd → cipher → `write_atomic` cost inline (see `src/lib.rs` `flush()` → `write_segment()`). p99 = full flush cost.
 2. **Per-flush allocator pressure.** `flush()` does `std::mem::take(&mut inner.unflushed)` (line 981), leaving a zero-capacity `Vec` that the next `append()` calls must grow back via realloc.
-3. **User discovers the fast path too late.** `DurabilityPolicy::Throughput`, `FlushPolicy::Manual` + `append_all`, `compression_level(1)`, and `for_each_from` are all shipped and battle-tested but scattered across `FEATURES.md`, `AGENTS.md`, and source docs. `docs/PERFORMANCE.md` covers *methodology*, not *tuning*.
+3. **User discovers the fast path too late.** `DurabilityPolicy::Throughput`, `FlushPolicy::Manual` + `append_all`, `compression_level(1)`, and `for_each_from` are all shipped and battle-tested but scattered across `FEATURES.md`, `AGENTS.md`, and source docs. `docs/PERFORMANCE.md` covers _methodology_, not _tuning_.
 
 These are exactly the three items in `TODO_LIST.md`. None requires an envelope format change; none is blocked on a missing consumer. They are the Tier 0/1 levers from the 2026-07-21 performance conversation.
 
@@ -65,25 +65,25 @@ The worker alone is unsafe to ship without:
 
 17 tasks. Sorted by **impact/effort ratio** (descending), then by **dependency order** within equal ratios. Effort is wall-clock minutes for a competent Rust engineer with the codebase loaded.
 
-| # | ID | Task | Pareto | Impact (1-5) | Effort (min) | I/E | Deps |
-|---|----|------|--------|--------------|--------------|-----|------|
-| 1 | P3 | Performance tuning guide section in `docs/PERFORMANCE.md` | 4% | 4 | 60 | 4.00 | — |
-| 2 | P2 | `unflushed` Vec recycling (reserve on take) | 20% | 2 | 40 | 3.00 | — |
-| 3 | T3 | Property test: every appended seq reaches disk before drop | 4% | 4 | 60 | 3.00 | P1 |
-| 4 | D2 | AGENTS.md "Worker invariant" section | 20% | 3 | 40 | 3.00 | P1 |
-| 5 | D1 | FEATURES.md worker + recycling rows | 20% | 2 | 30 | 2.67 | P1, P2 |
-| 6 | P6 | Criterion bench: inline-vs-worker A/B | 4% | 4 | 90 | 2.67 | P1 |
-| 7 | T2 | Stress test: backpressure when channel saturates | 4% | 4 | 90 | 2.22 | P1 |
-| 8 | P4 | Examples update (scaling A/B, backpressure demo) | 20% | 3 | 80 | 1.88 | P1 |
-| 9 | D4 | `docs/PERFORMANCE.md` worker section (with bench results) | 20% | 2 | 60 | 1.67 | P6 |
-| 10 | P1 | **Background flush worker** (core implementation) | 1% | 5 | 240 | 1.25 | — |
-| 11 | T1 | Loom test: worker cancellation + drain-on-drop | 4% | 4 | 180 | 1.11 | P1 |
-| 12 | D3 | CHANGELOG `[Unreleased]` entry | 20% | 2 | 30 | 1.00 | all |
-| 13 | — | MSRV 1.86 check on new dep (`crossbeam-channel` or `std::sync::mpsc`) | 20% | 2 | 30 | 1.00 | before P1 |
-| 14 | — | Verify-gate pass: fmt + clippy(encryption) + test(encryption) + doc(encryption) + loom | 20% | 3 | 60 | 1.00 | all code |
-| 15 | — | Loom stress pass on the worker handoff schedule | 20% | 2 | 60 | 0.67 | T1 |
-| 16 | — | `gh run list --limit 4` green confirm before any release conversation | 20% | 2 | 10 | 1.00 | all |
-| 17 | — | Pre-release self-review using `docs/status/` snapshot pattern | 20% | 1 | 60 | 0.17 | all |
+| #   | ID  | Task                                                                                   | Pareto | Impact (1-5) | Effort (min) | I/E  | Deps      |
+| --- | --- | -------------------------------------------------------------------------------------- | ------ | ------------ | ------------ | ---- | --------- |
+| 1   | P3  | Performance tuning guide section in `docs/PERFORMANCE.md`                              | 4%     | 4            | 60           | 4.00 | —         |
+| 2   | P2  | `unflushed` Vec recycling (reserve on take)                                            | 20%    | 2            | 40           | 3.00 | —         |
+| 3   | T3  | Property test: every appended seq reaches disk before drop                             | 4%     | 4            | 60           | 3.00 | P1        |
+| 4   | D2  | AGENTS.md "Worker invariant" section                                                   | 20%    | 3            | 40           | 3.00 | P1        |
+| 5   | D1  | FEATURES.md worker + recycling rows                                                    | 20%    | 2            | 30           | 2.67 | P1, P2    |
+| 6   | P6  | Criterion bench: inline-vs-worker A/B                                                  | 4%     | 4            | 90           | 2.67 | P1        |
+| 7   | T2  | Stress test: backpressure when channel saturates                                       | 4%     | 4            | 90           | 2.22 | P1        |
+| 8   | P4  | Examples update (scaling A/B, backpressure demo)                                       | 20%    | 3            | 80           | 1.88 | P1        |
+| 9   | D4  | `docs/PERFORMANCE.md` worker section (with bench results)                              | 20%    | 2            | 60           | 1.67 | P6        |
+| 10  | P1  | **Background flush worker** (core implementation)                                      | 1%     | 5            | 240          | 1.25 | —         |
+| 11  | T1  | Loom test: worker cancellation + drain-on-drop                                         | 4%     | 4            | 180          | 1.11 | P1        |
+| 12  | D3  | CHANGELOG `[Unreleased]` entry                                                         | 20%    | 2            | 30           | 1.00 | all       |
+| 13  | —   | MSRV 1.86 check on new dep (`crossbeam-channel` or `std::sync::mpsc`)                  | 20%    | 2            | 30           | 1.00 | before P1 |
+| 14  | —   | Verify-gate pass: fmt + clippy(encryption) + test(encryption) + doc(encryption) + loom | 20%    | 3            | 60           | 1.00 | all code  |
+| 15  | —   | Loom stress pass on the worker handoff schedule                                        | 20%    | 2            | 60           | 0.67 | T1        |
+| 16  | —   | `gh run list --limit 4` green confirm before any release conversation                  | 20%    | 2            | 10           | 1.00 | all       |
+| 17  | —   | Pre-release self-review using `docs/status/` snapshot pattern                          | 20%    | 1            | 60           | 0.17 | all       |
 
 **Totals:** ~21 hours of work. P1 (the worker) is 19% of the time and gates 9 of the other 16 tasks.
 
@@ -97,92 +97,92 @@ Every task from §3 decomposed into atomic steps. Sorted by **impact/effort**, t
 
 ### Tier A — no deps, ship first (highest I/E)
 
-| # | Sub | Task | Effort | Parent |
-|---|-----|------|--------|--------|
-| A1 | P3.1 | Read current `docs/PERFORMANCE.md` end-to-end | 5 | P3 |
-| A2 | P3.2 | Draft "Tuning for your workload" section outline (Tier 0 levers list) | 10 | P3 |
-| A3 | P3.3 | Write `Throughput` durability subsection with rationale + when-not-to | 12 | P3 |
-| A4 | P3.4 | Write `Manual` + `append_all` subsection with code snippet | 12 | P3 |
-| A5 | P3.5 | Write `compression_level` subsection with the level-1-vs-3 tradeoff | 10 | P3 |
-| A6 | P3.6 | Write `for_each_from` vs `read_from` subsection (link FEATURES ~21× claim) | 10 | P3 |
-| A7 | P3.7 | Cross-link from `README.md` quickstart to the new tuning section | 5 | P3 |
-| A8 | MSRV.1 | Decide `std::sync::mpsc` vs `crossbeam-channel` (MSRV, perf, ergonomics) | 12 | MSRV |
-| A9 | MSRV.2 | If crossbeam: add to `Cargo.toml` `[dependencies]`, verify `cargo check --features encryption` on 1.86 via `nix develop .#msrv` | 10 | MSRV |
-| A10 | MSRV.3 | If std: confirm `mpsc` channel meets the backpressure design (bounded constructor) | 8 | MSRV |
+| #   | Sub    | Task                                                                                                                            | Effort | Parent |
+| --- | ------ | ------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| A1  | P3.1   | Read current `docs/PERFORMANCE.md` end-to-end                                                                                   | 5      | P3     |
+| A2  | P3.2   | Draft "Tuning for your workload" section outline (Tier 0 levers list)                                                           | 10     | P3     |
+| A3  | P3.3   | Write `Throughput` durability subsection with rationale + when-not-to                                                           | 12     | P3     |
+| A4  | P3.4   | Write `Manual` + `append_all` subsection with code snippet                                                                      | 12     | P3     |
+| A5  | P3.5   | Write `compression_level` subsection with the level-1-vs-3 tradeoff                                                             | 10     | P3     |
+| A6  | P3.6   | Write `for_each_from` vs `read_from` subsection (link FEATURES ~21× claim)                                                      | 10     | P3     |
+| A7  | P3.7   | Cross-link from `README.md` quickstart to the new tuning section                                                                | 5      | P3     |
+| A8  | MSRV.1 | Decide `std::sync::mpsc` vs `crossbeam-channel` (MSRV, perf, ergonomics)                                                        | 12     | MSRV   |
+| A9  | MSRV.2 | If crossbeam: add to `Cargo.toml` `[dependencies]`, verify `cargo check --features encryption` on 1.86 via `nix develop .#msrv` | 10     | MSRV   |
+| A10 | MSRV.3 | If std: confirm `mpsc` channel meets the backpressure design (bounded constructor)                                              | 8      | MSRV   |
 
 ### Tier B — Vec recycling (P2)
 
-| # | Sub | Task | Effort | Parent |
-|---|-----|------|--------|--------|
-| B1 | P2.1 | Read `flush()` and `BufferInner` struct; locate the `mem::take` site | 5 | P2 |
-| B2 | P2.2 | Decide: `Vec::with_capacity` replacement vs slot in `BufferInner` for return-to-pool | 10 | P2 |
-| B3 | P2.3 | Implement chosen approach (likely: reserve on the new empty Vec using last capacity) | 12 | P2 |
-| B4 | P2.4 | Add unit test asserting no realloc across N flushes (use `Vec::capacity`) | 12 | P2 |
-| B5 | P2.5 | Run verify-gate locally (fmt + clippy + test + doc) | 8 | P2 |
+| #   | Sub  | Task                                                                                 | Effort | Parent |
+| --- | ---- | ------------------------------------------------------------------------------------ | ------ | ------ |
+| B1  | P2.1 | Read `flush()` and `BufferInner` struct; locate the `mem::take` site                 | 5      | P2     |
+| B2  | P2.2 | Decide: `Vec::with_capacity` replacement vs slot in `BufferInner` for return-to-pool | 10     | P2     |
+| B3  | P2.3 | Implement chosen approach (likely: reserve on the new empty Vec using last capacity) | 12     | P2     |
+| B4  | P2.4 | Add unit test asserting no realloc across N flushes (use `Vec::capacity`)            | 12     | P2     |
+| B5  | P2.5 | Run verify-gate locally (fmt + clippy + test + doc)                                  | 8      | P2     |
 
 ### Tier C — Background flush worker (P1) — the linchpin
 
-| # | Sub | Task | Effort | Parent |
-|---|-----|------|--------|--------|
-| C1 | P1.1 | Read `append`, `flush`, `write_segment`, `Drop` impl end-to-end | 12 | P1 |
-| C2 | P1.2 | Design `FlushRequest { start_seq, end_seq, events: Vec<T> }` type (private, in `lib.rs`) | 10 | P1 |
-| C3 | P1.3 | Decide error-propagation contract: `Mutex<Option<SegmentError>>` on `BufferInner` | 12 | P1 |
-| C4 | P1.4 | Add fields to `SegmentBuffer`: `flush_tx`, `flush_rx` (worker-internal), `worker_handle: Option<JoinHandle>` | 10 | P1 |
-| C5 | P1.5 | Spawn worker thread in `open()` after `recover()` succeeds, before returning | 12 | P1 |
-| C6 | P1.6 | Worker loop: `rx.recv()` → `write_segment` → `fetch_add(approx_disk_bytes)` → invalidate scan cache → store error on failure | 12 | P1 |
-| C7 | P1.7 | Refactor `flush()`: take Vec under lock, compute seqs, **send on channel** instead of inline write | 12 | P1 |
-| C8 | P1.8 | Surface stored worker error on next `append`/`flush`/`read_from` call (return early with the error) | 12 | P1 |
-| C9 | P1.9 | Implement `Drop`: drop `flush_tx` (signals closure), `worker_handle.join()`, then release `flock` | 12 | P1 |
-| C10 | P1.10 | Verify drain-on-drop invariant: every `append()`-returned seq is on disk before `Drop` returns | 12 | P1 |
-| C11 | P1.11 | Bounded channel capacity decision (e.g. 16) — this is the implicit backpressure | 10 | P1 |
-| C12 | P1.12 | Handle `SendError` on a full/closed channel (worker died) — surface as `SegmentError::Io` | 10 | P1 |
-| C13 | P1.13 | Add `debug!` logs symmetric to the existing flush log | 8 | P1 |
-| C14 | P1.14 | Manual smoke test: append 10k items, drop buffer, reopen, verify all present | 12 | P1 |
-| C15 | P1.15 | Run verify-gate locally (fmt + clippy + test + doc + loom) | 12 | P1 |
+| #   | Sub   | Task                                                                                                                         | Effort | Parent |
+| --- | ----- | ---------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| C1  | P1.1  | Read `append`, `flush`, `write_segment`, `Drop` impl end-to-end                                                              | 12     | P1     |
+| C2  | P1.2  | Design `FlushRequest { start_seq, end_seq, events: Vec<T> }` type (private, in `lib.rs`)                                     | 10     | P1     |
+| C3  | P1.3  | Decide error-propagation contract: `Mutex<Option<SegmentError>>` on `BufferInner`                                            | 12     | P1     |
+| C4  | P1.4  | Add fields to `SegmentBuffer`: `flush_tx`, `flush_rx` (worker-internal), `worker_handle: Option<JoinHandle>`                 | 10     | P1     |
+| C5  | P1.5  | Spawn worker thread in `open()` after `recover()` succeeds, before returning                                                 | 12     | P1     |
+| C6  | P1.6  | Worker loop: `rx.recv()` → `write_segment` → `fetch_add(approx_disk_bytes)` → invalidate scan cache → store error on failure | 12     | P1     |
+| C7  | P1.7  | Refactor `flush()`: take Vec under lock, compute seqs, **send on channel** instead of inline write                           | 12     | P1     |
+| C8  | P1.8  | Surface stored worker error on next `append`/`flush`/`read_from` call (return early with the error)                          | 12     | P1     |
+| C9  | P1.9  | Implement `Drop`: drop `flush_tx` (signals closure), `worker_handle.join()`, then release `flock`                            | 12     | P1     |
+| C10 | P1.10 | Verify drain-on-drop invariant: every `append()`-returned seq is on disk before `Drop` returns                               | 12     | P1     |
+| C11 | P1.11 | Bounded channel capacity decision (e.g. 16) — this is the implicit backpressure                                              | 10     | P1     |
+| C12 | P1.12 | Handle `SendError` on a full/closed channel (worker died) — surface as `SegmentError::Io`                                    | 10     | P1     |
+| C13 | P1.13 | Add `debug!` logs symmetric to the existing flush log                                                                        | 8      | P1     |
+| C14 | P1.14 | Manual smoke test: append 10k items, drop buffer, reopen, verify all present                                                 | 12     | P1     |
+| C15 | P1.15 | Run verify-gate locally (fmt + clippy + test + doc + loom)                                                                   | 12     | P1     |
 
 ### Tier D — Worker safety net (T1/T2/T3 + P6)
 
-| # | Sub | Task | Effort | Parent |
-|---|-----|------|--------|--------|
-| D1 | T3.1 | Add property test: append N items, drop, reopen, read_from(0, N) == expected seqs | 12 | T3 |
-| D2 | T3.2 | Run the property test under proptest with 256 cases | 5 | T3 |
-| D3 | T2.1 | Write stress test: 8 writers, batch=1 (aggressive flush), 100k items, assert no loss | 12 | T2 |
-| D4 | T2.2 | Add channel-saturation case: small channel depth, measure p99 append latency doesn't spike | 12 | T2 |
-| D5 | T2.3 | Assert `store_pressure()` stays bounded during saturation (channel drains eventually) | 12 | T2 |
-| D6 | T1.1 | Read existing `tests/loom.rs` and the `MockStore` harness | 8 | T1 |
-| D7 | T1.2 | Loom model: 1 append thread + 1 worker thread, bounded channel of depth 2 | 12 | T1 |
-| D8 | T1.3 | Loom assertion: every `append()` seq is either (a) on disk in `MockStore` or (b) in the channel or `unflushed` at end of schedule | 12 | T1 |
-| D9 | T1.4 | Loom assertion: `Drop` (simulated as end-of-scope) leaves zero items in flight | 12 | T1 |
-| D10 | T1.5 | Run loom with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 8 | T1 |
-| D11 | P6.1 | Add `benches/bench_append_worker.rs` mirroring `bench_append` but measuring p99 not just mean | 12 | P6 |
-| D12 | P6.2 | Run both benches, capture median + p99, save to `docs/perf/2026-07-21_worker_ab.md` | 12 | P6 |
-| D13 | P6.3 | Compute the inline-vs-worker ratio; if <1.5× improvement on p99, revisit design | 8 | P6 |
+| #   | Sub  | Task                                                                                                                              | Effort | Parent |
+| --- | ---- | --------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| D1  | T3.1 | Add property test: append N items, drop, reopen, read_from(0, N) == expected seqs                                                 | 12     | T3     |
+| D2  | T3.2 | Run the property test under proptest with 256 cases                                                                               | 5      | T3     |
+| D3  | T2.1 | Write stress test: 8 writers, batch=1 (aggressive flush), 100k items, assert no loss                                              | 12     | T2     |
+| D4  | T2.2 | Add channel-saturation case: small channel depth, measure p99 append latency doesn't spike                                        | 12     | T2     |
+| D5  | T2.3 | Assert `store_pressure()` stays bounded during saturation (channel drains eventually)                                             | 12     | T2     |
+| D6  | T1.1 | Read existing `tests/loom.rs` and the `MockStore` harness                                                                         | 8      | T1     |
+| D7  | T1.2 | Loom model: 1 append thread + 1 worker thread, bounded channel of depth 2                                                         | 12     | T1     |
+| D8  | T1.3 | Loom assertion: every `append()` seq is either (a) on disk in `MockStore` or (b) in the channel or `unflushed` at end of schedule | 12     | T1     |
+| D9  | T1.4 | Loom assertion: `Drop` (simulated as end-of-scope) leaves zero items in flight                                                    | 12     | T1     |
+| D10 | T1.5 | Run loom with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`                                           | 8      | T1     |
+| D11 | P6.1 | Add `benches/bench_append_worker.rs` mirroring `bench_append` but measuring p99 not just mean                                     | 12     | P6     |
+| D12 | P6.2 | Run both benches, capture median + p99, save to `docs/perf/2026-07-21_worker_ab.md`                                               | 12     | P6     |
+| D13 | P6.3 | Compute the inline-vs-worker ratio; if <1.5× improvement on p99, revisit design                                                   | 8      | P6     |
 
 ### Tier E — Documentation sync (D1-D4)
 
-| # | Sub | Task | Effort | Parent |
-|---|-----|------|--------|--------|
-| E1 | D1.1 | Add row to FEATURES.md "Core queue": "Background flush worker" with status + notes | 8 | D1 |
-| E2 | D1.2 | Add row to FEATURES.md "Core queue": "Unflushed Vec recycling" | 5 | D1 |
-| E3 | D2.1 | Draft AGENTS.md "Worker invariant" section (drain-on-drop, error propagation, channel depth) | 12 | D2 |
-| E4 | D2.2 | Cross-link from existing "Critical concurrency invariant" section | 5 | D2 |
-| E5 | D4.1 | Add worker section to `docs/PERFORMANCE.md` with the bench ratio from P6 | 12 | D4 |
-| E6 | D4.2 | Note the channel-depth-as-backpressure design decision | 8 | D4 |
-| E7 | D3.1 | Draft CHANGELOG `[Unreleased]` entry covering P1, P2, P3, plus the new bench | 12 | D3 |
-| E8 | D3.2 | Verify the entry matches the actual code (symbol names, default behavior) | 5 | D3 |
+| #   | Sub  | Task                                                                                         | Effort | Parent |
+| --- | ---- | -------------------------------------------------------------------------------------------- | ------ | ------ |
+| E1  | D1.1 | Add row to FEATURES.md "Core queue": "Background flush worker" with status + notes           | 8      | D1     |
+| E2  | D1.2 | Add row to FEATURES.md "Core queue": "Unflushed Vec recycling"                               | 5      | D1     |
+| E3  | D2.1 | Draft AGENTS.md "Worker invariant" section (drain-on-drop, error propagation, channel depth) | 12     | D2     |
+| E4  | D2.2 | Cross-link from existing "Critical concurrency invariant" section                            | 5      | D2     |
+| E5  | D4.1 | Add worker section to `docs/PERFORMANCE.md` with the bench ratio from P6                     | 12     | D4     |
+| E6  | D4.2 | Note the channel-depth-as-backpressure design decision                                       | 8      | D4     |
+| E7  | D3.1 | Draft CHANGELOG `[Unreleased]` entry covering P1, P2, P3, plus the new bench                 | 12     | D3     |
+| E8  | D3.2 | Verify the entry matches the actual code (symbol names, default behavior)                    | 5      | D3     |
 
 ### Tier F — Examples + final gate
 
-| # | Sub | Task | Effort | Parent |
-|---|-----|------|--------|--------|
-| F1 | P4.1 | Update `examples/scaling.rs` to A/B the worker (CLI flag or env var) | 12 | P4 |
-| F2 | P4.2 | Update `examples/backpressure.rs` to show channel-saturation behavior | 12 | P4 |
-| F3 | F.1 | Full verify-gate: `cargo fmt --all -- --check` | 5 | gate |
-| F4 | F.2 | `cargo clippy --all-targets --features encryption -- -D warnings` | 8 | gate |
-| F5 | F.3 | `cargo test --no-fail-fast --features encryption` | 12 | gate |
-| F6 | F.4 | `cargo doc --no-deps --features encryption` | 5 | gate |
-| F7 | F.5 | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 12 | gate |
-| F8 | F.6 | `gh run list --limit 4` — confirm CI green on master | 5 | gate |
+| #   | Sub  | Task                                                                      | Effort | Parent |
+| --- | ---- | ------------------------------------------------------------------------- | ------ | ------ |
+| F1  | P4.1 | Update `examples/scaling.rs` to A/B the worker (CLI flag or env var)      | 12     | P4     |
+| F2  | P4.2 | Update `examples/backpressure.rs` to show channel-saturation behavior     | 12     | P4     |
+| F3  | F.1  | Full verify-gate: `cargo fmt --all -- --check`                            | 5      | gate   |
+| F4  | F.2  | `cargo clippy --all-targets --features encryption -- -D warnings`         | 8      | gate   |
+| F5  | F.3  | `cargo test --no-fail-fast --features encryption`                         | 12     | gate   |
+| F6  | F.4  | `cargo doc --no-deps --features encryption`                               | 5      | gate   |
+| F7  | F.5  | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 12     | gate   |
+| F8  | F.6  | `gh run list --limit 4` — confirm CI green on master                      | 5      | gate   |
 
 **Fine-breakdown totals:** 57 atomic tasks. Sum of efforts ≈ 21 hours, matching §3.
 
@@ -276,14 +276,14 @@ Each batch ends with `git status` + a verify-gate pass before the next begins. T
 
 ## 7. Risk register
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Worker thread panic kills the channel and silently drops future flushes | Medium | Critical (data loss) | Surface as `SegmentError` on next call; `JoinHandle` is joined on `Drop`; tested in T3 |
-| Drain-on-drop deadlock (worker waits on closed channel while Drop waits on worker) | Medium | High (buffer never drops) | Drop `tx` first; worker `recv()` returns `Err` on close; explicit timeout in debug builds |
-| Channel send cost exceeds inline savings for small batches | Low-Medium | Medium (regression) | Bench A/B (P6) is gating; decision point in §5 graph |
-| `crossbeam-channel` violates MSRV 1.86 | Low | High (CI red) | MSRV check (Tier A.8-A.10) before any worker code |
-| `Send` bound on `FlushRequest` requires `T: Send` (already in trait bound) | None | None | `T: Send` is already required by `SegmentBuffer<T>` |
-| Backpressure behavior surprises users (channel full → `append` blocks?) | Medium | Medium | Documented in D2 + D4; examples in P4; the channel depth is the policy |
+| Risk                                                                               | Likelihood | Impact                    | Mitigation                                                                                |
+| ---------------------------------------------------------------------------------- | ---------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| Worker thread panic kills the channel and silently drops future flushes            | Medium     | Critical (data loss)      | Surface as `SegmentError` on next call; `JoinHandle` is joined on `Drop`; tested in T3    |
+| Drain-on-drop deadlock (worker waits on closed channel while Drop waits on worker) | Medium     | High (buffer never drops) | Drop `tx` first; worker `recv()` returns `Err` on close; explicit timeout in debug builds |
+| Channel send cost exceeds inline savings for small batches                         | Low-Medium | Medium (regression)       | Bench A/B (P6) is gating; decision point in §5 graph                                      |
+| `crossbeam-channel` violates MSRV 1.86                                             | Low        | High (CI red)             | MSRV check (Tier A.8-A.10) before any worker code                                         |
+| `Send` bound on `FlushRequest` requires `T: Send` (already in trait bound)         | None       | None                      | `T: Send` is already required by `SegmentBuffer<T>`                                       |
+| Backpressure behavior surprises users (channel full → `append` blocks?)            | Medium     | Medium                    | Documented in D2 + D4; examples in P4; the channel depth is the policy                    |
 
 ---
 
@@ -357,5 +357,6 @@ atomic shutdown flag and a final synchronous flush before exit.
 
 The Pareto ranking in §3 still holds: the 1% effort lever was the flush
 worker. The resolution is that the 1% lever is the **pattern** (FlushPolicy::Manual
-+ caller thread), not a library feature. The user gets the same p99 win;
-the crate keeps its identity.
+
+- caller thread), not a library feature. The user gets the same p99 win;
+  the crate keeps its identity.
