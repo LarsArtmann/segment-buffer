@@ -979,6 +979,10 @@ where
                 return Ok(());
             }
             let events = std::mem::take(&mut inner.unflushed);
+            // Recycle the allocation: the next batch is likely the same size,
+            // so reserve the old capacity up front instead of forcing
+            // `append()` to grow the empty Vec back through log2(N) reallocs.
+            inner.unflushed.reserve(events.capacity());
             let count = events.len() as u64;
             let end_seq = inner.next_seq - 1;
             let start_seq = end_seq + 1 - count;

@@ -92,6 +92,39 @@ fn append_and_flush() {
 }
 
 #[test]
+fn flush_preserves_unflushed_capacity_for_next_batch() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: None,
+        },
+    )
+    .expect("Failed to create buffer");
+
+    // Append a batch of 100 items, then flush.
+    for i in 0..100 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+
+    // After flush, `unflushed` should have been pre-allocated with the
+    // previous batch's capacity, so subsequent appends don't trigger
+    // log2(N) reallocs.
+    let inner = buf.inner.lock();
+    assert!(
+        inner.unflushed.capacity() >= 100,
+        "expected recycled capacity >= 100 after flush, got {}; \
+         the per-flush realloc regression returned",
+        inner.unflushed.capacity()
+    );
+}
+
+#[test]
 fn auto_flush_at_batch_threshold() {
     let tmp = TempDir::new().unwrap();
     let buf = test_buffer(tmp.path());
