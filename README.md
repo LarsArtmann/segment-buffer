@@ -161,9 +161,8 @@ buffer is holding the backlog until the cloud endpoint recovers.
 ## Comparison
 
 _Comparison tables rot. This one was written against the versions current as of
-2026-07; verify against the upstream crates before making a storage decision._
-
-_Reframed for the cloud-sync producer-side buffer target. Comparison tables rot; verify upstream before deciding._
+2026-07; verify against the upstream crates before making a storage decision.
+Reframed for the cloud-sync producer-side buffer target._
 
 | Feature         | segment-buffer                          | yaque                     | disk_backed_queue      |
 | --------------- | --------------------------------------- | ------------------------- | ---------------------- |
@@ -177,6 +176,12 @@ _Reframed for the cloud-sync producer-side buffer target. Comparison tables rot;
 | Encryption      | optional (AES-GCM + XChaCha20-Poly1305) | no                        | no                     |
 
 ## Status
+
+**v0.5.1** _(current)_ — metadata-only patch that finishes the v0.5.0
+reframing on the highest-visibility surfaces: the `Cargo.toml` description and
+keywords (crates.io search), the crate-root rustdoc, and the `SegmentBuffer<T>`
+struct doc all now lead with the cloud-sync positioning. No API change, no
+on-disk format change, no migration. See [CHANGELOG.md](CHANGELOG.md).
 
 **v0.5.0** — the **cloud-sync throughput batch** ships the 2026-07-20
 reframing: single-process throughput buffer for cloud sync,

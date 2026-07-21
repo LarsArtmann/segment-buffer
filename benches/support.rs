@@ -3,6 +3,9 @@
 //! Each benchmark file is compiled as a separate binary, so we pull this
 //! module in via `#[path = "support.rs"] mod support;` — it is never built
 //! on its own.
+//!
+//! These helpers are bench-internal and not part of the crate's public API;
+//! `missing_panics_doc` / `missing_errors_doc` are not enforced here.
 
 use segment_buffer::{SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
@@ -24,21 +27,21 @@ pub fn item(n: u64) -> Item {
     }
 }
 
-/// The shared benchmark config. `max_batch_events` is the only knob that varies
-/// between benchmarks, so it is the single parameter; everything else is pinned
-/// for cross-target consistency.
-pub fn config(max_batch_events: usize) -> SegmentConfig {
+/// The shared benchmark config. The `flush_at_batch` argument is the only knob
+/// that varies between benchmarks, so it is the single parameter; everything
+/// else is pinned for cross-target consistency.
+pub fn config(flush_at_batch: usize) -> SegmentConfig {
     SegmentConfig::builder()
-        .flush_at_batch_size(max_batch_events)
+        .flush_at_batch_size(flush_at_batch)
         .max_size_bytes(u64::MAX)
         .compression_level(3)
         .build()
 }
 
 /// Open a buffer in a fresh temp directory using [`config`].
-pub fn open_buffer(max_batch_events: usize) -> (SegmentBuffer<Item>, tempfile::TempDir) {
+pub fn open_buffer(flush_at_batch: usize) -> (SegmentBuffer<Item>, tempfile::TempDir) {
     let tmp = tempfile::tempdir().unwrap();
-    let buf = SegmentBuffer::<Item>::open(tmp.path(), config(max_batch_events)).unwrap();
+    let buf = SegmentBuffer::<Item>::open(tmp.path(), config(flush_at_batch)).unwrap();
     (buf, tmp)
 }
 

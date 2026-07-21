@@ -6,7 +6,7 @@ Concise, enduring context for working in `segment-buffer`. Read once, internaliz
 
 A single-crate **Rust library** (not a binary): `SegmentBuffer<T>` — a high-throughput **local buffer for cloud sync**. Single-process by design. Spools in-memory batches to zstd-compressed CBOR segment files with ack-based deletion, filename-based crash recovery, configurable durability, and optional encryption. Generic over `T: Serialize + DeserializeOwned + Clone + Send` (`'static` is implied by `DeserializeOwned`, not required by the mutex — see TODO_LIST.md "Investigation"). Extracted from monitor365.
 
-**Product positioning (2026-07-20 reframing):** the cloud is the durable layer; this crate is the local throughput buffer in front of it. The README leads with this. The old framing ("durable bounded queue ... crash recovery first") under-sold the actual target use case and over-promised on durability the code doesn't fully deliver (see [Durability model](#durability-model-proposed) below).
+**Product positioning (2026-07-20 reframing):** the cloud is the durable layer; this crate is the local throughput buffer in front of it. The README leads with this. The old framing ("durable bounded queue ... crash recovery first") under-sold the actual target use case and over-promised on durability the code doesn't fully deliver (see [Durability model](#durability-model-shipped-in-v050) below).
 
 ## Single-process invariant (enforced since v0.5.0)
 
@@ -100,6 +100,10 @@ cargo bench --bench bench_recover
 # Docs (CI builds with the feature so AesGcmCipher is visible)
 cargo doc --no-deps --features encryption
 
+# Scaling test (NOT part of the gate; takes 15–45s at 100M scale)
+cargo run --release --example scaling -- 10000000   # 10M
+cargo run --release --example scaling -- 100000000 10000 1  # 100M, batch 10k, zstd-1
+
 # Property tests (run as part of cargo test, but can be increased)
 cargo test --no-fail-fast --features encryption -- property
 
@@ -131,9 +135,9 @@ nix build .#checks.x86_64-linux.test   # run just the test check
 ## Feature flags
 
 - `default = []`
-- `encryption` — pulls in `aes-gcm` + `rand`, exposes `AesGcmCipher`. The `SegmentCipher` **trait** is always available; only the AES-256-GCM impl is gated.
+- `encryption` — pulls in `aes-gcm` + `chacha20poly1305` + `rand`, exposing `AesGcmCipher` and `XChaCha20Poly1305Cipher`. The `SegmentCipher` **trait** is always available; only the two built-in cipher impls are gated.
 
-**Known false-positive**: `rust-analyzer` will report `unresolved import segment_buffer::AesGcmCipher` in `examples/encrypted.rs` and a "configured out" hint at `src/lib.rs:32`. This is **not a bug** — rust-analyzer doesn't enable the feature. Real builds with `--features encryption` compile cleanly.
+**Known false-positive**: `rust-analyzer` will report `unresolved import segment_buffer::AesGcmCipher` (and `XChaCha20Poly1305Cipher`) in `examples/encrypted.rs` and a "configured out" hint at the cipher `pub use` in `src/lib.rs`. This is **not a bug** — rust-analyzer doesn't enable the feature. Real builds with `--features encryption` compile cleanly.
 
 ## Architecture & data flow
 
@@ -237,13 +241,13 @@ src/
   lib.rs           SegmentBuffer, SegmentConfig, BufferStats, BufferInner; orchestrates lock + flush policy + Arc<dyn SegmentStore>
   segment.rs       On-disk format (PURE, no I/O): envelope, SegmentRange, filename/parse, encode_segment, decode_segment, encode_payload, decode_payload, wrap/unwrap_envelope
   store.rs         SegmentStore trait + RealStore impl: the I/O boundary. create_dir_all / scan / clean_tmp / segment_size / remove_segment / write_atomic / read_bytes
-  cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher (feature-gated impl in `mod private`)
+  cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher + XChaCha20Poly1305Cipher (both feature-gated, impls in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
-  tests.rs         `mod tests` — 32 unit tests
-  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues (8 properties)
-examples/          basic_usage, backpressure, encrypted (feature-gated)
-benches/           4 criterion targets + shared support.rs
-fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery); requires nightly
+  tests.rs         `mod tests` — 81 unit tests (`grep -c '#[test]' src/tests.rs`)
+  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / FlushPolicy (15 properties; `grep -c '#[test]' src/property_tests.rs`)
+examples/          basic_usage, backpressure, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput)
+benches/           8 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy) + shared support.rs
+fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery, fuzz_parse_filename, fuzz_envelope, fuzz_append_all); requires nightly
 FEATURES.md        Honest capability inventory by status
 TODO_LIST.md       Short/mid-term improvement tasks with status
 ROADMAP.md         Long-term direction and explicit non-goals
@@ -256,7 +260,7 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 
 - `#![warn(missing_docs)]` is on — every public item needs a doc comment.
 - Doc comment style uses `# Errors` and `# Example` sections (see `SegmentBuffer::open`).
-- Tests use `tempfile::TempDir` and a `test_config(max_size_bytes)` helper with small `max_batch_events: 4` and `flush_interval_secs: 3600` (effectively disables auto-flush).
+- Tests use `tempfile::TempDir` and a `test_config(max_size_bytes)` helper that builds a `SegmentConfig` via `FlushPolicy::Batch(4)` (small batches for unit-test isolation). Concurrency/stress tests use `FlushPolicy::Manual` instead — see rule 7.
 - The private in-memory field is `unflushed: Vec<T>` (items not yet written to a segment) — distinct from the public `pending_count()` backlog metric. Do not confuse the two.
 - The top-level doc example is `#![no_run]`-gated.
 - Lint posture is strict: `RUSTFLAGS=-D warnings` plus clippy `-D warnings`.
@@ -269,7 +273,7 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 - **MSRV consistency guard:** `scripts/check-msrv.sh` asserts that `Cargo.toml rust-version`, `ci.yml` matrix + msrv job, `flake.nix` msrv shell pin, and `docs/MSRV.md` headline all agree. Run by the CI `msrv-consistency` job to prevent drift.
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
-- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. Covers only the in-memory append + `stats()` snapshot path — loom does not model the filesystem, so `flush`/`delete_acked`/`read_from`/`recover` are covered by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs` instead. Use `--release` — loom's schedule enumeration is slow in debug.
+- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. 9 tests covering BOTH the in-memory hot path (`append`/`append_all`/`stats` snapshot) AND, since v0.5.0, the `delete_acked` + `append` interleaving (4 tests that exhaustively enumerate every two-thread schedule via a loom-aware `MockStore`). `flush`/`recover`/`read_from` still touch byte-level I/O that loom does not model, so they stay covered _statistically_ by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs`. Use `--release` — loom's schedule enumeration is slow in debug.
 
 ## Releases
 
@@ -279,6 +283,10 @@ Two surfaces, two responsibilities:
 
 - **crates.io:** `.github/workflows/publish.yml` publishes automatically on `git push origin v*.*.*` (needs `CARGO_REGISTRY_TOKEN` secret). To backfill a missing version manually, `git worktree add --detach <dir> <tag>` then `cargo publish --features encryption` from that worktree (the tag's `Cargo.toml` version must match the tag). Verify with `cargo publish --dry-run --features encryption` first.
 - **GitHub releases:** NOT automated by any workflow. They are created manually. `gh release create` fails on this repo demanding the `workflow` scope (a false-positive scope check); use `gh api --method POST repos/LarsArtmann/segment-buffer/releases -f tag_name=vX.Y.Z -f name=... -f body=...` instead (only `repo` scope needed). Do NOT pass `target_commitish` pointing at a tag name — it 404s; the tag is resolved from `tag_name` alone.
+
+## Documentation health cadence
+
+Living docs (`README.md`, `AGENTS.md`, `FEATURES.md`, `TODO_LIST.md`, `ROADMAP.md`, `CHANGELOG.md`, `docs/DOMAIN_LANGUAGE.md`) drift against code every release. The `scripts/verify-gate.sh` gate now includes `lychee` (markdown link check) and `scripts/check-html-root-url.sh` (catches the `html_root_url` rot vector). Run `scripts/verify-gate.sh` **before every release tag** and re-run the docs-health skill after any release that adds/renames/removes a public item, a feature, or a dependency — the three classes of change that most reliably produce doc drift. Historical docs under `docs/{status,planning,perf}/` are point-in-time snapshots and are brought current by the `update-old-docs` skill (non-destructive annotation), never rewritten in place.
 
 ## Verification discipline (hard rules)
 

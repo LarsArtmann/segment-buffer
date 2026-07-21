@@ -143,7 +143,7 @@ DurabilityPolicy::Segment` (or `Default::default()`).
 ### Internal (v0.5.0)
 
 - **`fs4` dep added** for cross-platform advisory file locking (replaces
-  the unmaintained `fs2`). Pure-Rust via `rustiy`, no `libc` dep.
+  the unmaintained `fs2`). Pure-Rust via `rustix`, no `libc` dep.
 - **`chacha20poly1305` dep added** under the `encryption` feature.
 - **Nix CI runs on macOS** (aarch64-darwin via macos-latest runner) in
   addition to linux — catches platform-specific regressions earlier.

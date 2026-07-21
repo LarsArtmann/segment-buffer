@@ -46,6 +46,10 @@ cargo +nightly fuzz run fuzz_recovery       -- -max_total_time=60
 | `fuzz_corrupted_read` | 187,811 | 60s  | 0       | 392             |
 | `fuzz_recovery`       | 942,719 | 60s  | 0       | —               |
 
+The remaining three targets were verified in the same session at a shorter
+16s budget (zero crashes each): `fuzz_parse_filename` (~17M runs),
+`fuzz_envelope` (~15M runs), `fuzz_append_all` (~771k runs).
+
 libFuzzer recovered the `SBF1` magic dictionary entry organically from
 `fuzz_corrupted_read`, confirming the envelope-detection path is exercised.
 
@@ -55,12 +59,15 @@ libFuzzer recovered the `SBF1` magic dictionary entry organically from
 | --------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `fuzz_corrupted_read` | After overwriting an on-disk segment with arbitrary bytes, `read_from` returns `Err` and never panics.         |
 | `fuzz_recovery`       | `SegmentBuffer::open` over a directory containing arbitrary files (valid, corrupt, or mis-named) never panics. |
+| `fuzz_parse_filename` | `parse_filename` round-trips for valid filenames; arbitrary input returns `Err`, never panics.                 |
+| `fuzz_envelope`       | `wrap_envelope` / `unwrap_envelope` round-trip; arbitrary bytes never panic.                                   |
+| `fuzz_append_all`     | `append_all` over arbitrary iterator behaviour never panics; `pending_count` / `last_seq` advance correctly.   |
 
 Corpus and crash artifacts are written under `fuzz/<target>/` (gitignored).
 
 ## CI integration
 
-Not yet wired. The plan is a nightly scheduled GitHub workflow
-(`.github/workflows/fuzz.yml`) that runs both apps for ~5 minutes on every
-midnight run, plus proptest analogues already run on every `cargo test`.
-Tracked in [TODO_LIST.md](../TODO_LIST.md).
+Landed in **v0.4.1**: `.github/workflows/fuzz.yml` is a nightly scheduled
+GitHub workflow that runs the fuzz targets for a bounded window on every
+midnight run. Proptest analogues run on every `cargo test` as additional
+coverage.

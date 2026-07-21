@@ -32,11 +32,15 @@ cargo run --example basic_usage
 cargo run --example backpressure
 cargo run --example encrypted --features encryption   # REQUIRES the feature flag
 
-# Benchmarks (criterion)
+# Benchmarks (criterion) — 8 targets declared in Cargo.toml
 cargo bench --bench bench_append
 cargo bench --bench bench_read_from
+cargo bench --bench bench_read_vs_for_each
 cargo bench --bench bench_delete_acked
 cargo bench --bench bench_recover
+cargo bench --bench bench_stats
+cargo bench --bench bench_append_all
+cargo bench --bench bench_durability_policy
 
 # Docs (build with the feature so AesGcmCipher is visible)
 cargo doc --no-deps --features encryption

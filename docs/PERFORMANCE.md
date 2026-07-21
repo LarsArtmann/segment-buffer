@@ -47,6 +47,30 @@ test, not the buffer construction.
 | `bench_append_all`        | `append_all` batch primitive vs loop of `append`                                                       |
 | `bench_durability_policy` | _(v0.5.0)_ A/B/C `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush                          |
 
+## Scaling test (end-to-end, 1M–100M scale)
+
+The criterion benches above are micro-benchmarks (max 10k items, fresh buffer
+per iteration). For real-world scaling — the full cloud-sync lifecycle at
+millions of items — run the standalone scaling driver:
+
+```bash
+cargo run --release --example scaling                       # 1M items, batch 5000, zstd-3
+cargo run --release --example scaling -- 10000000           # 10M
+cargo run --release --example scaling -- 100000000 10000 1  # 100M, batch 10k, zstd-1
+```
+
+It runs three timed phases — **load** (`append_all` + `flush`), **recover**
+(drop + reopen), **drain** (`read_from` + `delete_acked`) — and verifies
+sequence integrity (gap-free, in-order, exactly `count` items, disk drained
+to zero) at the end. Throughput is reported as items/sec and uncompressed
+MiB/sec per phase, plus segment count and recovery cost.
+
+This is **not** part of the verification gate (it takes 15–45s at 100M scale
+and needs real disk). Run it on the target deployment machine for numbers that
+reflect production. The `Throughput` durability policy is used by default
+(cloud-sync deployment); edit the `DURABILITY` constant in
+`examples/scaling.rs` to measure the fsync-bound `Maximal`/`Segment` regime.
+
 ## Interpreting the numbers
 
 ### Single-run, single-machine
@@ -69,9 +93,12 @@ proportion; absolutes do not.
 
 Every segment write prepends an 8-byte `SBF1` envelope. On large batches this
 is amortized to nothing; on single-item appends it is a measurable fraction of
-the per-write cost. The "append 30–65% slower vs v0.1.0" headline is dominated
-by this effect plus the stats bookkeeping that v0.2.0 introduced. The
-`FlushPolicy::Manual` + `append_all` path (v0.4.1) recovers most of this for
+the per-write cost. The v0.1.0→v0.2.0 "30–65% slower" headline was real at the
+time, but the 2026-07-20 PGO session (see
+[`perf/2026-07-20_hot-path-flamegraph.md`](./perf/2026-07-20_hot-path-flamegraph.md))
+pooled the zstd `CCtx` and made the crate **~2.3× faster than v0.1.0** on
+small batches — the old regression is more than reversed. The
+`FlushPolicy::Manual` + `append_all` path (v0.4.1) recovers further for
 bulk-load workloads by amortizing the lock + bookkeeping across the whole
 batch.
 
@@ -84,8 +111,12 @@ batch.
 
 ## What is NOT measured here
 
-- **Real-world throughput** under a specific workload. The benches are
-  micro-benchmarks, not end-to-end pipeline tests.
+- **Statistical rigor.** Both the benches and the scaling test are single-run,
+  single-machine numbers. There are no noise bars, no multi-machine matrix, no
+  p99 confidence intervals. Ratios are durable; absolutes are indicative.
 - **Memory allocation patterns.** Use `cargo flamegraph` or `dhat` for that.
-- **Disk I/O variance.** The benches use `tempfile` (typically tmpfs on CI),
-  which hides real disk latency. Production numbers will differ.
+- **Disk I/O variance on real hardware.** `cargo test` and the default bench
+  setup use `tempfile` (often tmpfs), which hides real disk latency. The
+  scaling test (`cargo run --release --example scaling`) closes this gap for
+  end-to-end lifecycle throughput, but micro-bench numbers still reflect tmpfs.
+  Production numbers on spinning disk or networked storage will differ.

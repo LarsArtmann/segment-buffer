@@ -32,7 +32,7 @@ any stateless AEAD or symmetric scheme. This doc covers:
 [ 12-byte nonce ][ ciphertext + 16-byte GCM tag ]
 ```
 
-- **Nonce**: 12 bytes, freshly random per `encrypt` call (uses `rand::rngs::OsRng`).
+- **Nonce**: 12 bytes, freshly random per `encrypt` call (via `rand::rng()`).
   The nonce is not secret; it is stored in plaintext at the head of the
   payload so `decrypt` can recover it.
 - **Ciphertext + tag**: AES-256-GCM over the plaintext bytes, with an empty
@@ -80,7 +80,7 @@ pub trait SegmentCipher: Send + Sync + Debug {
 
 1. **`encrypt ∘ decrypt` is identity on the plaintext.** Always. If
    `encrypt(p)` returns `c`, then `decrypt(c)` must return `Ok(p)`. The
-   buffer's read path does nottolerate asymmetry.
+   buffer's read path does not tolerate asymmetry.
 
 2. **Stateless and self-describing.** `decrypt` must recover the plaintext
    from the exact bytes returned by `encrypt`, with no external state. This
@@ -114,18 +114,14 @@ manually). Use an AEAD in practice.
 Drop-in replacement for AES-GCM using the `chacha20poly1305` crate. Same
 trait, same on-disk shape (`[12-byte nonce][ciphertext + 16-byte tag]`).
 
-```toml
-# Cargo.toml
-[dependencies]
-segment-buffer = { version = "0.4", features = ["encryption"] }
-chacha20poly1305 = "0.10"
-rand = "0.8"
-```
+The full runnable example lives at [`examples/bring_your_own_cipher.rs`](../examples/bring_your_own_cipher.rs)
+(`cargo run --example bring_your_own_cipher --features encryption`) — it is
+compiled by CI so the snippet cannot silently rot when `chacha20poly1305` or
+`rand` change their APIs. The struct is reproduced here for readability:
 
-```rust
+```rust,ignore
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::{Aead, Payload}};
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::Rng;
 use segment_buffer::{SegmentCipher, CipherError};
 use std::fmt;
 
@@ -140,12 +136,11 @@ impl ChaChaCipher {
 impl SegmentCipher for ChaChaCipher {
     fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CipherError> {
         let mut nonce_bytes = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = self.0
             .encrypt(nonce, Payload { msg: plaintext, aad: b"" })
             .map_err(|e| CipherError::msg(format!("chacha20poly1305 encrypt: {e}")))?;
-        // Prepend the nonce so decrypt can recover it.
         Ok(nonce_bytes.into_iter().chain(ciphertext).collect())
     }
 

@@ -60,13 +60,13 @@ builder, so new fields do not break callers.
 Edit `Cargo.toml`:
 
 ```toml
-version = "0.4.1"  # was 0.4.0
+version = "<new>"  # was <old>, e.g. 0.5.1 → 0.5.2
 ```
 
 Update `Cargo.lock` to match:
 
 ```bash
-cargo update -p segment-buffer --precise 0.4.1
+cargo update -p segment-buffer --precise <new>
 ```
 
 ### 2. Commit the version bump
@@ -107,11 +107,23 @@ git push origin v0.4.1
 
 ### 6. Create the GitHub release
 
+GitHub releases are **not** auto-created by any workflow on this repo (only
+crates.io publishing is automated). They must be created manually.
+
+`gh release create` fails on this repo demanding the `workflow` scope (a
+false-positive scope check). Use the REST API via `gh api` instead — it needs
+only `repo` scope:
+
 ```bash
-gh release create v0.4.1 --verify-tag \
-  --title "v0.4.1 — <summary>" \
-  --notes "$(cat release-notes-0.4.1.md)"
+gh api --method POST repos/LarsArtmann/segment-buffer/releases \
+  -f tag_name=v0.4.1 \
+  -f name="v0.4.1 — <summary>" \
+  -f body="$(cat release-notes-0.4.1.md)"
 ```
+
+Do **not** pass a `target_commitish` field pointing at a tag name — it 404s.
+The tag is resolved from `tag_name` alone. (See `AGENTS.md` → "Releases" for
+the full rationale.)
 
 For breaking releases, include a **Migration** section at the top of the notes
 with before/after code snippets.
