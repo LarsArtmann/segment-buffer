@@ -149,6 +149,8 @@ remaining filenames. No WAL, no metadata database.
 
 Note: today's code fsyncs the segment file's data but not the directory inode after rename, so `Segment` already has a real (small) crash window. `Maximal` closes it at the cost of one extra `dir.sync_all()` per flush. `Throughput` removes the per-flush fsync entirely.
 
+For the full set of performance levers (durability, flush policy, compression level, read path), see [Performance tuning](docs/PERFORMANCE.md#tuning-for-your-workload).
+
 ## Backpressure
 
 The crate ships **metrics, not policy**. `store_pressure()` returns

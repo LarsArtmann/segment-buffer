@@ -127,6 +127,109 @@ small batches — the old regression is more than reversed. The
 bulk-load workloads by amortizing the lock + bookkeeping across the whole
 batch.
 
+## Tuning for your workload
+
+The crate's target use case is the local throughput buffer in front of cloud
+sync. The cloud endpoint is normally the bottleneck; the levers below are for
+producers whose append or drain rate is gated by this buffer locally. They are
+all config-only — no code change, no format change, no new dependency.
+
+### 1. `DurabilityPolicy::Throughput` (biggest single win)
+
+The default `DurabilityPolicy::Segment` fsyncs the segment file's data on every
+flush. `Throughput` removes the fsync entirely. For cloud-sync deployments
+where the cloud endpoint holds the durable copy, this is the correct default —
+the local disk is a throughput buffer, not the system of record.
+
+```rust
+use segment_buffer::{DurabilityPolicy, SegmentConfig};
+
+let config = SegmentConfig::builder()
+    .durability(DurabilityPolicy::Throughput)
+    .build();
+```
+
+**When NOT to use `Throughput`:** when this buffer IS the last copy of the data
+(standalone queue deployments). Use `Maximal` instead — it fsyncs both the file
+and the directory inode after rename, closing the ~5–30s rename-window gap that
+`Segment` leaves open. See the README "Crash behavior" table for the full
+policy matrix.
+
+### 2. `FlushPolicy::Manual` + `append_all` (amortize the flush path)
+
+The default `FlushPolicy::Batch(1000)` auto-flushes when the in-memory batch
+crosses the threshold. The threshold-crossing append pays the full
+CBOR → zstd → cipher → `write_atomic` cost inline.
+
+For bulk-load workloads (a producer that appends in bursts), `Manual` flush
+policy + `append_all` amortizes the lock acquisition, encode, and file creation
+across the whole batch:
+
+```rust
+use segment_buffer::{FlushPolicy, SegmentConfig};
+
+let config = SegmentConfig::builder()
+    .flush_policy(FlushPolicy::Manual)
+    .build();
+
+// Append a full batch under one lock acquisition, then flush once.
+buffer.append_all(items)?;
+buffer.flush()?;
+```
+
+`append_all` assigns contiguous sequence numbers under a single mutex
+acquisition; `flush()` then writes one segment file. This beats N individual
+`append()` calls (N lock acquisitions) when the producer can batch.
+
+### 3. `compression_level(1)` (faster encode, marginal ratio loss)
+
+The default zstd level is **3** (fast with a good ratio). Level **1** is
+roughly 2–3× faster to encode with a marginal compression-ratio loss. For a
+local throughput buffer where ratio is secondary — segments are short-lived,
+drained to the cloud and deleted within hours — the encode speed often matters
+more:
+
+```rust
+let config = SegmentConfig::builder()
+    .compression_level(1)
+    .build();
+```
+
+Range is 1–22; higher levels trade encode speed for ratio. Level 1 is the
+practical floor for fastest encode; levels above ~10 are rarely worth the
+encode cost for a spooling buffer.
+
+### 4. `for_each_from` over `read_from` (drain-side hot path)
+
+`read_from(start, limit)` returns a `Vec<T>` — it allocates and clones every
+item. `for_each_from(start, limit, callback)` is a lending iterator that hands
+each `&(seq, T)` to your callback with **zero allocation** on the in-memory
+path. On 1k in-memory items, `for_each_from` is roughly **21× faster** than
+`read_from` (see [FEATURES.md](../FEATURES.md)).
+
+```rust,ignore
+buffer.for_each_from(0, 1000, |(seq, item)| {
+    // Your drain logic — no Vec allocation, no clone.
+    // Re-entry into the buffer here panics (re-entrancy guard).
+})?;
+```
+
+Use `read_from` when you need to own the items (e.g. sending across a thread
+boundary); use `for_each_from` when you process them in place (e.g. serializing
+to a cloud request body).
+
+### Ordering of impact
+
+For the cloud-sync deployment target, the levers rank roughly:
+
+1. `Throughput` — removes fsync from every flush (the single biggest constant).
+2. `Manual` + `append_all` — amortizes the flush path for bulk producers.
+3. `for_each_from` — removes allocation from the drain path.
+4. `compression_level(1)` — shaves encode time; marginal vs the above.
+
+If the cloud endpoint is the bottleneck (the common case), even lever 1 alone
+is enough — the buffer is no longer on the critical path.
+
 ## When to re-bench
 
 - After any change to the hot path (`append`, `flush`, `read_from`).
