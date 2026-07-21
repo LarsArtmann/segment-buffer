@@ -302,3 +302,60 @@ Each batch ends with `git status` + a verify-gate pass before the next begins. T
 - [ ] All three items removed from `TODO_LIST.md` (they now live in CHANGELOG)
 
 The release tag is a separate user-gated decision after this checklist is complete.
+
+---
+
+## Addendum (2026-07-21 ~09:00): Tier C scope pivoted — pattern over library worker
+
+**Decision:** Tier C (the background flush worker) was redesigned during
+execution. The library will NOT ship a built-in flush worker thread.
+Instead, `examples/background_flush.rs` demonstrates the recommended
+pattern: `FlushPolicy::Manual` + a caller-owned timer thread, with an
+atomic shutdown flag and a final synchronous flush before exit.
+
+**Why the pivot (the "this would be verschlimmbessern" argument):**
+
+1. **Identity preservation.** This crate's identity is "synchronous,
+   no async runtime, no hidden threads." A built-in worker thread would
+   add a per-buffer thread that every user pays for — including the
+   majority who don't need p99 optimization and already get enough from
+   `Throughput` + `append_all`.
+2. **Error propagation is strictly worse.** Inline flush returns errors
+   immediately on the failing call. A worker has to stash the error in
+   `Mutex<Option<SegmentError>>` and surface it on the next call —
+   delayed, ambiguous, and racy against the caller's retry logic.
+3. **Drain-on-drop + cancellation-safety is a large surface.** A worker
+   means joining on `Drop` before the `flock` releases; it means the
+   `MockStore` has to model worker handoff in loom; it means channel
+   saturation behavior becomes the crate's problem. None of this is
+   needed when the caller owns the thread.
+4. **The pattern already exists.** `FlushPolicy::Manual` + caller timer
+   achieves the same decoupling in ~30 lines of user code. The library
+   doesn't need to own it.
+
+**What this means for the plan:**
+
+- Tier C shipped as `examples/background_flush.rs` instead of as
+  `SegmentBuffer` internals. Done in commit a876ee2.
+- Tier D (worker safety net: loom drain-on-drop, stress saturation,
+  property test, A/B bench) is **cancelled**. The pattern needs no
+  library-side proof — the library's invariants are unchanged.
+- Tier E (docs sync) shrinks: FEATURES.md gets a row pointing at the
+  example instead of library worker rows; AGENTS.md gets a "Pattern:
+  background flush" note instead of a worker-invariant block; CHANGELOG
+  still covers the tuning guide, Vec recycling, and the example.
+- The "≥ 1.5× p99 improvement" gate no longer applies — there is no
+  library code to bench against a baseline. The bench burden is now the
+  user's, in their own deployment, against their own workload.
+
+**What was NOT cancelled:**
+
+- The tuning guide (Tier A) — shipped, stay shipped.
+- Vec recycling (Tier B) — shipped, stay shipped.
+- Docs sync (Tier E, reduced) — still needed.
+- Final verify gate (Tier F) — still needed.
+
+The Pareto ranking in §3 still holds: the 1% effort lever was the flush
+worker. The resolution is that the 1% lever is the **pattern** (FlushPolicy::Manual
++ caller thread), not a library feature. The user gets the same p99 win;
+the crate keeps its identity.

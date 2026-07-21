@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+Performance-focused batch: no API break, no on-disk format change, no new
+dependency. Three levers that make the cloud-sync deployment target faster
+by default and show producers how to remove the flush path from the append
+hot path.
+
+### Added
+
+- **Performance tuning guide** (`docs/PERFORMANCE.md` § "Tuning for your
+  workload"). Surfaces the four config-only Tier 0 levers (`DurabilityPolicy`,
+  `FlushPolicy`, `compression_level`, `for_each_from`) in impact order, each
+  with a code snippet and a "when NOT to use" guardrail. The README
+  crash-behavior table now cross-links to the section.
+- **`examples/background_flush.rs`** — the recommended pattern for
+  p99-sensitive producers: `FlushPolicy::Manual` + a caller-owned timer
+  thread with an atomic shutdown flag and a final synchronous flush before
+  exit. Achieves the same append/flush decoupling a library-internal worker
+  would, without adding a per-buffer thread, a channel, or delayed error
+  propagation to the crate. See
+  `docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md` §
+  "Addendum" for the design rationale.
+
+### Changed
+
+- **`flush()` now recycles the `unflushed` Vec capacity across flushes.**
+  Previously `std::mem::take` left the field at zero capacity, forcing the
+  next batch's `append()` calls through ~log2(N) reallocs. The new path
+  `reserve`s the previous batch's capacity inside the same lock scope as the
+  take — one upfront allocation replaces incremental growth. No public API
+  change, no new lock acquisition, no change to the concurrency contract.
+  Covered by a new unit test `flush_preserves_unflushed_capacity_for_next_batch`.
 
 ---
 

@@ -204,6 +204,10 @@ is exhaustively proven correct across every schedule of two threads by the loom 
 
 The crate **ships no admission policy**. `store_pressure()` returns `approx_disk_bytes / max_size_bytes ∈ [0.0, 1.0]`; `is_overloaded()` is just `> 0.9`. Callers define their own priority thresholds — see `examples/backpressure.rs` for the canonical pattern.
 
+## Flush offloading (pattern, not feature)
+
+The crate **does not ship a background flush worker**. The default `FlushPolicy::Batch(N)` runs the encode pipeline inline on the threshold-crossing `append()`. For p99-sensitive producers, the decoupling is a caller-owned `FlushPolicy::Manual` + timer thread — see `examples/background_flush.rs` for the canonical pattern (atomic shutdown flag, final sync flush before exit). A library-internal worker was considered and rejected: it would add a per-buffer thread (breaking the "synchronous, no hidden threads" identity), make error propagation strictly worse (sticky errors on next call vs immediate), and duplicate what `FlushPolicy::Manual` + a user timer already achieves. See `docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md` § "Addendum" for the full design rationale.
+
 ## Encryption on-disk format
 
 `AesGcmCipher` writes `[12-byte random nonce][ciphertext + 16-byte GCM tag]` as the segment **payload**. This payload is **byte-compatible with monitor365's `EncryptionKey` segment format** — do not change it without a migration story. `segment::decode_segment` rejects encrypted payloads shorter than `NONCE_LEN` (12) as `SegmentError::Integrity` with the offending path.

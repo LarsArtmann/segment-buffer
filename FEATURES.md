@@ -33,6 +33,7 @@ truth; this file tracks reality, not aspirations.
 | Disk-byte resync (`sync_disk_bytes`)                     | FULLY_FUNCTIONAL     | Re-stats the directory to correct drift from external file manipulation. Added in v0.4.1.                                                                      |
 | Accessors (`path`, `config`)                             | FULLY_FUNCTIONAL     | Expose the directory path and the opened config without `Debug`-parsing. Added in v0.4.1.                                                                      |
 | Backpressure metrics (`store_pressure`, `is_overloaded`) | FULLY_FUNCTIONAL     | Ratio of `approx_disk_bytes` to `max_size_bytes`. Admission policy is caller-defined.                                                                          |
+| `unflushed` Vec capacity recycling        | FULLY_FUNCTIONAL     | _(unreleased)_ `flush()` reserves the previous batch's capacity on the fresh empty `unflushed`, avoiding ~log2(N) reallocs on the next batch. No API change.   |
 | Single-process lock (`flock` at `open`)                  | FULLY_FUNCTIONAL     | _(v0.5.0)_ Exclusive `flock` on `<dir>/.segment-buffer.lock` via `fs4::FileExt::try_lock`. Fail-fast `SegmentError::Locked` on contention. Released on `Drop`. |
 | Compile-time `Send + Sync` of `SegmentBuffer<T>`         | FULLY_FUNCTIONAL     | Static assertion in `lib.rs` — adding a non-thread-safe field fails the build. Added in 0.2.0.                                                                 |
 
@@ -100,6 +101,13 @@ truth; this file tracks reality, not aspirations.
 | Signed commits                         | FULLY_FUNCTIONAL | _(v0.5.0)_ `git verify-commit HEAD` succeeds via `gpg.ssh.allowedSignersFile`.                  |
 | Nightly fuzz CI                        | FULLY_FUNCTIONAL | `.github/workflows/fuzz.yml`: scheduled cargo-fuzz runs. v0.4.1.                                |
 | Flake.lock auto-update                 | FULLY_FUNCTIONAL | `.github/workflows/update-flake-lock.yml`: weekly PR. v0.4.1.                                   |
+
+## Documentation & examples
+
+| Capability                                            | Status           | Notes                                                                                                                                                                         |
+| ----------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Performance tuning guide (`docs/PERFORMANCE.md` § Tuning) | FULLY_FUNCTIONAL | _(unreleased)_ Impact-ordered guide to the four config-only Tier 0 levers: `DurabilityPolicy`, `FlushPolicy` + `append_all`, `compression_level`, `for_each_from`. |
+| `examples/background_flush.rs`                         | FULLY_FUNCTIONAL | _(unreleased)_ Recommended pattern for p99-sensitive producers: `FlushPolicy::Manual` + caller-owned timer thread. Demonstrates shutdown-flag + final-sync-before-exit. |
 
 ## Planned / worth considering
 
