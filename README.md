@@ -1,8 +1,20 @@
 # segment-buffer
 
+[![crates.io](https://img.shields.io/crates/v/segment-buffer.svg)](https://crates.io/crates/segment-buffer)
+[![docs.rs](https://docs.rs/segment-buffer/badge.svg)](https://docs.rs/segment-buffer)
+[![CI](https://github.com/LarsArtmann/segment-buffer/actions/workflows/ci.yml/badge.svg)](https://github.com/LarsArtmann/segment-buffer/actions/workflows/ci.yml)
+[![supply chain](https://github.com/LarsArtmann/segment-buffer/actions/workflows/supply-chain-report.yml/badge.svg)](https://github.com/LarsArtmann/segment-buffer/actions/workflows/supply-chain-report.yml)
+[![msrv 1.86](https://img.shields.io/static/v1?label=msrv&message=1.86&color=blue)](https://github.com/LarsArtmann/segment-buffer/blob/master/docs/MSRV.md)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 High-throughput **local buffer for cloud sync**. Single-process by design, durability-configurable, optional performant encryption, at-least-once delivery.
 
 **Extracted from monitor365 (private), proven on 597M+ events.**
+
+| Section                                                                                                        |                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [Why?](#why) · [Install](#install) · [Quickstart](#quickstart)                                                 | [Encryption](#encryption-at-rest) · [Cloud sync drain loop](#cloud-sync-the-at-least-once-drain-loop) |
+| [How it works](#how-it-works) · [Crash behavior](#crash-behavior-configurable) · [Backpressure](#backpressure) | [Comparison](#comparison) · [Status](#status) · [License](#license)                                   |
 
 ## Why?
 
@@ -16,15 +28,19 @@ There are many disk-backed queues in the Rust ecosystem, but none target this sh
 - **Optional performant encryption at rest** — AES-256-GCM (byte-compatible with monitor365) and XChaCha20-Poly1305 (extended 24-byte nonce, no 2³²-message limit per key; constant-time in software). `SegmentConfigBuilder::recommended_cipher(key)` installs XChaCha20-Poly1305 for new buffers; legacy AES-GCM segments still decrypt. Streaming/incremental cipher is a long-term direction.
 - **zstd + CBOR segment files** — efficient storage, filename-based crash recovery. `ls` the directory and you see the state; no WAL, no metadata DB.
 
-For cross-machine replicated queues or server-side fanout, use a different tool — this crate is the producer-side local buffer.
+**Use this when** you have a single-process producer that must spool items to disk and drain them to a cloud endpoint at its own pace — with crash recovery and at-least-once delivery.
+
+**Do not use this for** cross-machine replicated queues, multi-process coordination, or server-side fanout. The crate is single-process by design (one `flock` per buffer directory, enforced since v0.5.0); those workloads need a different tool.
 
 ## Install
 
 ```bash
 cargo add segment-buffer
-# optional, for the built-in AES-256-GCM cipher:
+# optional, for the built-in AES-256-GCM and XChaCha20-Poly1305 ciphers:
 cargo add segment-buffer --features encryption
 ```
+
+**MSRV:** 1.86 — see [docs/MSRV.md](docs/MSRV.md).
 
 ## Quickstart
 
@@ -50,14 +66,14 @@ let deleted = buffer.delete_acked(last_acked_seq)?;
 
 ### Encryption at rest
 
-Enable the `encryption` feature and supply any `SegmentCipher`. The built-in
-`AesGcmCipher` writes `[12-byte nonce][ciphertext + GCM tag]` per segment,
-byte-compatible with monitor365 so existing encrypted segments read without
-migration.
+Enable the `encryption` feature and supply any `SegmentCipher`. The recommended
+path for new buffers is `SegmentConfigBuilder::recommended_cipher(key)`, which
+installs **XChaCha20-Poly1305** (24-byte extended nonce, no 2³²-message limit
+per key, constant-time in software, no AES-NI dependency).
 
 ```rust,no_run
 # #![allow(unused)]
-# // Requires --features encryption. Without it, AesGcmCipher does not exist.
+# // Requires --features encryption. Without it, recommended_cipher does not exist.
 # #[cfg(not(feature = "encryption"))]
 # fn main() {}
 # #[cfg(feature = "encryption")]
@@ -65,22 +81,23 @@ migration.
 # use serde::{Deserialize, Serialize};
 # #[derive(Serialize, Deserialize, Clone)]
 # struct MyItem { id: u64 }
-use std::sync::Arc;
-use segment_buffer::{AesGcmCipher, SegmentBuffer, SegmentConfig};
+use segment_buffer::{SegmentBuffer, SegmentConfig};
 
-let key = [0u8; 32]; // 32-byte AES-256 key
-let cipher = AesGcmCipher::new(&key);
+let key = [0u8; 32]; // 32-byte key. In production, load from a KMS / secret store.
 // SegmentConfig is #[non_exhaustive]; the builder is the supported construction path.
-// As of the v0.5.0 batch in master, cipher is Arc<dyn SegmentCipher + Send + Sync>.
 let buffer = SegmentBuffer::<MyItem>::open(
     "/tmp/my-buffer",
-    SegmentConfig::builder().cipher(Arc::new(cipher)).build(),
+    SegmentConfig::builder().recommended_cipher(key).build(),
 )?;
 # Ok(())
 # }
 ```
 
-See `examples/encrypted.rs` for a runnable end-to-end example.
+For byte compatibility with monitor365's legacy segment format, install
+`AesGcmCipher` explicitly instead — it writes `[12-byte nonce][ciphertext + GCM tag]`
+per segment, and legacy AES-GCM segments still decrypt through it. See
+`examples/encrypted.rs` and `examples/bring_your_own_cipher.rs` for runnable
+end-to-end examples.
 
 ### Cloud sync: the at-least-once drain loop
 
@@ -113,6 +130,8 @@ loop {
 ```
 
 **Crash semantics.** If the process dies between `cloud_upload` and `delete_acked`, the batch is still on disk. On restart, `read_from(next, ...)` returns it again — your `cloud_upload` will see the same `(producer, seq)` pairs a second time and must treat them as no-ops. Only the unflushed in-memory tail is at risk of loss; call `flush()` to drain it before crash-sensitive boundaries. The library provides the sequence-number substrate; idempotency lives in your server.
+
+See `examples/cloud_sync.rs` for a full drain loop with retry under transient failures, `examples/cloud_sync_disk_full.rs` for the disk-full backpressure variant, and `examples/idempotent_server.rs` for the matching server-side `(producer_id, seq)` dedup pattern. For p99-sensitive producers, `examples/background_flush.rs` shows the recommended decoupling: `FlushPolicy::Manual` + a caller-owned timer thread.
 
 ## How it works
 
@@ -179,40 +198,24 @@ Reframed for the cloud-sync producer-side buffer target._
 
 ## Status
 
-**v0.5.1** _(current)_ — metadata-only patch that finishes the v0.5.0
-reframing on the highest-visibility surfaces: the `Cargo.toml` description and
-keywords (crates.io search), the crate-root rustdoc, and the `SegmentBuffer<T>`
-struct doc all now lead with the cloud-sync positioning. No API change, no
-on-disk format change, no migration. See [CHANGELOG.md](CHANGELOG.md).
+**Current release: v0.5.1** — metadata-only patch finishing the v0.5.0 cloud-sync
+reframing on the crates.io/docs.rs surfaces. See [CHANGELOG.md](CHANGELOG.md)
+for full release history; see [FEATURES.md](FEATURES.md) for the capability
+inventory and [ROADMAP.md](ROADMAP.md) for long-term direction and explicit
+non-goals.
 
-**v0.5.0** — the **cloud-sync throughput batch** ships the 2026-07-20
-reframing: single-process throughput buffer for cloud sync,
-durability-configurable, XChaCha20-Poly1305 recommended cipher, at-least-once
-delivery. Breaking changes are batched so users upgrade once — see
-[CHANGELOG.md](CHANGELOG.md) for the full per-item detail and migration notes.
-See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
+**Unreleased (master):** a small performance batch — a tuning guide
+([docs/PERFORMANCE.md](docs/PERFORMANCE.md) § "Tuning for your workload"), the
+`examples/background_flush.rs` pattern for p99-sensitive producers, and
+`flush()` Vec-capacity recycling. No API or on-disk format change. See the
+`[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md).
 
-**v0.4.2** — the "process debt + semver-leak closure" release. Gates
-`fuzz_hooks` behind a `#[cfg]` feature (closes the v0.4.1 semver leak), adds
-a CI `loom` job (prevents the v0.4.0-v0.4.1 silent rot of the loom test),
-adds 1 new fuzz target (`fuzz_append_all`) and 2 new property tests, and
-ships `docs/DOMAIN_LANGUAGE.md` + `docs/CIPHERS.md`. Non-breaking; drop-in
-upgrade from v0.4.1.
-See [CHANGELOG.md](CHANGELOG.md) for details.
-See [FEATURES.md](FEATURES.md), [ROADMAP.md](ROADMAP.md).
-
-**Performance:** the 2026-07-20 PGO session
-([docs/perf/2026-07-20_hot-path-flamegraph.md](docs/perf/2026-07-20_hot-path-flamegraph.md))
-found that ~66% of `flush` CPU was in zstd re-initialising its ~200 KB `CCtx`
-on every `encode_all` call. Pooling a `zstd::bulk::Compressor` on `SegmentBuffer`
-made `append/batch_1` **2.07× faster** (15.09 µs → 7.75 µs), with smaller wins
-at larger batches. The crate is now substantially faster than v0.1.0 on small
-batches; the previous "30–65% regression" framing is obsolete. A `Throughput`
-durability policy (above) would remove the per-flush fsync and open a further
-large gain on cloud-sync workloads.
-_Methodology caveat: single-run, single-machine criterion medians without
-statistical noise bars — indicative of direction, not publication-grade. See
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for methodology and reproduction._
+**Performance highlight:** pooling a `zstd::bulk::Compressor` on `SegmentBuffer`
+made `append/batch_1` roughly **2× faster** (single-run criterion medians; see
+[docs/perf/2026-07-20_hot-path-flamegraph.md](docs/perf/2026-07-20_hot-path-flamegraph.md)
+and [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for methodology and the full
+impact-ordered tuning guide). A `Throughput` durability policy removes the
+per-flush fsync and opens a further large gain on cloud-sync workloads.
 
 ## License
 
