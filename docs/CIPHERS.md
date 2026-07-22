@@ -116,54 +116,33 @@ trait, same on-disk shape (`[12-byte nonce][ciphertext + 16-byte tag]`).
 
 The full runnable example lives at [`examples/bring_your_own_cipher.rs`](../examples/bring_your_own_cipher.rs)
 (`cargo run --example bring_your_own_cipher --features encryption`) — it is
-compiled by CI so the snippet cannot silently rot when `chacha20poly1305` or
-`rand` change their APIs. The struct is reproduced here for readability:
+compiled by CI so the code cannot silently rot when `chacha20poly1305` or
+`rand` change their APIs. The shape of the implementation:
 
 ```rust,ignore
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::{Aead, Payload}};
 use rand::Rng;
 use segment_buffer::{SegmentCipher, CipherError};
-use std::fmt;
 
 pub struct ChaChaCipher(ChaCha20Poly1305);
 
 impl ChaChaCipher {
-    pub fn new(key: &[u8; 32]) -> Self {
-        Self(ChaCha20Poly1305::new(key.into()))
-    }
+    pub fn new(key: &[u8; 32]) -> Self { /* ChaCha20Poly1305::new(key.into()) */ }
 }
 
 impl SegmentCipher for ChaChaCipher {
     fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CipherError> {
-        let mut nonce_bytes = [0u8; 12];
-        rand::rng().fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from(nonce_bytes);
-        let ciphertext = self.0
-            .encrypt(&nonce, Payload { msg: plaintext, aad: b"" })
-            .map_err(|e| CipherError::msg(format!("chacha20poly1305 encrypt: {e}")))?;
-        Ok(nonce_bytes.into_iter().chain(ciphertext).collect())
+        // 1. Generate 12-byte random nonce, 2. encrypt with Aead trait,
+        // 3. prepend nonce bytes to the ciphertext.
+        // Full body in examples/bring_your_own_cipher.rs.
     }
-
     fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, CipherError> {
-        if ciphertext.len() < 12 {
-            return Err(CipherError::msg("ciphertext too short for nonce"));
-        }
-        let (nonce_bytes, ct) = ciphertext.split_at(12);
-        let nonce_arr: [u8; 12] = nonce_bytes
-            .try_into()
-            .map_err(|_| CipherError::msg("invalid nonce length: expected 12 bytes"))?;
-        let nonce = Nonce::from(nonce_arr);
-        self.0
-            .decrypt(&nonce, Payload { msg: ct, aad: b"" })
-            .map_err(|e| CipherError::msg(format!("chacha20poly1305 decrypt: {e}")))
+        // 1. Split nonce from ciphertext, 2. decrypt with Aead trait.
+        // Full body in examples/bring_your_own_cipher.rs.
     }
 }
 
-impl fmt::Debug for ChaChaCipher {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ChaChaCipher").finish_non_exhaustive()
-    }
-}
+// Debug impl redacts the key — see the example file.
 ```
 
 Wire it in exactly like the built-in (note the `Arc` wrapping, required since
