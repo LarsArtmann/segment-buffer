@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+
+- **chacha20poly1305 0.10 → 0.11**: migrated `XNonce::from_slice` →
+  `XNonce::from` / `try_into` in the XChaCha20-Poly1305 cipher and the
+  `bring_your_own_cipher` example, mirroring the same migration already done
+  for `aes-gcm` 0.11. The on-disk format is unchanged.
 
 ---
 
