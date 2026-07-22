@@ -400,6 +400,21 @@ Hash`).
 
 ---
 
+## Resolution (2026-07-21)
+
+The `SegmentStore` trait, `RealStore`, `MockStore`, and all 4 loom proofs
+shipped in v0.5.0 (commit `f2327b1` + `923fae9`). The pre-existing
+`cloud_upload` doctest failure (§d.1, §f item 1) was resolved in the
+04-11 session by removing `include_str!("../README.md")` from `src/lib.rs`
+altogether. The supply-chain gate (§f item 2) and fuzz/bench/example
+compilation verification (§f items 4-6) were all run green in subsequent
+sessions. The mutation test (§f item 3) remains an open standing item
+across multiple reports. The "not semver" sealing concern (§d.10) and the
+`test-utils` vs `loom` feature conflation (§d.9) remain open design items
+in TODO_LIST / ROADMAP.
+
+---
+
 ## g) Questions (things I genuinely cannot figure out myself)
 
 ### Q1: The `cloud_upload` doctest failure — is this known/tracked, or should I fix it?

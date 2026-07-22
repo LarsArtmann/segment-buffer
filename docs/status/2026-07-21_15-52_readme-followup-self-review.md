@@ -127,6 +127,23 @@ README.md` now returns 0.
 
 ## c) NOT STARTED
 
+> **Update 2026-07-21 ~18:00:** every item in this "NOT STARTED" list that
+> was within the docs-health scope has since been completed in a follow-up
+> docs-health session:
+>
+> - Cargo features table (default, encryption, loom, fuzz) — shipped to README.
+> - `iter_from` example alongside the drain loop — shipped to README.
+> - `append_all` one-liner in Quickstart — shipped to README.
+> - `open_with_report` crash-recovery example — shipped to README.
+> - Lychee redirect URLs — investigated, documented as intentional docs.rs
+>   patterns in `.github/lychee.toml`.
+> - `doc(alias = "queue"|"spool"|"wal")` on `SegmentBuffer` — shipped.
+> - `# Concurrency` section on `SegmentBuffer` rustdoc — shipped.
+> - Cross-link `examples/` from crate-root rustdoc — shipped.
+> - `actionlint` added to `scripts/verify-gate.sh` and CI — shipped.
+>   Items still open: comparison table upstream verification, README visual
+>   render check, `Cargo.toml description/keywords` alignment (needs browser).
+
 - A "Cargo features" table in README (`default`, `encryption`, `loom`,
   `fuzz`).
 - An `iter_from` / `for_each_from` example next to the drain loop.

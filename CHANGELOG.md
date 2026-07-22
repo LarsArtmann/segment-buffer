@@ -66,6 +66,15 @@ hot path.
   are idiomatic docs.rs patterns; added an explanatory comment to
   `.github/lychee.toml` so future maintainers don't "fix" them and break the
   badge convention.
+- **Historical doc annotations (`update-old-docs` pass).** 12 of the 23
+  `docs/{status,planning,perf}/2026-07-2*` files annotated with non-destructive
+  resolution notes: inline corrections for stale TL;DR claims (MSRV 1.85→1.86
+  resolution, "Cargo.toml still at 0.4.2" → shipped, refuted anchor "may be
+  broken" alarm), and end-of-file resolution appendices for self-review
+  reports whose TODO items have since been completed. 11 files left untouched
+  (already self-resolving, still-current design docs, or already annotated by
+  a prior session). No historical file was rewritten — all annotations are
+  non-destructive per the `update-old-docs` skill contract.
 
 ---
 

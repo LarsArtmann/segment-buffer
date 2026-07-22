@@ -44,6 +44,11 @@
 
 ### d.1 — I may have fixed a broken anchor with another broken anchor, and didn't verify either way
 
+> **Update 2026-07-21 (06-27 session):** this was a **false alarm**. The
+> anchor `#durability-model-shipped-in-v050` was always correct — verified
+> by lychee (0 errors) in the 06-27 session. GitHub's slugify strips dots;
+> the guess was right. No action needed on this item.
+
 **The headline Critical fix** was AGENTS.md line 9: `[Durability model](#durability-model-proposed)` → `(#durability-model-shipped-in-v050)`. The old anchor was definitely wrong (the heading was renamed to "Durability model (shipped in v0.5.0)" in the v0.5.0 doc sweep). My replacement `#durability-model-shipped-in-v050` is a **guess at GitHub's anchor slugify algorithm**: I assumed parentheses are stripped and dots are stripped.
 
 **The problem:** GitHub's anchor generation keeps some punctuation and drops others, and I did not verify which. If dots are preserved, the correct anchor is `#durability-model-shipped-in-v0.5.0`; if dots are dropped, my version is right. **I did not run lychee, I did not check a rendered page, I did not consult GitHub's slugify rules.** The entire value of this fix rests on an unverified assumption. If I guessed wrong, I replaced a stale anchor with a different stale anchor and the report still claims it as a "Critical fixed."
@@ -51,6 +56,12 @@
 **The fix:** run lychee (or `rg -i 'durability-model' target/doc/` after `cargo doc`, or visually check the rendered AGENTS.md on GitHub) and correct the anchor. This is a 30-second check I skipped.
 
 ### d.2 — The CIPHERS.md rand 0.10 snippet change is unverified and could be wrong
+
+> **Update 2026-07-21 (06-27 session):** confirmed broken — `rand::rngs::OsRng`
+> no longer exists in rand 0.10. Fixed to `rand::rng()` in the 06-27 session
+> via a scratch-crate compile check. The snippet is now backed by
+> `examples/bring_your_own_cipher.rs` (a compiled, feature-gated example)
+> so future API drift is caught by `cargo test`.
 
 I edited `docs/CIPHERS.md` bring-your-own section: `rand = "0.8"` → `"0.10"` and `use rand::RngCore` → `use rand::Rng`, based on the CHANGELOG `[0.5.0]` note that "rand 0.9 → 0.10: `RngCore` import → `Rng`."
 

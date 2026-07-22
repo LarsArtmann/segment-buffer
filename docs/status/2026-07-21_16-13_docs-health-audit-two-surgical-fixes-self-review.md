@@ -276,3 +276,23 @@ Two new process bets this continuation makes that the next session should hold m
 ---
 
 _Original session: ~30 minutes. Continuation session: ~25 minutes. Total session window: ~55 minutes. HEAD unchanged at `a3a64ca` (no commit, per rule 6). Working tree: 6 modified files + this status report (untracked). All 13 gates green on the working tree._
+
+---
+
+## Resolution (2026-07-21 ~18:00 — update-old-docs + docs-health pass)
+
+The standing TODO items in §f (items 12, 16-23) have been completed in the
+follow-up docs-health session:
+
+- Cargo features table, `iter_from` / `append_all` / `open_with_report`
+  examples — all shipped to README.
+- `doc(alias)` on `SegmentBuffer`, `# Concurrency` section, `examples/`
+  cross-link from crate-root rustdoc — all shipped.
+- `actionlint` added to `scripts/verify-gate.sh` and a new CI job.
+- Lychee redirect URLs documented as intentional in `.github/lychee.toml`.
+
+The `update-old-docs` pass (§f item 6, Q3') was executed: 12 of the 23
+historical `2026-07-2*` files annotated with non-destructive resolution
+notes; 11 left untouched (already self-resolving, still current, or already
+annotated by a prior session). The user-decision items (v0.5.2 release,
+branch protection, visual README render) remain in TODO_LIST.

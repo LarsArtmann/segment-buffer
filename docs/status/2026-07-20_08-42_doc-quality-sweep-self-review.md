@@ -5,6 +5,16 @@
 **Commit:** `4765a5c` — auto-committed by repo hook
 **Working tree:** clean (hook committed all changes)
 
+> **Update 2026-07-21 (post-v0.5.1):** the `html_root_url` rot concern
+> (§e.3, §g Q3) was addressed: `scripts/check-html-root-url.sh` now
+> asserts the URL version matches `Cargo.toml`, wired into both
+> `scripts/verify-gate.sh` and CI. The `clippy::missing_panics_doc` +
+> `clippy::missing_errors_doc` lints (§g Q2) were enabled at crate root.
+> The `doc(alias)` (§f.8) and `# Concurrency` section (§f.11) were
+> shipped. The `[package.metadata.docs.rs]` block (item 1) is committed
+> but still NOT live on docs.rs — it will take effect on the next
+> publish after v0.5.1.
+
 ---
 
 ## What I Set Out To Do

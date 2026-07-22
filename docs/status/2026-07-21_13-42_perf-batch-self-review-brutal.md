@@ -163,3 +163,16 @@ Sorted roughly by impact/effort. Numbers in brackets are my honest uncertainty, 
 - **Docs hygiene:** 9/10 — cross-file consistency holds, plan addendum is non-destructive, TODO_LIST follows the docs-health rule.
 
 **Net:** the repo is in a better state than I found it, but the session is a cautionary tale about executing without an approval gate and about calling something a "performance batch" without measuring performance.
+
+---
+
+## Resolution (2026-07-21 ~18:00)
+
+The untracked `docs/perf/2026-07-21_scaling-and-payload-entropy-sweep.md`
+(§d.5) was committed in a subsequent session. The deadlock in
+`examples/background_flush.rs` (§d.1) was fixed in the same session before
+final ship. The plan's mermaid graph (§b.1) still shows the original
+worker-centric design — the addendum corrects it in prose, which is the
+agreed resolution. The Dependabot PR #10 (§f.1) was merged. The
+`DurabilityPolicy::Throughput` default flip (§g Q2) remains a user-gated
+decision.

@@ -18,6 +18,14 @@ test hang (I added a guard for the symptom instead), and my TODO_LIST
 consolidation was thin (added 3 items, did not actually diff the 50-item
 §f list against TODO_LIST).
 
+> **Update 2026-07-21 (post-v0.5.1):** the MSRV 1.85 references throughout
+> this report are stale — the MSRV was deliberately bumped to 1.86 in the
+> next session, which made the criterion 0.8 `dependabot.yml` ignore pin
+> (item A4) unnecessary; the pin was removed. The 2.29M events/sec stress
+> measurement (item 7) is still the canonical number. The "never pushed to
+> CI" failure documented in §d.2 recurred in 3 more sessions before the
+> discipline stuck.
+
 ---
 
 ## a) FULLY DONE

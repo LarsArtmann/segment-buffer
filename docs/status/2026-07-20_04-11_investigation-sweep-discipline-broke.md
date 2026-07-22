@@ -5,6 +5,14 @@
 > rules during the session**, and the repository I committed onto is not
 > green. This report is the unvarnished accounting.
 
+> **Update 2026-07-21 (post-v0.5.1):** the MSRV drift flagged in §2a (CI
+> using 1.85 while code needs 1.86) was resolved by deliberately bumping
+> the MSRV to 1.86 — criterion 0.8 was adopted, not worked around. The
+> "CI has been RED on master for the last 5 consecutive runs" claim in
+> §4a was true at write time; CI has been green on v0.5.0/v0.5.1 and
+> subsequent master commits. The `include_str!` removal (§1d) and the
+> `T: 'static` relaxation (§1a) both shipped in v0.5.0.
+
 ---
 
 ## 0. Session scope

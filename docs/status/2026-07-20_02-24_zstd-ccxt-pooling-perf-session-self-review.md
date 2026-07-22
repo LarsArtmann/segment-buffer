@@ -4,6 +4,14 @@
 **Session scope:** the three Performance TODO items (PGO, SmallVec, read_from scan-cache bench) + the TODO/CHANGELOG consolidation that preceded them.
 **Final git state:** `5521d5a` on `master`, working tree clean, **5 commits ahead of `origin/master`** (`e9ba643`→`dee966b`→`b98e597`→`45db88e`→`5521d5a`). **None verified by CI.**
 
+> **Update 2026-07-21 (post-v0.5.1):** the CCtx pooling (Phase 1) and the
+> scan-cache benchmark (Phase 3) both shipped in v0.5.0. The read-side
+> `Decompressor` pooling that was deferred in §c ("NOT STARTED") also
+> shipped in v0.5.0 as M3 — symmetric to the write-side `Compressor`. The
+> "never pushed to CI" failure (§d.1) recurred in the next session
+> (03-30) before being resolved when the user began pushing between
+> sessions. The 2.3× net speedup vs v0.1.0 claim is still current.
+
 ---
 
 ## a) FULLY DONE

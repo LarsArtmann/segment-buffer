@@ -22,8 +22,7 @@ stay until the next CHANGELOG cut, then move out).
 
 ## User-decision items (need input, not execution)
 
-- `[ ]` **`update-old-docs` pass on the 14+ historical `2026-07-2*` snapshots.** Out of `docs-health` scope (living docs only). Many snapshots now describe resolved state ("81 unit tests", "CI red for 5 runs", "Cargo.toml still 0.4.2") and would mislead a reader who treats them as current. Decision needed: annotate all, annotate top 3-4 highest-traffic, leave as-is, or delete stale ones. _Deferred across 05-14 §g Q2, 06-27 §f item 6, 16-13 §g Q3._
-- `[ ]` **Ship `v0.5.2` doc/CI patch?** The unreleased changes (README polish: features table + `iter_from`/`append_all`/`open_with_report` examples; rustdoc `# Concurrency` section, `doc(alias)`, examples cross-link; `actionlint` gate + CI job; lychee redirect rationale; plus the prior session's deny.toml cleanup, CI html_root_url job, verify-gate.sh comment) are repo-internal, not user-facing — though the README and rustdoc additions ARE user-visible on docs.rs and GitHub. Probably worth a patch release so the docs.rs page stops showing the v0.5.1 surface that omits `iter_from` / `append_all` from the README. The call is the maintainer's. See CHANGELOG `[Unreleased]`.
+- `[ ]` **Ship `v0.5.2` doc/CI patch?** The unreleased changes (README polish: features table + `iter_from`/`append_all`/`open_with_report` examples; rustdoc `# Concurrency` section, `doc(alias)`, examples cross-link; `actionlint` gate + CI job; lychee redirect rationale; historical doc annotations; plus the prior session's deny.toml cleanup, CI html_root_url job, verify-gate.sh comment) are repo-internal, not user-facing — though the README and rustdoc additions ARE user-visible on docs.rs and GitHub. Probably worth a patch release so the docs.rs page stops showing the v0.5.1 surface that omits `iter_from` / `append_all` from the README. The call is the maintainer's. See CHANGELOG `[Unreleased]`.
 
 ---
 
