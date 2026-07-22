@@ -65,7 +65,7 @@ thiserror = "2"
 serde = "1"
 fs4 = "1.1"
 aes-gcm = { version = "0.11", optional = true }
-chacha20poly1305 = { version = "0.10", optional = true }
+chacha20poly1305 = { version = "0.11", optional = true }
 rand = { version = "0.10", optional = true }
 
 [dev-dependencies]
