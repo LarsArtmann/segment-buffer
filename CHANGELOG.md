@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.3] - 2026-07-22
+
 ### Changed
 
 - **chacha20poly1305 0.10 → 0.11**: migrated `XNonce::from_slice` →
   `XNonce::from` / `try_into` in the XChaCha20-Poly1305 cipher and the
   `bring_your_own_cipher` example, mirroring the same migration already done
   for `aes-gcm` 0.11. The on-disk format is unchanged.
+
+### Fixed
+
+- **`docs/CIPHERS.md`** nonce snippet drifted from its runnable counterpart
+  (`examples/bring_your_own_cipher.rs`) — the markdown still showed the
+  deprecated `Nonce::from_slice` pattern after the 0.11 migration. Both
+  encrypt and decrypt snippets now match the compiled code.
 
 ---
 
@@ -820,6 +831,7 @@ shape and `CipherError` field visibility changed; bump your dependency with
 - Extracted from monitor365 and proven on 597M+ events in production.
 
 [Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.2...HEAD
+[0.5.3]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.3
 [0.5.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.2
 [0.5.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.0
