@@ -38,6 +38,35 @@ hot path.
   change, no new lock acquisition, no change to the concurrency contract.
   Covered by a new unit test `flush_preserves_unflushed_capacity_for_next_batch`.
 
+### Documentation
+
+- **README expansion** covering primitives that shipped in v0.4.1 / v0.5.0 but
+  were only documented in rustdoc and `FEATURES.md`: a Cargo features table
+  (`default = []`, `encryption`, `loom`, `fuzz` with semver-stability notes),
+  an `append_all` one-liner in Quickstart, an `iter_from` example next to the
+  drain loop, and an `open_with_report` crash-recovery example. The contents
+  block and section anchors were updated to match.
+- **`SegmentBuffer` rustdoc**: added a `# Concurrency` section documenting
+  MPMC semantics, the single-process `flock` invariant, the
+  mutex-never-held-across-I/O rule, the loom-proven `delete_acked` + `append`
+  interleaving, and the re-entrancy panic. Added `#[doc(alias = "queue" |
+"spool" | "wal" | "writeahead" | "log")]` for rustdoc search discoverability
+  from other ecosystems. Cross-linked all `examples/*.rs` from the crate-root
+  rustdoc with a one-line-per-example table.
+
+### CI / tooling
+
+- **`actionlint` step** added to `scripts/verify-gate.sh` (with
+  `--no-actionlint` skip flag) and a matching `actionlint` job added to
+  `.github/workflows/ci.yml`. YAML parse is the floor; actionlint catches
+  `${{ }}` expression syntax errors, `needs:` cycles, deprecated action
+  versions, and runner/os typos that the YAML parser accepts silently.
+- **lychee redirect URLs documented.** The two redirects lychee reports on
+  the README (`docs.rs/segment-buffer` and `docs.rs/segment-buffer/badge.svg`)
+  are idiomatic docs.rs patterns; added an explanatory comment to
+  `.github/lychee.toml` so future maintainers don't "fix" them and break the
+  badge convention.
+
 ---
 
 ## [0.5.1] - 2026-07-20

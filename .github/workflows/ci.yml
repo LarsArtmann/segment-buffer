@@ -127,3 +127,17 @@ jobs:
         with:
           args: --config .github/lychee.toml --no-progress '*.md' 'docs/**/*.md' 'fuzz/README.md'
           fail: true
+
+  actionlint:
+    name: GitHub workflow lint (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # YAML parse is the floor. actionlint catches ${{ }} expression syntax
+      # errors, `needs:` cycles, deprecated action versions, and runner/os
+      # typos that YAML accepts silently. Mirrors the scripts/verify-gate.sh
+      # actionlint step so drift is caught locally, not just in CI.
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: -color

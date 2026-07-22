@@ -11,7 +11,7 @@ High-throughput **local buffer for cloud sync**. Single-process by design, durab
 
 **Extracted from monitor365 (private), proven on 597M+ events.**
 
-**Contents:** [Why?](#why) · [Install](#install) · [Quickstart](#quickstart) · [Encryption](#encryption-at-rest) · [Cloud sync drain loop](#cloud-sync-the-at-least-once-drain-loop) · [How it works](#how-it-works) · [Crash behavior](#crash-behavior-configurable) · [Backpressure](#backpressure) · [Comparison](#comparison) · [Status](#status) · [License](#license)
+**Contents:** [Why?](#why) · [Install](#install) · [Quickstart](#quickstart) · [Encryption](#encryption-at-rest) · [Cloud sync drain loop](#cloud-sync-the-at-least-once-drain-loop) · [Owned-item iterator](#owned-item-iterator-iter_from-v050) · [Crash recovery](#crash-recovery-open_with_report) · [How it works](#how-it-works) · [Crash behavior](#crash-behavior-configurable) · [Backpressure](#backpressure) · [Comparison](#comparison) · [Status](#status) · [License](#license)
 
 ## Why?
 
@@ -39,6 +39,17 @@ cargo add segment-buffer --features encryption
 
 **MSRV:** 1.86. See [docs/MSRV.md](docs/MSRV.md).
 
+### Cargo features
+
+| Feature        | Default | What it enables                                                                                                     |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `encryption`   | off     | `AesGcmCipher` + `XChaCha20Poly1305Cipher` (the `SegmentCipher` trait is always available).                         |
+| `loom`         | off     | `SegmentStore` trait + `open_with_store` constructor for exhaustive concurrency-model tests. **Not semver-stable.** |
+| `fuzz`         | off     | `fuzz_hooks` module (envelope/filename internals) for out-of-tree fuzz targets. **Not semver-stable.**              |
+| _(no default)_ | —       | `default = []`: the core queue + segment format. The crate ships with no mandatory optional dependencies.           |
+
+The `loom` and `fuzz` features exist for this crate's own test/fuzz harness; downstream users should not depend on items reachable only through them — they may change in any release without a major version bump. See `Cargo.toml` `[features]` for the authoritative list.
+
 ## Quickstart
 
 ```rust
@@ -51,6 +62,10 @@ let buffer = SegmentBuffer::<MyItem>::open("/tmp/my-buffer", SegmentConfig::defa
 
 // Append items (auto-flushes at the batch threshold or flush interval)
 let seq = buffer.append(MyItem { id: 1 })?;
+
+// Batch append under a single lock acquisition (v0.4.1):
+let last = buffer.append_all([MyItem { id: 2 }, MyItem { id: 3 }, MyItem { id: 4 }])?;
+// `last` is the sequence number of the final item in the batch.
 
 // Read items back (from on-disk segments + in-memory pending)
 let items = buffer.read_from(0, 1000)?;
@@ -129,6 +144,51 @@ loop {
 **Crash semantics.** If the process dies between `cloud_upload` and `delete_acked`, the batch is still on disk. On restart, `read_from(next, ...)` returns it again; your `cloud_upload` will see the same `(producer, seq)` pairs a second time and must treat them as no-ops. Only the unflushed in-memory tail is at risk of loss; call `flush()` to drain it before crash-sensitive boundaries. The library provides the sequence-number substrate; idempotency lives in your server.
 
 See `examples/cloud_sync.rs` for a full drain loop with retry under transient failures, `examples/cloud_sync_disk_full.rs` for the disk-full backpressure variant, and `examples/idempotent_server.rs` for the matching server-side `(producer_id, seq)` dedup pattern. For p99-sensitive producers, `examples/background_flush.rs` shows the recommended decoupling: `FlushPolicy::Manual` + a caller-owned timer thread.
+
+### Owned-item iterator (`iter_from`, v0.5.0)
+
+`iter_from(start, limit)` yields `(seq, item)` pairs and drops naturally at the end of a `for` loop — the same drain loop in iterator form:
+
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# #[derive(Serialize, Deserialize, Clone)]
+# struct MyItem { id: u64 }
+# use segment_buffer::{SegmentBuffer, SegmentConfig};
+# let buf = SegmentBuffer::<MyItem>::open("/tmp/spool", SegmentConfig::default())?;
+for (seq, item) in buf.iter_from(0, 1000)? {
+    // Your idempotent processing here, keyed on `seq`.
+    let _ = (seq, item);
+}
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`read_from` returns `Vec<T>` (items only); `iter_from` is the same read with sequence numbers attached, so standard `Iterator` combinators (`map`, `take`, `filter`) compose on the result.
+
+### Crash recovery (`open_with_report`)
+
+On restart, `open_with_report` scans the directory, rebuilds `head_seq` / `next_seq` from filenames, deletes `.tmp` debris, and returns a `RecoveryReport` for operational visibility — no WAL replay, no metadata DB:
+
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+# #[derive(Serialize, Deserialize, Clone)]
+# struct MyItem { id: u64 }
+use segment_buffer::{SegmentBuffer, SegmentConfig};
+
+let (buf, report) = SegmentBuffer::<MyItem>::open_with_report(
+    "/tmp/spool",
+    SegmentConfig::default(),
+)?;
+println!(
+    "recovered: {} segments, head_seq={}, next_seq={}, disk_bytes={}, removed_tmp={}",
+    report.segment_count, report.head_seq, report.next_seq,
+    report.disk_bytes, report.removed_tmp_files,
+);
+// Resume draining from `report.head_seq`. Anything not flushed before the
+// previous crash is gone by design — call `flush()` at crash-sensitive boundaries.
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`examples/crash_recovery.rs` is a runnable end-to-end demo of the flushed-survives / unflushed-lost contract.
 
 ## How it works
 

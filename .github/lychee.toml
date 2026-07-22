@@ -6,6 +6,16 @@
 # Exclusions:
 #   - https://github.com/LarsArtmann/monitor365 — private repo of origin; the
 #     link target is intentionally invisible to anonymous visitors.
+#
+# Expected redirects (NOT broken links; lychee reports them in the "🔀 Redirects"
+# summary, not as errors). Do NOT "fix" these by replacing the source URL:
+#   - https://docs.rs/segment-buffer            → /latest/segment_buffer/
+#       The short stable form. The redirect is how docs.rs resolves "current
+#       version" links; the resolved URL would pin us to /latest forever and
+#       reads worse in markdown.
+#   - https://docs.rs/segment-buffer/badge.svg  → img.shields.io/docsrs/segment-buffer/latest
+#       The canonical docs.rs badge URL. Replacing it with the shields.io form
+#       breaks the docs.rs badge convention every Rust crate uses.
 
 # Reasonable timeout for slow CI runners
 timeout = 20

@@ -30,6 +30,28 @@
 //! comparison table, and performance notes — see the
 //! [project README on GitHub](https://github.com/LarsArtmann/segment-buffer#segment-buffer)
 //! or [docs.rs](https://docs.rs/segment-buffer).
+//!
+//! # Examples
+//!
+//! The `examples/` directory in the source tree holds runnable end-to-end
+//! demos keyed by use case. Build and run any of them with
+//! `cargo run --example <name>` (encryption examples need
+//! `--features encryption`):
+//!
+//! | Example                | What it shows                                                                                  |
+//! | ---------------------- | ---------------------------------------------------------------------------------------------- |
+//! | `basic_usage`          | Minimum append/read/delete cycle.                                                              |
+//! | `cloud_sync`           | Full at-least-once drain loop with retry under transient failures.                             |
+//! | `cloud_sync_disk_full` | Drain loop that pushes backpressure up to the producer when `store_pressure()` exceeds a threshold. |
+//! | `idempotent_server`    | Server-side `(producer_id, seq)` dedup pattern that makes at-least-once effectively-once.     |
+//! | `crash_recovery`       | Flushed segments survive a simulated crash; unflushed don't; `open_with_report` prints the recovery scan. |
+//! | `backpressure`         | The canonical pattern for translating `store_pressure()` into an admission decision.           |
+//! | `background_flush`     | `FlushPolicy::Manual` + a caller-owned timer thread for p99-sensitive producers.               |
+//! | `mpmc`                 | Multi-producer / multi-consumer sharing via `Arc<SegmentBuffer<T>>`.                           |
+//! | `hotpath_profile`      | Latency-histogram harness for the append hot path.                                             |
+//! | `scaling`              | End-to-end 1M–100M lifecycle throughput.                                                       |
+//! | `encrypted`            | AES-256-GCM and XChaCha20-Poly1305 ciphers end-to-end (requires `--features encryption`).      |
+//! | `bring_your_own_cipher`| Implementing the `SegmentCipher` trait for a custom cipher (requires `--features encryption`). |
 
 #![warn(missing_docs)]
 // Require every public function that can panic or return Result to document
@@ -557,6 +579,43 @@ struct BufferInner<T> {
 /// is never held across an async boundary because there are no await points.
 ///
 /// Create with [`SegmentBuffer::open`], supplying the directory and config.
+///
+/// # Concurrency
+///
+/// `SegmentBuffer<T>` is `Send + Sync` (statically asserted in `lib.rs`) and
+/// safe to share across threads via `Arc<SegmentBuffer<T>>`:
+///
+/// - **MPMC, one lock.** Every mutating operation (`append`, `append_all`,
+///   `flush`, `delete_acked`) and every read (`read_from`, `iter_from`,
+///   `for_each_from`, `stats`) acquires a single `parking_lot::Mutex` for the
+///   duration of the in-memory state touch. Multiple producers and multiple
+///   consumers are supported inside one process.
+/// - **One owner process per directory.** The lock is *not* distributed.
+///   [`open`](Self::open) acquires an exclusive `flock` on
+///   `<dir>/.segment-buffer.lock` and fails fast with [`SegmentError::Locked`]
+///   if another process already holds it. Multiple threads inside the owner
+///   process are fine; multiple processes on the same directory are rejected.
+/// - **The mutex is never held across file I/O.** `flush()` drops the lock
+///   before the encode pipeline (CBOR → zstd → optional cipher → atomic
+///   rename) and re-acquires it only to bump `approx_disk_bytes`. `recover()`
+///   collects all segment metadata before taking the lock once to publish the
+///   rebuilt state. There are no await points; all I/O is synchronous.
+/// - **The `delete_acked` + `append` interleaving is loom-proven.** The
+///   `head_seq <= pending_start` clamp that keeps acks from advancing past
+///   unflushed items is exhaustively enumerated across every two-thread
+///   schedule by the loom tests in `tests/loom.rs` (4 tests, injected via a
+///   `MockStore` through `open_with_store`). The 8-writer/4-reader stress
+///   test in `src/tests.rs` covers the same contract statistically.
+/// - **Re-entrancy is rejected with a panic, not a deadlock.** Calling any
+///   `&self` method from inside a [`for_each_from`](Self::for_each_from)
+///   callback would deadlock `parking_lot::Mutex` (which is non-reentrant);
+///   an `AtomicBool` guard converts that into an immediate, diagnosable panic
+///   at the call site.
+#[doc(alias = "queue")]
+#[doc(alias = "spool")]
+#[doc(alias = "wal")]
+#[doc(alias = "writeahead")]
+#[doc(alias = "log")]
 pub struct SegmentBuffer<T> {
     dir: PathBuf,
     config: SegmentConfig,
