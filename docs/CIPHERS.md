@@ -137,9 +137,9 @@ impl SegmentCipher for ChaChaCipher {
     fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CipherError> {
         let mut nonce_bytes = [0u8; 12];
         rand::rng().fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Nonce::from(nonce_bytes);
         let ciphertext = self.0
-            .encrypt(nonce, Payload { msg: plaintext, aad: b"" })
+            .encrypt(&nonce, Payload { msg: plaintext, aad: b"" })
             .map_err(|e| CipherError::msg(format!("chacha20poly1305 encrypt: {e}")))?;
         Ok(nonce_bytes.into_iter().chain(ciphertext).collect())
     }
@@ -149,9 +149,12 @@ impl SegmentCipher for ChaChaCipher {
             return Err(CipherError::msg("ciphertext too short for nonce"));
         }
         let (nonce_bytes, ct) = ciphertext.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let nonce_arr: [u8; 12] = nonce_bytes
+            .try_into()
+            .map_err(|_| CipherError::msg("invalid nonce length: expected 12 bytes"))?;
+        let nonce = Nonce::from(nonce_arr);
         self.0
-            .decrypt(nonce, Payload { msg: ct, aad: b"" })
+            .decrypt(&nonce, Payload { msg: ct, aad: b"" })
             .map_err(|e| CipherError::msg(format!("chacha20poly1305 decrypt: {e}")))
     }
 }
