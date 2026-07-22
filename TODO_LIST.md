@@ -16,10 +16,6 @@ stay until the next CHANGELOG cut, then move out).
 
 - `[ ]` **Visually verify README rendering** on GitHub, docs.rs, and a narrow viewport (mobile-width). The ToC, Status block, Cargo features table, and the new `iter_from` / `open_with_report` code blocks all need a human eye — lychee catches link and anchor drift, not rendering regressions. _Standing item since 15-52 §b.3; Cargo features table and the two new code sections added this session widen the surface that needs verification._ Effort: ~15min. _(User action — requires a browser, not a code change.)_
 
-## User-decision items (need input, not execution)
-
-- `[ ]` **Ship `v0.5.2` doc/CI patch?** The unreleased changes (README polish: features table + `iter_from`/`append_all`/`open_with_report` examples; rustdoc `# Concurrency` section, `doc(alias)`, examples cross-link; `actionlint` gate + CI job; lychee redirect rationale; historical doc annotations; plus the prior session's deny.toml cleanup, CI html_root_url job, verify-gate.sh comment) are repo-internal, not user-facing — though the README and rustdoc additions ARE user-visible on docs.rs and GitHub. Probably worth a patch release so the docs.rs page stops showing the v0.5.1 surface that omits `iter_from` / `append_all` from the README. The call is the maintainer's. See CHANGELOG `[Unreleased]`.
-
 ---
 
 ## See also

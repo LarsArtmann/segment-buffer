@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+---
+
+## [0.5.2] - 2026-07-22
+
 Performance-focused batch: no API break, no on-disk format change, no new
 dependency. Three levers that make the cloud-sync deployment target faster
 by default and show producers how to remove the flush path from the append
@@ -808,7 +814,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.2
 [0.5.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.0
 [0.4.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.4.2
