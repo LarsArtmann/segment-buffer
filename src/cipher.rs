@@ -381,11 +381,11 @@ mod private {
 
             let mut nonce_bytes = [0u8; XCHACHA_NONCE_LEN];
             rand::rng().fill_bytes(&mut nonce_bytes);
-            let nonce = chacha20poly1305::XNonce::from_slice(&nonce_bytes);
+            let nonce = chacha20poly1305::XNonce::from(nonce_bytes);
 
             let ciphertext = self
                 .cipher
-                .encrypt(nonce, plaintext)
+                .encrypt(&nonce, plaintext)
                 .map_err(|e| wrap("XChaCha20 encryption failed", e))?;
 
             let mut out = Vec::with_capacity(XCHACHA_NONCE_LEN + ciphertext.len());
@@ -403,10 +403,13 @@ mod private {
                 ));
             }
             let (nonce_bytes, encrypted) = ciphertext.split_at(XCHACHA_NONCE_LEN);
-            let nonce = chacha20poly1305::XNonce::from_slice(nonce_bytes);
+            let nonce: [u8; XCHACHA_NONCE_LEN] = nonce_bytes
+                .try_into()
+                .map_err(|_| CipherError::msg("invalid nonce length: expected 24 bytes"))?;
+            let nonce = chacha20poly1305::XNonce::from(nonce);
 
             self.cipher
-                .decrypt(nonce, encrypted)
+                .decrypt(&nonce, encrypted)
                 .map_err(|e| wrap("XChaCha20 decryption failed", e))
         }
     }
