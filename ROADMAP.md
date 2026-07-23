@@ -92,3 +92,18 @@ for the full layout, migration path, and trigger conditions.
   duplicate what `FlushPolicy::Manual` + a user timer already achieves. See
   `docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md` §
   "Addendum" for the full rationale.
+
+---
+
+## Reference analyses
+
+- [`docs/book-insights-mapping.md`](docs/book-insights-mapping.md) — maps
+  seven distributed-systems books (DDIA, CQRS/ES, Patterns of Distributed
+  Systems, etc.) against this codebase: what is already applied, what should
+  be applied, and what anti-patterns to avoid. The action items from that
+  analysis (consistency model docs, schema evolution docs, tradeoffs matrix,
+  allocation-count guard) have been executed; the mapping doc is retained as
+  the rationale record.
+- [`docs/planning/2026-07-23_15-50_book-insights-action-plan.md`](docs/planning/2026-07-23_15-50_book-insights-action-plan.md)
+  — the Pareto execution plan for closing the documentation and design gaps
+  identified by the mapping.

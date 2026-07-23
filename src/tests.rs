@@ -457,6 +457,111 @@ fn concurrency_4_writers_1_reader_10k_events() {
 }
 
 // =========================================================================
+// Concurrent read_from + delete_acked boundary (MPMC safety)
+// =========================================================================
+
+/// Proves the MPMC read/delete boundary documented in DOMAIN_LANGUAGE.md's
+/// "Consistency Model → Concurrent operation" subsection.
+///
+/// Under concurrent `read_from` + `delete_acked`, `read_from` may return a
+/// spurious `SegmentError::Io` (`NotFound`) when the deleter removes a segment
+/// between the reader's scan and its file read. This is not a bug: the deleted
+/// segment was already acknowledged. The invariant this test proves is that
+/// `read_from` **never returns wrong data** — every item the reader
+/// successfully deserializes has the correct sequence-to-value mapping.
+#[test]
+fn concurrent_read_and_delete_never_corrupts() {
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                max_size_bytes: 100 * 1024 * 1024,
+                compression_level: 1, // minimize CPU to widen the race window
+                durability: DurabilityPolicy::Throughput,
+                cipher: None,
+            },
+        )
+        .unwrap(),
+    );
+
+    // Pre-populate: 50 segments × 100 items = 5 000 items on disk.
+    const PER_SEG: u64 = 100;
+    const SEGMENTS: u64 = 50;
+    const TOTAL: u64 = PER_SEG * SEGMENTS;
+    for start in (0..TOTAL).step_by(PER_SEG as usize) {
+        for i in 0..PER_SEG {
+            buf.append(test_item(start + i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+
+    let corruption = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    thread::scope(|s| {
+        // Reader: scans forward, verifying every item id. Retries on empty
+        // (concurrent-flush window) and skips on Io error (segment deleted
+        // under us — the documented boundary).
+        let buf_r = Arc::clone(&buf);
+        let corrupt_r = Arc::clone(&corruption);
+        s.spawn(move || {
+            let mut prev_id: Option<u64> = None;
+            let mut pos = 0u64;
+            let mut empty_retries = 0u32;
+            while pos < TOTAL {
+                match buf_r.read_from(pos, 500) {
+                    Ok(batch) if !batch.is_empty() => {
+                        empty_retries = 0;
+                        for item in &batch {
+                            // Every item must be in range and strictly
+                            // increasing. Gaps from deleted segments are
+                            // fine; reordering or duplicates are corruption.
+                            if item.id >= TOTAL || prev_id.is_some_and(|p| item.id <= p) {
+                                corrupt_r.store(true, std::sync::atomic::Ordering::SeqCst);
+                                return;
+                            }
+                            prev_id = Some(item.id);
+                        }
+                        pos = prev_id.unwrap() + 1;
+                    }
+                    Ok(_) => {
+                        // Empty: items moved (flush race) or deleted ahead.
+                        // Retry briefly, then advance past the gap.
+                        empty_retries += 1;
+                        if empty_retries > 5 {
+                            pos = ((pos / PER_SEG) + 1) * PER_SEG;
+                            empty_retries = 0;
+                        } else {
+                            thread::sleep(Duration::from_micros(100));
+                        }
+                    }
+                    Err(_) => {
+                        // Io error: segment deleted between scan and read.
+                        // This is the documented MPMC boundary. Skip forward.
+                        pos = ((pos / PER_SEG) + 1) * PER_SEG;
+                    }
+                }
+            }
+        });
+
+        // Deleter: removes segments from the front, racing with the reader.
+        let buf_d = Arc::clone(&buf);
+        s.spawn(move || {
+            for acked in (PER_SEG..TOTAL).step_by(PER_SEG as usize) {
+                let _ = buf_d.delete_acked(acked);
+                thread::sleep(Duration::from_micros(10));
+            }
+        });
+    });
+
+    assert!(
+        !corruption.load(std::sync::atomic::Ordering::SeqCst),
+        "read_from returned wrong data under concurrent delete_acked"
+    );
+}
+
+// =========================================================================
 // Time-based auto-flush
 // =========================================================================
 

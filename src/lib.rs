@@ -11,6 +11,33 @@
 //! Crash recovery is filename-based: scanning the directory rebuilds `head_seq`
 //! and `next_seq` without any WAL or metadata database.
 //!
+//! # Delivery guarantees
+//!
+//! The crate provides **at-least-once delivery**. `append()` returns a stable
+//! sequence number; `delete_acked(seq)` is the commit point. Crash before the
+//! ack and items are re-delivered on recovery. Making this effectively-once
+//! requires server-side idempotency on `(producer_id, seq)` — see
+//! `examples/idempotent_server.rs`.
+//!
+//! Under the canonical single-consumer drain loop (`read_from → upload →
+//! delete_acked`, sequential), the buffer also provides read-your-writes,
+//! monotonic reads, and contiguous results. Under concurrent multi-reader
+//! operation, two narrow race windows open (spurious Io errors from
+//! concurrent `delete_acked`; transient gaps from concurrent `flush`) that
+//! do not corrupt data but change the result shape. See the
+//! [Consistency model](docs/DOMAIN_LANGUAGE.md#consistency-model) section of
+//! the Domain Language doc for the full guarantee table and practical
+//! guidance.
+//!
+//! # Schema evolution of `T`
+//!
+//! The crate has two versioning layers: the `SBF1` envelope (crate-managed,
+//! forward-evolvable) and the CBOR payload of `T` (caller-managed,
+//! unversioned). Changing `T` in a backward-incompatible way will break
+//! deserialization of old segment files. See the
+//! [Schema evolution](docs/DOMAIN_LANGUAGE.md#schema-evolution-of-t)
+//! section for compatible-change patterns and migration strategies.
+//!
 //! # Example
 //!
 //! ```no_run
