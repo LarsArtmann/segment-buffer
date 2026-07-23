@@ -200,6 +200,18 @@ inner.head_seq = new_head.unwrap_or(inner.next_seq).min(pending_start);
 
 is exhaustively proven correct across every schedule of two threads by the loom tests `delete_acked_during_append_never_loses_head`, `delete_acked_past_flush_boundary_with_concurrent_append`, `stats_snapshot_consistent_under_delete_plus_append`, and `delete_acked_idempotent_under_concurrent_append` in `tests/loom.rs`. The proof depends on a `MockStore` (loom-aware in-memory stub) being injected via `open_with_store`; the production `RealStore` shares the same trait, so the proof transfers. The stress test `concurrency_4_writers_1_reader_10k_events` covers the same interleaving _statistically_; loom covers it _exhaustively_.
 
+### `read_from` race windows (documented since 2026-07-23, not fixed by design)
+
+`read_from` has two unlocked gaps that concurrent operations can exploit. **Neither corrupts data.** Both are documented in `docs/DOMAIN_LANGUAGE.md` → "Consistency model" and proven safe by two stress tests in `src/tests.rs`.
+
+1. **Concurrent `delete_acked` race.** Phase 1 scans the directory unlocked, then reads each segment file unlocked. If `delete_acked` removes a segment between scan and read, `store.read_bytes` returns a bare `fs::read` error (`SegmentError::Io(NotFound)`). This is _not_ data loss — the segment was already acked. Caller retries or skips forward.
+
+2. **Concurrent `flush` race.** Phase 1 (scan) and Phase 2 (lock + read `unflushed`) are separated by an unlocked gap. If `flush()` completes during that gap, items leave `unflushed` for a segment file the scan already missed. Result: a transient incomplete read — the items are durable on disk, a retry sees them.
+
+**Why these are not fixed:** making `read_bytes` swallow `NotFound` would mask genuine corruption (a missing segment that was _not_ acked). Holding the mutex across the scan-to-read gap would serialize I/O and break the "never held across file I/O" invariant. The correct response is documentation + retry guidance, not a code change that implies a stronger guarantee than the crate provides.
+
+**Tests:** `concurrent_read_and_delete_never_corrupts` and `concurrent_read_and_flush_never_corrupts` in `src/tests.rs` stress both windows, asserting that reads never return wrong, out-of-order, or duplicate items.
+
 ## Backpressure / overload policy
 
 The crate **ships no admission policy**. `store_pressure()` returns `approx_disk_bytes / max_size_bytes ∈ [0.0, 1.0]`; `is_overloaded()` is just `> 0.9`. Callers define their own priority thresholds — see `examples/backpressure.rs` for the canonical pattern.

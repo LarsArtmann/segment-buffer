@@ -561,6 +561,115 @@ fn concurrent_read_and_delete_never_corrupts() {
     );
 }
 
+/// Proves that `read_from` under concurrent `flush` never returns corrupt
+/// data. The flush-race window (Phase 1 directory scan → Phase 2 mutex gap)
+/// can cause transient gaps: items that have left `unflushed` but whose
+/// segment file was not yet visible to the scan. The test asserts that reads
+/// never return wrong, out-of-order, or duplicate items, and that all items
+/// become visible once the flusher settles.
+#[test]
+fn concurrent_read_and_flush_never_corrupts() {
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                max_size_bytes: 100 * 1024 * 1024,
+                compression_level: 1, // minimize CPU to widen the race window
+                durability: DurabilityPolicy::Throughput,
+                cipher: None,
+            },
+        )
+        .unwrap(),
+    );
+
+    // Half the items pre-flushed to disk, half left in `unflushed` (Manual
+    // policy keeps them in memory until flush is called).
+    const ON_DISK: u64 = 500;
+    const IN_MEMORY: u64 = 500;
+    const TOTAL: u64 = ON_DISK + IN_MEMORY;
+
+    for i in 0..ON_DISK {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    for i in ON_DISK..TOTAL {
+        buf.append(test_item(i)).unwrap();
+    }
+
+    let corruption = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    thread::scope(|s| {
+        // Reader: scans forward, verifying every item id. Tolerates transient
+        // gaps (flush race) by retrying, but fails on any wrong, backwards, or
+        // duplicate item.
+        let buf_r = Arc::clone(&buf);
+        let corrupt_r = Arc::clone(&corruption);
+        s.spawn(move || {
+            let mut pos = 0u64;
+            let mut prev_id: Option<u64> = None;
+            let mut empty_retries = 0u32;
+            while pos < TOTAL {
+                match buf_r.read_from(pos, 200) {
+                    Ok(batch) if !batch.is_empty() => {
+                        empty_retries = 0;
+                        for item in &batch {
+                            if item.id >= TOTAL || prev_id.is_some_and(|p| item.id <= p) {
+                                corrupt_r.store(true, std::sync::atomic::Ordering::SeqCst);
+                                return;
+                            }
+                            prev_id = Some(item.id);
+                        }
+                        pos = prev_id.unwrap() + 1;
+                    }
+                    Ok(_) => {
+                        // Transient gap: items left `unflushed` but their
+                        // segment was not yet scanned. Retry — the gap closes
+                        // once the segment lands on disk.
+                        empty_retries += 1;
+                        if empty_retries > 200 {
+                            break;
+                        }
+                        thread::sleep(Duration::from_micros(20));
+                    }
+                    Err(_) => {
+                        thread::sleep(Duration::from_micros(20));
+                    }
+                }
+            }
+        });
+
+        // Flusher: drains `unflushed` to disk, racing with the reader's
+        // scan → lock gap.
+        let buf_f = Arc::clone(&buf);
+        s.spawn(move || {
+            for _ in 0..20 {
+                let _ = buf_f.flush();
+                thread::sleep(Duration::from_micros(50));
+            }
+        });
+    });
+
+    assert!(
+        !corruption.load(std::sync::atomic::Ordering::SeqCst),
+        "read_from returned wrong data under concurrent flush"
+    );
+
+    // After the flusher settles, all items must be visible — the transient
+    // gap closes once the segment is durably on disk.
+    buf.flush().unwrap();
+    let all = buf.read_from(0, TOTAL as usize + 10).unwrap();
+    assert_eq!(
+        all.len() as u64,
+        TOTAL,
+        "all items must be readable after flush completes"
+    );
+    for (i, item) in all.iter().enumerate() {
+        assert_eq!(item.id, i as u64, "item at position {i} has wrong id");
+    }
+}
+
 // =========================================================================
 // Time-based auto-flush
 // =========================================================================

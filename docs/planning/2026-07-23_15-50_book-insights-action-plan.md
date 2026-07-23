@@ -2,7 +2,7 @@
 
 > **Captured:** 2026-07-23 15:50
 > **Source:** [`docs/book-insights-mapping.md`](../book-insights-mapping.md)
-> **Status:** Planning — not yet executed
+> **Status:** Executed 2026-07-23 (commit `8a62182`). See [Execution Log](#execution-log) below for what changed from the original plan.
 > **Scope:** Five actionable gaps identified by mapping seven distributed-systems books against the segment-buffer codebase. The sixth gap (streaming AEAD) is already tracked on `ROADMAP.md` and correctly deferred.
 
 ---

@@ -332,24 +332,20 @@ tradeable** — they are invariant by design.
 ### Worked example: maximum throughput, cloud-durable
 
 ```rust,ignore
-SegmentConfig {
-    flush_policy: FlushPolicy::Batch(10_000),  // large batches
-    compression_level: 1,                      // minimal CPU
-    durability: DurabilityPolicy::Throughput,  // no fsync
-    ..SegmentConfig::default()
-}
+let mut config = SegmentConfig::default();
+config.flush_policy = FlushPolicy::Batch(10_000); // large batches
+config.compression_level = 1;                     // minimal CPU
+config.durability = DurabilityPolicy::Throughput;  // no fsync
 // Drain with for_each_from to avoid cloning.
 ```
 
 ### Worked example: maximum durability, standalone queue
 
 ```rust,ignore
-SegmentConfig {
-    flush_policy: FlushPolicy::Batch(100),     // small batches for low latency
-    compression_level: 9,                      // compact on disk
-    durability: DurabilityPolicy::Maximal,     // fsync file + directory
-    ..SegmentConfig::default()
-}
+let mut config = SegmentConfig::default();
+config.flush_policy = FlushPolicy::Batch(100);    // small batches for low latency
+config.compression_level = 9;                     // compact on disk
+config.durability = DurabilityPolicy::Maximal;    // fsync file + directory
 ```
 
 ### What you CANNOT trade (by design)

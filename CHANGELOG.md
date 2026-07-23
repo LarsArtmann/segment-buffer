@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Allocation-count regression guard** (`tests/alloc_guard.rs`): a counting
+  allocator asserting fixed heap-allocation budgets on the hot paths (warm
+  append, read_from in-memory, stats, append+flush). Machine-independent —
+  catches tail-latency regressions (extra clones, Vec growth, `format!` in hot
+  loops) without the CI hardware variance that makes absolute-latency
+  thresholds flaky.
+
+- **MPMC boundary stress tests** (`src/tests.rs`): two tests proving that
+  `read_from` never returns corrupt data under concurrent operation:
+  `concurrent_read_and_delete_never_corrupts` (spurious `Io(NotFound)` when a
+  segment is deleted between scan and read) and
+  `concurrent_read_and_flush_never_corrupts` (transient gaps when items leave
+  `unflushed` for a segment file the scan already missed).
+
+- **Domain Language expansions** (`docs/DOMAIN_LANGUAGE.md`):
+  - _Consistency model_: canonical single-consumer guarantees (read-your-writes,
+    monotonic reads, contiguous result, at-least-once) vs concurrent MPMC
+    behavior (the two race windows above), with retry guidance.
+  - _Tradeoffs matrix_: four tradeable knobs (DurabilityPolicy,
+    FlushPolicy::Batch, compression_level, read_from vs for_each_from) and
+    four non-tradeable invariants, with worked examples for both extremes.
+  - _Schema evolution of T_: the two-versioning-layer split (SBF1 envelope vs
+    CBOR payload), compatible-change patterns, and migration strategies.
+
+- **Crate-level rustdoc** (`src/lib.rs`): "Delivery guarantees" and "Schema
+  evolution of T" summary sections linking to the corresponding domain language
+  entries.
+
+- **Percentile-latency baseline** (`docs/perf/2026-07-23_percentile-latency-baseline.md`):
+  documents where criterion's p99/p99.9 data lives and why allocation-count
+  budgets are the CI-stable regression signal.
+
+- **Book-insights mapping** (`docs/book-insights-mapping.md`) and
+  **action plan** (`docs/planning/2026-07-23_15-50_book-insights-action-plan.md`):
+  theory-to-practice analysis mapping seven distributed-systems books against
+  the codebase, with a Pareto execution plan and execution log.
+
+### Changed
+
+- **`SegmentConfig` examples in docs** now use `Default::default()` + field
+  reassignment instead of struct-literal syntax, which fails for external
+  consumers due to `#[non_exhaustive]`.
+
 ---
 
 ## [0.5.3] - 2026-07-22

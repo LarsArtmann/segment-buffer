@@ -25,7 +25,7 @@
 //! operation, two narrow race windows open (spurious Io errors from
 //! concurrent `delete_acked`; transient gaps from concurrent `flush`) that
 //! do not corrupt data but change the result shape. See the
-//! [Consistency model](docs/DOMAIN_LANGUAGE.md#consistency-model) section of
+//! [Consistency model](https://github.com/LarsArtmann/segment-buffer/blob/master/docs/DOMAIN_LANGUAGE.md#consistency-model) section of
 //! the Domain Language doc for the full guarantee table and practical
 //! guidance.
 //!
@@ -35,7 +35,7 @@
 //! forward-evolvable) and the CBOR payload of `T` (caller-managed,
 //! unversioned). Changing `T` in a backward-incompatible way will break
 //! deserialization of old segment files. See the
-//! [Schema evolution](docs/DOMAIN_LANGUAGE.md#schema-evolution-of-t)
+//! [Schema evolution](https://github.com/LarsArtmann/segment-buffer/blob/master/docs/DOMAIN_LANGUAGE.md#schema-evolution-of-t)
 //! section for compatible-change patterns and migration strategies.
 //!
 //! # Example
