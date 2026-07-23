@@ -8,36 +8,36 @@
 
 ## a) FULLY DONE
 
-| # | Item | Evidence |
-|---|------|----------|
-| 1 | **Root-caused the CI failure** | `chacha20poly1305` 0.11 pulls `hybrid-array` where `Array::from_slice` is deprecated; `-D warnings` turns it into a hard error. Identified at `src/cipher.rs:384,406` (XChaCha20 encrypt/decrypt) and `examples/bring_your_own_cipher.rs:33,52`. |
-| 2 | **Fixed all 4 code sites** | Migrated to `Nonce::from(array)` + `try_into()` pattern (mirrors the existing AES-GCM code that already compiled clean). Also aligned nonce passing to `&nonce` for the aead 0.6 trait signature. Commit `3fb8ba2`. |
-| 3 | **Full local verification gate** | `cargo fmt --all -- --check` ✅ · `cargo clippy --all-targets -- -D warnings` (default + encryption) ✅ · `cargo test --no-fail-fast --features encryption` (97 unit + 38 doc = 135 passed) ✅ · `cargo doc --no-deps --features encryption` ✅ |
-| 4 | **Loom concurrency gate** | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` — 9 passed ✅ |
-| 5 | **MSRV 1.86 gate** | `nix develop .#msrv -c cargo check --all-targets --features encryption` — clean ✅ |
-| 6 | **CI verified on PR branch** | All 22 checks passed (ubuntu + macOS × stable + 1.86, loom, nix, supply-chain, MSRV, etc.) |
-| 7 | **PR merged** | Squash-merged as `2761132`. State: MERGED. |
-| 8 | **CHANGELOG updated** | Added `[Unreleased] → Changed` entry for the migration, following the precedent of the `aes-gcm` 0.10→0.11 entry. Commit `8025796`. |
-| 9 | **Master CI verified green** | All 4 master runs (CI + Nix for both commits) show `success`. |
+| #   | Item                             | Evidence                                                                                                                                                                                                                                         |
+| --- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Root-caused the CI failure**   | `chacha20poly1305` 0.11 pulls `hybrid-array` where `Array::from_slice` is deprecated; `-D warnings` turns it into a hard error. Identified at `src/cipher.rs:384,406` (XChaCha20 encrypt/decrypt) and `examples/bring_your_own_cipher.rs:33,52`. |
+| 2   | **Fixed all 4 code sites**       | Migrated to `Nonce::from(array)` + `try_into()` pattern (mirrors the existing AES-GCM code that already compiled clean). Also aligned nonce passing to `&nonce` for the aead 0.6 trait signature. Commit `3fb8ba2`.                              |
+| 3   | **Full local verification gate** | `cargo fmt --all -- --check` ✅ · `cargo clippy --all-targets -- -D warnings` (default + encryption) ✅ · `cargo test --no-fail-fast --features encryption` (97 unit + 38 doc = 135 passed) ✅ · `cargo doc --no-deps --features encryption` ✅  |
+| 4   | **Loom concurrency gate**        | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` — 9 passed ✅                                                                                                                                                          |
+| 5   | **MSRV 1.86 gate**               | `nix develop .#msrv -c cargo check --all-targets --features encryption` — clean ✅                                                                                                                                                               |
+| 6   | **CI verified on PR branch**     | All 22 checks passed (ubuntu + macOS × stable + 1.86, loom, nix, supply-chain, MSRV, etc.)                                                                                                                                                       |
+| 7   | **PR merged**                    | Squash-merged as `2761132`. State: MERGED.                                                                                                                                                                                                       |
+| 8   | **CHANGELOG updated**            | Added `[Unreleased] → Changed` entry for the migration, following the precedent of the `aes-gcm` 0.10→0.11 entry. Commit `8025796`.                                                                                                              |
+| 9   | **Master CI verified green**     | All 4 master runs (CI + Nix for both commits) show `success`.                                                                                                                                                                                    |
 
 ---
 
 ## b) PARTIALLY DONE
 
-| # | Item | What's missing |
-|---|------|----------------|
-| 1 | **Documentation drift fix** | `docs/CIPHERS.md:140,152` still contain the deprecated `Nonce::from_slice` pattern in the ChaCha20-Poly1305 snippet — the exact code I fixed in the runnable example. The example header explicitly says it's "the runnable counterpart to the snippet in `docs/CIPHERS.md`". I fixed the code but not the prose. CI doesn't catch this because CIPHERS.md snippets are not compiled doctests. **This is stale documentation now.** |
+| #   | Item                        | What's missing                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Documentation drift fix** | `docs/CIPHERS.md:140,152` still contain the deprecated `Nonce::from_slice` pattern in the ChaCha20-Poly1305 snippet — the exact code I fixed in the runnable example. The example header explicitly says it's "the runnable counterpart to the snippet in `docs/CIPHERS.md`". I fixed the code but not the prose. CI doesn't catch this because CIPHERS.md snippets are not compiled doctests. **This is stale documentation now.** |
 
 ---
 
 ## c) NOT STARTED
 
-| # | Item |
-|---|------|
-| 1 | Fix `docs/CIPHERS.md` nonce snippet (see Partially Done above) |
-| 2 | Clean up stale local branch `dependabot/cargo/chacha20poly1305-0.11.0` |
-| 3 | Address missing Dependabot labels (`cargo`, `dependencies`) — PR comment said they couldn't be found |
-| 4 | Decide on patch release 0.5.3 for the dep bump |
+| #   | Item                                                                                                 |
+| --- | ---------------------------------------------------------------------------------------------------- |
+| 1   | Fix `docs/CIPHERS.md` nonce snippet (see Partially Done above)                                       |
+| 2   | Clean up stale local branch `dependabot/cargo/chacha20poly1305-0.11.0`                               |
+| 3   | Address missing Dependabot labels (`cargo`, `dependencies`) — PR comment said they couldn't be found |
+| 4   | Decide on patch release 0.5.3 for the dep bump                                                       |
 
 ---
 
