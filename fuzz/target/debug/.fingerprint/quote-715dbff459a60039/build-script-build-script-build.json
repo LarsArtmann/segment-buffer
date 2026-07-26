@@ -1,0 +1,20 @@
+{
+  "rustc": 17897083425984401722,
+  "features": "[\"default\", \"proc-macro\"]",
+  "declared_features": "[\"default\", \"proc-macro\"]",
+  "target": 5408242616063297496,
+  "profile": 2225463790103693989,
+  "path": 13155737667108247378,
+  "deps": [],
+  "local": [
+    {
+      "CheckDepInfo": {
+        "dep_info": "debug/.fingerprint/quote-715dbff459a60039/dep-build-script-build-script-build",
+        "checksum": false
+      }
+    }
+  ],
+  "rustflags": [],
+  "config": 8247474407144887393,
+  "compile_kind": 0
+}

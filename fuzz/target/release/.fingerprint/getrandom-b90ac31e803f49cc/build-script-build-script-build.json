@@ -1,0 +1,20 @@
+{
+  "rustc": 10285211449119599966,
+  "features": "[]",
+  "declared_features": "[\"std\", \"sys_rng\", \"wasm_js\"]",
+  "target": 2835126046236718539,
+  "profile": 15001513744003964426,
+  "path": 14902716492015478028,
+  "deps": [],
+  "local": [
+    {
+      "CheckDepInfo": {
+        "dep_info": "release/.fingerprint/getrandom-b90ac31e803f49cc/dep-build-script-build-script-build",
+        "checksum": false
+      }
+    }
+  ],
+  "rustflags": [],
+  "config": 9396254390672932401,
+  "compile_kind": 0
+}

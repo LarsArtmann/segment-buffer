@@ -1,0 +1,20 @@
+{
+  "rustc": 17897083425984401722,
+  "features": "[]",
+  "declared_features": "[]",
+  "target": 15857469692476194146,
+  "profile": 2225463790103693989,
+  "path": 11088316189565807575,
+  "deps": [[7098700569944897890, "libc", false, 4536859693825789874]],
+  "local": [
+    {
+      "CheckDepInfo": {
+        "dep_info": "debug/.fingerprint/jobserver-b9d1e9a25a5fa433/dep-lib-jobserver",
+        "checksum": false
+      }
+    }
+  ],
+  "rustflags": [],
+  "config": 8247474407144887393,
+  "compile_kind": 0
+}

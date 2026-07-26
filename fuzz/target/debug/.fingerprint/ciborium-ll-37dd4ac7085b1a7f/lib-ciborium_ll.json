@@ -1,0 +1,23 @@
+{
+  "rustc": 7458672600737419911,
+  "features": "[]",
+  "declared_features": "[\"alloc\", \"std\"]",
+  "target": 6259365080488940533,
+  "profile": 2241668132362809309,
+  "path": 14299310129168901048,
+  "deps": [
+    [10057415176380654875, "ciborium_io", false, 8807108754000014350],
+    [16598877151661132269, "half", false, 7070322661619754860]
+  ],
+  "local": [
+    {
+      "CheckDepInfo": {
+        "dep_info": "debug/.fingerprint/ciborium-ll-37dd4ac7085b1a7f/dep-lib-ciborium_ll",
+        "checksum": false
+      }
+    }
+  ],
+  "rustflags": [],
+  "config": 8247474407144887393,
+  "compile_kind": 0
+}

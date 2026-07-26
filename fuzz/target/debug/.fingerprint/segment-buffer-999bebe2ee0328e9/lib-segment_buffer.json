@@ -1,0 +1,27 @@
+{
+  "rustc": 7458672600737419911,
+  "features": "[\"default\"]",
+  "declared_features": "[\"default\", \"encryption\"]",
+  "target": 5063220884271381227,
+  "profile": 17672942494452627365,
+  "path": 14661802670045775139,
+  "deps": [
+    [4052408954973158025, "zstd", false, 13518241112559775698],
+    [6557439603276904804, "serde", false, 1774190546422073070],
+    [11742730876020405241, "thiserror", false, 5974641982281031717],
+    [11934022306856972276, "ciborium", false, 14101936272846264819],
+    [12459942763388630573, "parking_lot", false, 1394288380629376921],
+    [14757622794040968908, "tracing", false, 10646781128728667104]
+  ],
+  "local": [
+    {
+      "CheckDepInfo": {
+        "dep_info": "debug/.fingerprint/segment-buffer-999bebe2ee0328e9/dep-lib-segment_buffer",
+        "checksum": false
+      }
+    }
+  ],
+  "rustflags": [],
+  "config": 8247474407144887393,
+  "compile_kind": 0
+}

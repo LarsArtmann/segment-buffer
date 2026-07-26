@@ -1,0 +1,20 @@
+{
+  "rustc": 14618015627051046093,
+  "features": "[\"legacy\", \"std\", \"zdict_builder\"]",
+  "declared_features": "[\"bindgen\", \"debug\", \"default\", \"experimental\", \"fat-lto\", \"legacy\", \"no_asm\", \"no_wasm_shim\", \"non-cargo\", \"pkg-config\", \"seekable\", \"std\", \"thin\", \"thin-lto\", \"zdict_builder\", \"zstdmt\"]",
+  "target": 3822121216239517979,
+  "profile": 11535200890256339260,
+  "path": 9772038180596858877,
+  "deps": [[14036207514847816158, "build_script_build", false, 474304979378189033]],
+  "local": [
+    {
+      "CheckDepInfo": {
+        "dep_info": "debug/.fingerprint/zstd-sys-36e8ab37394c772a/dep-lib-zstd_sys",
+        "checksum": false
+      }
+    }
+  ],
+  "rustflags": [],
+  "config": 9396254390672932401,
+  "compile_kind": 0
+}
