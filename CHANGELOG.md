@@ -909,7 +909,7 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 [Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.4...HEAD
 [0.5.4]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.4
-[0.5.3]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.3
 [0.5.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.2
 [0.5.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.0
