@@ -72,6 +72,14 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   2026-07-22/23 batch received `## Resolution` appendices closing their open
   items.
 
+- **Consistency-model property tests** (`src/property_tests.rs`): five
+  property tests (16 → 21 total) formalising the two documented `read_from`
+  race windows. Three deterministic tests verify data correctness for every
+  generated state (surviving items after `delete_acked`, disk/memory split,
+  gap-closes-after-flush); two concurrent tests exercise the actual race
+  windows with generated parameters, including a completeness assertion that
+  the transient gap closes once the flusher settles.
+
 ### Changed
 
 - **`error.rs` pedantic-clean**: all missing-backticks doc warnings fixed
@@ -111,6 +119,19 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   the retry-exhaustion path now returns a graceful `Err(...)` instead of
   `unreachable!()`, so copied integration code stays defensive even if the retry
   control flow changes.
+
+### Fixed
+
+- **Scan-cache TOCTOU under concurrent `flush`** (`src/lib.rs`): `scan_segments`
+  captured the directory `mtime` *after* its `readdir`. A segment rename landing
+  mid-scan could then pair a post-rename `mtime` with a pre-rename (stale)
+  segment list in the cache, so the `mtime` staleness guard failed to detect it
+  and "a retry sees them" did not hold until the next directory mutation. The
+  `mtime` is now captured *before* the scan, so any mid-scan rename leaves the
+  cached `mtime` stale and forces a re-scan on the next call. Surfaced by the
+  new `read_from_invariant_under_concurrent_flush` property test. (Effective on
+  filesystems where `mtime` advances; the `mtime_supported == false` path still
+  relies solely on explicit invalidation.)
 
 ## [0.5.4] - 2026-08-02
 

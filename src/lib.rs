@@ -2224,18 +2224,29 @@ where
                 // mtime moved → fall through to re-scan, replacing the cache.
             }
         }
-        // Cache miss: scan via the store, store, return.
+        // Cache miss: scan via the store, then publish under the cache lock.
+        //
+        // The directory mtime is captured BEFORE the scan, not after. A
+        // segment rename that lands during the readdir would otherwise pair a
+        // post-rename mtime with a pre-rename (stale) segment list in the
+        // cache: the mtime guard would then see "no change" and keep serving
+        // the stale list, breaking the "a retry sees them" guarantee. With a
+        // pre-scan mtime, any mutation during the scan leaves the cached mtime
+        // stale, so the next call re-scans and observes the new segment. This
+        // only helps on filesystems where mtime is meaningful (see
+        // `mtime_supported`); on others the explicit `invalidate_scan_cache`
+        // called by every on-disk mutation is the sole defence.
+        let pre_scan_mtime = std::fs::metadata(&self.dir)
+            .and_then(|m| m.modified())
+            .ok();
         let segments = self
             .store
             .scan()
             .map_err(|e| e.with_dir())
             .map_err(|e| e.with_path(&self.dir))?;
-        // Refresh the cached dir mtime alongside the cache population so
-        // future reads can detect external mutations.
-        let fresh_mtime = std::fs::metadata(&self.dir).and_then(|m| m.modified()).ok();
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());
-        *self.last_dir_mtime.lock() = fresh_mtime;
+        *self.last_dir_mtime.lock() = pre_scan_mtime;
         Ok(segments)
     }
 

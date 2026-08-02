@@ -286,8 +286,14 @@ differs:
   and Phase 2 (read `unflushed` under lock) are separated by an unlocked
   gap. If `flush()` completes during that gap, it moves items from
   `unflushed` into a segment file the scan already missed. `read_from`
-  returns an incomplete result for that call. The items are durable on disk
-  — a retry sees them.
+  returns an incomplete result for that call. The items are durable on disk;
+  a subsequent `read_from` observes them once the scan cache refreshes. The
+  cache captures the directory `mtime` *before* its `readdir`, so any rename
+  landing mid-scan leaves the cached `mtime` stale and forces a re-scan on
+  the next call — the gap is transient, not permanent. (On filesystems where
+  `mtime` does not advance — `mtime_supported == false` — the cache relies
+  solely on the explicit invalidation issued by every on-disk mutation; the
+  mid-scan-rename edge is not covered there.)
 
 **What always holds, even under concurrency:**
 
@@ -297,6 +303,12 @@ differs:
   formally for every generated state by property tests
   `read_from_surviving_items_correct_after_delete` and
   `read_from_correct_with_disk_memory_split` in `src/property_tests.rs`.)
+- Transient gaps are transient. After concurrent `flush`/`delete_acked`
+  operations settle, every durable item becomes visible to `read_from`
+  within a bounded number of retries. (Verified statistically by
+  `read_from_invariant_under_concurrent_flush` in `src/property_tests.rs`;
+  the single-threaded "gap closes" half is verified for every generated
+  state by `read_from_all_visible_after_flush_from_split`.)
 - `delete_acked` is idempotent and never removes segments whose `end >
 acked_seq`. (Proven by loom tests in `tests/loom.rs`.)
 - `append` assigns sequence numbers atomically under one lock acquisition.
