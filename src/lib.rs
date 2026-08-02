@@ -90,7 +90,7 @@
 // docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
 // `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
 // Bump the version segment when cutting a release.
-#![doc(html_root_url = "https://docs.rs/segment-buffer/0.5.3")]
+#![doc(html_root_url = "https://docs.rs/segment-buffer/0.6.0")]
 // On docs.rs (nightly), enable the `doc_cfg` feature so feature-gated items
 // show an "Available on feature `encryption` only" badge. Inert on local
 // builds (stable) where `docsrs` is never set.
@@ -181,11 +181,43 @@ pub enum FlushPolicy {
     /// Flush when EITHER `batch_size` items are buffered OR `interval` has
     /// elapsed since the last flush — whichever fires first. This is the
     /// pre-v0.4.0 default behavior.
+    ///
+    /// **Caution:** during low-throughput periods this policy creates tiny
+    /// segment files (as small as 1 event) every `interval`. Use
+    /// [`BatchOrIntervalMin`](Self::BatchOrIntervalMin) to suppress interval
+    /// flushes below a minimum batch threshold.
     BatchOrInterval {
         /// In-memory item count threshold.
         batch_size: usize,
         /// Max time between flushes.
         interval: std::time::Duration,
+    },
+    /// Flush when `batch_size` items are buffered, OR when `interval` has
+    /// elapsed AND at least `min_batch` items are pending, OR when
+    /// `max_interval` has elapsed regardless of pending count.
+    ///
+    /// This policy prevents tiny segment files during low-throughput periods:
+    /// the interval timer only triggers a flush if enough events have
+    /// accumulated to be worth writing. The `max_interval` safety valve
+    /// ensures events don't sit in memory indefinitely during idle periods
+    /// (protecting crash-recovery latency).
+    ///
+    /// Example: `batch_size=256, min_batch=10, interval=5s, max_interval=60s`
+    /// means: flush immediately at 256 events; every 5s, flush only if 10+
+    /// events are pending; every 60s, flush everything regardless.
+    BatchOrIntervalMin {
+        /// In-memory item count threshold for immediate flush.
+        batch_size: usize,
+        /// Minimum pending items before an interval-triggered flush fires.
+        /// Prevents writing tiny segments during low-throughput periods.
+        min_batch: usize,
+        /// Interval after which to flush if at least `min_batch` items
+        /// accumulated.
+        interval: std::time::Duration,
+        /// Absolute maximum time between flushes, regardless of pending count.
+        /// Ensures events don't sit in memory indefinitely during idle
+        /// periods.
+        max_interval: std::time::Duration,
     },
     /// Never auto-flush. The caller must call [`SegmentBuffer::flush`]
     /// explicitly to make appends durable. Useful for tests and for callers
@@ -216,6 +248,16 @@ impl FlushPolicy {
                 batch_size,
                 interval,
             } => pending_len >= *batch_size || time_since_last_flush >= *interval,
+            FlushPolicy::BatchOrIntervalMin {
+                batch_size,
+                min_batch,
+                interval,
+                max_interval,
+            } => {
+                pending_len >= *batch_size
+                    || time_since_last_flush >= *max_interval
+                    || (pending_len >= *min_batch && time_since_last_flush >= *interval)
+            }
             FlushPolicy::Manual => false,
         }
     }
@@ -400,6 +442,24 @@ impl SegmentConfigBuilder {
         self.flush_policy(FlushPolicy::BatchOrInterval {
             batch_size,
             interval,
+        })
+    }
+
+    /// Convenience: install a [`FlushPolicy::BatchOrIntervalMin`] with all four
+    /// parameters. Suppresses tiny segments during low-throughput periods by
+    /// gating interval flushes on a minimum batch count.
+    pub fn flush_at_batch_or_interval_min(
+        self,
+        batch_size: usize,
+        min_batch: usize,
+        interval: std::time::Duration,
+        max_interval: std::time::Duration,
+    ) -> Self {
+        self.flush_policy(FlushPolicy::BatchOrIntervalMin {
+            batch_size,
+            min_batch,
+            interval,
+            max_interval,
         })
     }
 

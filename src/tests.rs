@@ -709,6 +709,138 @@ fn time_based_auto_flush() {
 }
 
 // =========================================================================
+// FlushPolicy::BatchOrIntervalMin tests
+// =========================================================================
+
+#[test]
+fn batch_or_interval_min_suppresses_small_flush() {
+    let tmp = TempDir::new().unwrap();
+    let buf: TestBuffer = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::BatchOrIntervalMin {
+                batch_size: 256,
+                min_batch: 10,
+                interval: std::time::Duration::from_millis(100),
+                max_interval: std::time::Duration::from_secs(30),
+            },
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: None,
+        },
+    )
+    .expect("create buffer");
+
+    buf.append(test_item(0)).unwrap();
+    thread::sleep(Duration::from_millis(200));
+    buf.append(test_item(1)).unwrap();
+
+    assert!(
+        buf.scan_segments().unwrap().is_empty(),
+        "Should NOT flush below min_batch even after interval elapsed"
+    );
+}
+
+#[test]
+fn batch_or_interval_min_flushes_at_min_batch() {
+    let tmp = TempDir::new().unwrap();
+    let buf: TestBuffer = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::BatchOrIntervalMin {
+                batch_size: 256,
+                min_batch: 5,
+                interval: std::time::Duration::from_millis(100),
+                max_interval: std::time::Duration::from_secs(30),
+            },
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: None,
+        },
+    )
+    .expect("create buffer");
+
+    for i in 0..5 {
+        buf.append(test_item(i)).unwrap();
+    }
+    thread::sleep(Duration::from_millis(150));
+    buf.append(test_item(5)).unwrap();
+
+    assert!(
+        !buf.scan_segments().unwrap().is_empty(),
+        "Should flush when min_batch met and interval elapsed"
+    );
+}
+
+#[test]
+fn batch_or_interval_min_flushes_at_max_interval() {
+    let tmp = TempDir::new().unwrap();
+    let buf: TestBuffer = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::BatchOrIntervalMin {
+                batch_size: 256,
+                min_batch: 100,
+                interval: std::time::Duration::from_millis(100),
+                max_interval: std::time::Duration::from_millis(300),
+            },
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: None,
+        },
+    )
+    .expect("create buffer");
+
+    buf.append(test_item(0)).unwrap();
+    assert!(
+        buf.scan_segments().unwrap().is_empty(),
+        "Should not flush immediately"
+    );
+
+    thread::sleep(Duration::from_millis(400));
+    buf.append(test_item(1)).unwrap();
+
+    assert!(
+        !buf.scan_segments().unwrap().is_empty(),
+        "Should flush at max_interval regardless of min_batch"
+    );
+}
+
+#[test]
+fn batch_or_interval_min_flushes_at_batch_size() {
+    let tmp = TempDir::new().unwrap();
+    let buf: TestBuffer = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::BatchOrIntervalMin {
+                batch_size: 4,
+                min_batch: 100,
+                interval: std::time::Duration::from_secs(30),
+                max_interval: std::time::Duration::from_secs(60),
+            },
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: None,
+        },
+    )
+    .expect("create buffer");
+
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+
+    assert_eq!(
+        buf.scan_segments().unwrap().len(),
+        1,
+        "Should flush immediately at batch_size regardless of min_batch/interval"
+    );
+}
+
+// =========================================================================
 // Error-path tests (no encryption)
 // =========================================================================
 

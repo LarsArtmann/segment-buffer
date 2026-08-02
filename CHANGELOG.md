@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`FlushPolicy::BatchOrIntervalMin`** (`src/lib.rs`): a new flush policy
+  variant that suppresses tiny segment files during low-throughput periods.
+  Flushes immediately at `batch_size`, at `interval` only if at least
+  `min_batch` items are pending, or unconditionally at `max_interval` (safety
+  valve for crash-recovery latency). Added `SegmentConfigBuilder::flush_at_batch_or_interval_min`
+  convenience setter. Four unit tests covering all trigger paths.
+
 - **Allocation-count regression guard** (`tests/alloc_guard.rs`): a counting
   allocator asserting fixed heap-allocation budgets on the hot paths (warm
   append, read_from in-memory, stats, append+flush). Machine-independent —

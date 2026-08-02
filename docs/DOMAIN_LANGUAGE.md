@@ -140,6 +140,11 @@ When to auto-flush `unflushed` to disk:
 - `Interval(d)` — flush as soon as `d` has elapsed since the last flush.
 - `BatchOrInterval { batch_size, interval }` — flush when **either** fires
   (the pre-v0.4.0 default behavior; still the `Default`).
+- `BatchOrIntervalMin { batch_size, min_batch, interval, max_interval }` —
+  like `BatchOrInterval` but the interval trigger only fires if at least
+  `min_batch` items are pending, preventing tiny segment files during
+  low-throughput periods. `max_interval` is an unconditional safety valve so
+  events don't sit in memory indefinitely.
 - `Manual` — never auto-flush; caller must call `flush()` explicitly.
 
 ### `SegmentCipher`
