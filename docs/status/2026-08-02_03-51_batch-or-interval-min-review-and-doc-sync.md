@@ -243,7 +243,7 @@ migration → patch), non-breaking additions are patch bumps. Changed
 | test                | `cargo test --no-fail-fast --features encryption`                         | 104 unit + 1 integration + 38 doctests, all pass |
 | doc                 | `cargo doc --no-deps --features encryption`                               | clean                                            |
 | loom                | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 9/9 pass                                         |
-| nix                 | `nix flake check`                                                         | run — see result below                           |
+| nix                 | `nix flake check`                                                         | **all checks passed** (8/8, all as v0.5.4)       |
 
 ### Remaining open items (lower priority)
 
