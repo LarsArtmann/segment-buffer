@@ -7,14 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-08-02
+
+Non-breaking batch: a new `FlushPolicy` variant for tiny-segment suppression,
+a counting-allocator regression guard, expanded concurrency tests, and
+broader documentation. No API break, no on-disk format change, no new
+dependency.
+
 ### Added
 
 - **`FlushPolicy::BatchOrIntervalMin`** (`src/lib.rs`): a new flush policy
   variant that suppresses tiny segment files during low-throughput periods.
   Flushes immediately at `batch_size`, at `interval` only if at least
   `min_batch` items are pending, or unconditionally at `max_interval` (safety
-  valve for crash-recovery latency). Added `SegmentConfigBuilder::flush_at_batch_or_interval_min`
-  convenience setter. Four unit tests covering all trigger paths.
+  valve for crash-recovery latency). Added
+  `SegmentConfigBuilder::flush_at_batch_or_interval_min` convenience setter
+  with `debug_assert!` validation guarding against contradictory configs
+  (`min_batch > batch_size`, `interval > max_interval`). Covered by pure
+  decision tests (no wall-clock dependency), an integration test for the
+  batch-size trigger path, and an exhaustive proptest asserting
+  `should_flush` matches the documented formula across all parameter
+  combinations.
 
 - **Allocation-count regression guard** (`tests/alloc_guard.rs`): a counting
   allocator asserting fixed heap-allocation budgets on the hot paths (warm
@@ -58,6 +71,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SegmentConfig` examples in docs** now use `Default::default()` + field
   reassignment instead of struct-literal syntax, which fails for external
   consumers due to `#[non_exhaustive]`.
+
+- **FlushPolicy time-based tests rewritten as pure decision tests.** The
+  `should_flush` method is a pure function — the tests now call it directly
+  with synthetic `Duration` values instead of `thread::sleep` + file I/O.
+  Eliminates all CI flakiness from wall-clock dependency and reduces test
+  runtime from ~3s to ~0.02s.
+
+### Documentation
+
+- **`docs/PERFORMANCE.md`** tuning guide: added `BatchOrIntervalMin` callout
+  in the FlushPolicy section as the write-amplification alternative for
+  low-throughput producers who cannot use `Manual + append_all`.
 
 ---
 
@@ -882,8 +907,9 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.2...HEAD
-[0.5.3]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.3
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.4
+[0.5.3]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.3...v0.5.4
 [0.5.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.2
 [0.5.1]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.1
 [0.5.0]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.0
