@@ -55,6 +55,19 @@ failures. This is a format change and is tracked under envelope v2.
 pooled zstd contexts all shipped (see FEATURES.md). Future: richer
 per-segment metrics (segment count, per-segment size histogram).
 
+### Lint evolution — incremental `pedantic` / `nursery`
+
+The two-tier panic-prevention lint architecture shipped (unreleased on
+master): universal control-flow lints in `[lints.clippy]` + library-only
+`#![deny(...)]` for `unwrap_used` / `expect_used` / `indexing_slicing` /
+`string_slice` / `panic_in_result_fn`. The full namtao set (`pedantic` +
+`nursery` + `as_conversions` + `arithmetic_side_effects`) produces ~570
+errors. The tractable path is incremental adoption: enable `pedantic` at
+`warn` level first (visible backlog, no CI breakage), then fix
+library-only violations module by module (start with `error.rs` — smallest
+module). The consumer crate (monitor365) already uses the full strict set;
+this crate should converge toward it without rushing.
+
 ### Envelope v2 / format change
 
 Long-term format change. The v2 design ships a 20-byte header (cipher id,
@@ -107,3 +120,6 @@ for the full layout, migration path, and trigger conditions.
 - [`docs/planning/2026-07-23_15-50_book-insights-action-plan.md`](docs/planning/2026-07-23_15-50_book-insights-action-plan.md)
   — the Pareto execution plan for closing the documentation and design gaps
   identified by the mapping.
+- [`docs/status/2026-08-02_05-03_namtao-rust-learnings-and-strict-lint-adoption.md`](docs/status/2026-08-02_05-03_namtao-rust-learnings-and-strict-lint-adoption.md)
+  — source of the two-tier lint architecture, the deferred `pedantic`/
+  `nursery` migration plan, and the panic-free guarantee design question.

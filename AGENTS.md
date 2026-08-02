@@ -260,7 +260,7 @@ src/
   cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher + XChaCha20Poly1305Cipher (both feature-gated, impls in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
   tests.rs         `mod tests` — unit tests (count via `grep -c '#[test]' src/tests.rs`)
-  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / FlushPolicy (15 properties; `grep -c '#[test]' src/property_tests.rs`)
+  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / FlushPolicy (16 properties; `grep -c '#[test]' src/property_tests.rs`)
 examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput)
 benches/           8 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy) + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery, fuzz_parse_filename, fuzz_envelope, fuzz_append_all); requires nightly

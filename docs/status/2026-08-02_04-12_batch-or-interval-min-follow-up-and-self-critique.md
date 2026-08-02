@@ -228,3 +228,26 @@ until the next time it actually fails in CI?
 - [ ] Cargo.lock has 6 unintended transitive dep bumps — NOT FIXED.
 - [ ] Test failure (103/1 run) — NOT INVESTIGATED (which test failed unknown).
 - [x] No release shipped.
+
+---
+
+## Resolution (2026-08-02)
+
+All open items from this session were resolved by subsequent sessions the
+same day:
+
+- ~~Cargo.lock 6 unintended transitive dep bumps~~ — cleaned in the
+  `04-38` session (reverted to pre-contamination lockfile, applied only
+  the version line).
+- ~~Test failure (103/1 run) not investigated~~ — root-caused and
+  eliminated in the `04-38` session: `last_flush` set before `recover()`
+  ate wall-clock time into the test threshold under load. All time-based
+  FlushPolicy tests rewritten as pure `should_flush()` calls.
+- ~~`scripts/verify-gate.sh` not run~~ — run in the `04-38` session
+  (14/14 gates green).
+- ~~`cargo audit` + `cargo deny check` not run~~ — run as part of
+  `verify-gate.sh` in the `04-38` session.
+- v0.5.4 shipped (tag `v0.5.4`, commit `901c2de`). See CHANGELOG `[0.5.4]`.
+
+Remaining forward-looking items (fuzz target for flush policy, standalone
+example for `BatchOrIntervalMin`) are tracked in `TODO_LIST.md`.

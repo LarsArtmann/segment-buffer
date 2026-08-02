@@ -255,14 +255,15 @@ Reframed for the cloud-sync producer-side buffer target._
 
 ## Status
 
-**Current release (v0.5.1)**: metadata-only patch finishing the v0.5.0 cloud-sync
-reframing on the crates.io/docs.rs surfaces. See [CHANGELOG.md](CHANGELOG.md)
-for full release history; see [FEATURES.md](FEATURES.md) for the capability
-inventory and [ROADMAP.md](ROADMAP.md) for long-term direction and explicit
-non-goals.
+**Current release (v0.5.4)**: `FlushPolicy::BatchOrIntervalMin` for tiny-segment
+suppression, allocation-count regression guard, expanded concurrency tests, and
+broader documentation. See [CHANGELOG.md](CHANGELOG.md) for full release history;
+see [FEATURES.md](FEATURES.md) for the capability inventory and
+[ROADMAP.md](ROADMAP.md) for long-term direction and explicit non-goals.
 
-**Unreleased (master):** performance-only batch (no API or on-disk format
-change). See the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md) for
+**Unreleased (master):** strict Clippy lint adoption — two-tier panic-prevention
+architecture making library code provably panic-free. No API or on-disk format
+change. See the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md) for
 details.
 
 **Performance highlight:** the `append/batch_1` benchmark is roughly **2×

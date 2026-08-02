@@ -222,3 +222,21 @@ time_based` filters.
 - [x] Flaky test root-caused and eliminated — zero `thread::sleep` in FlushPolicy tests.
 - [x] Cargo.lock contamination cleaned — verified `cargo check --locked` passes.
 - [x] No release shipped.
+
+---
+
+## Resolution (2026-08-02)
+
+All must-do items completed — **v0.5.4 shipped** (tag `v0.5.4`, commit
+`901c2de`). The test rewrite and Cargo.lock cleanup were part of that
+release. See CHANGELOG `[0.5.4]` → "Changed" for the test-rewrite entry.
+
+The three open questions (Q1–Q3) were all answered by subsequent events:
+
+- Q1 (push + tag): done in the `04-50` release session.
+- Q2 (CHANGELOG entry): added under `[0.5.4] → Changed`.
+- Q3 (test rename): kept the new name `batch_or_interval_flushes_after_interval`.
+
+Forward-looking items (edge-case tests for `BatchOrIntervalMin`,
+`Display` impl for `FlushPolicy`, standalone example, `last_flush`
+initialization timing docs) are tracked in `TODO_LIST.md`.

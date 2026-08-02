@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Two-tier Clippy lint architecture** (`Cargo.toml`, `src/lib.rs`): a
+  declarative `[lints.clippy]` section in `Cargo.toml` enforces panic-prevention
+  lints (`exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`,
+  `unreachable`) across **all** targets (lib, tests, benches, examples), while a
+  crate-level `#![deny(...)]` in `src/lib.rs` extends stricter panic-prevention
+  (`unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`,
+  `panic_in_result_fn`) to **library code only**. Test modules override with
+  `#![allow(...)]` so assertions stay direct. Inspired by namtao's "Strict Lints"
+  philosophy.
+
+- **`cargo-nextest` in the default Nix devShell** (`flake.nix`): faster and
+  clearer local test execution with failure isolation. Not a CI dependency —
+  CI continues to use `cargo test`.
+
+- **Property test for `unwrap_envelope` boundary** (`src/property_tests.rs`):
+  16th property test, exercising the `ENVELOPE_LEN` byte boundary where the
+  pre-rewrite code could panic on untrusted input.
+
+### Changed
+
+- **`unwrap_envelope` rewritten with bounds-checked access** (`src/segment.rs`):
+  four direct indexing/slicing operations on untrusted bytes (`raw[..]`,
+  `raw[range]`, `raw[idx]`) replaced with `.get()` pattern matching. Provably
+  panic-free on any input — including truncated or corrupted segment files.
+
+- **Cipher `new()` constructors made infallible** (`src/cipher.rs`):
+  `AesGcmCipher::new` and `XChaCha20Poly1305Cipher::new` now use
+  `KeyInit::new(GenericArray::from(&key))` instead of
+  `new_from_slice(&key).expect(...)`. The signature and behavior are identical;
+  the `# Panics` doc sections were removed since the constructors can no longer
+  panic.
+
+- **Cloud-sync example's `unreachable!()` replaced** (`examples/cloud_sync.rs`):
+  the retry-exhaustion path now returns a graceful `Err(...)` instead of
+  `unreachable!()`, so copied integration code stays defensive even if the retry
+  control flow changes.
+
 ## [0.5.4] - 2026-08-02
 
 Non-breaking batch: a new `FlushPolicy` variant for tiny-segment suppression,

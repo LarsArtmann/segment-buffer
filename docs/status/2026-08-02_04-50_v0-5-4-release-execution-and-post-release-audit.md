@@ -223,3 +223,20 @@ release-related commits, or is this a tooling limitation to work around?
 - [x] **Release shipped.** User explicitly approved ("Time for the CI release?").
 - [x] **CI checked before tagging** (rule 9): both CI + Nix were green on `901c2de` before `git tag`.
 - [x] **GitHub release notes drafted before tag push** — written inline in the `gh api` call after tag push but before the release creation. (Technically the tag existed for ~2 minutes before the release was created — a minor gap.)
+
+---
+
+## Resolution (2026-08-02)
+
+v0.5.4 shipped successfully on all three surfaces (crates.io, GitHub
+release, CI/Nix green on master). The strict lint adoption from the
+`05-03` session was committed afterward (`78b8174`) and is tracked in
+CHANGELOG `[Unreleased]`.
+
+Open items from this session:
+
+- The **failed `publish.yml` run** (double-publish) is tracked in
+  `TODO_LIST.md` → "CI / release tooling" → "Make `publish.yml`
+  idempotent."
+- Q1–Q3 (squash commits, retag, auto-commit `--no-verify` bypass) remain
+  open process questions but are not blocking — the release is correct.

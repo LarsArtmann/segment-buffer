@@ -242,3 +242,25 @@ All claims in this report are backed by literal command output captured in this 
 - Loom: 9 passed, 0 failed (218s)
 - `gh run list --limit 4`: master branch CI = success
 - `git status`: 9 modified files, 0 untracked
+
+---
+
+## Resolution (2026-08-02)
+
+Strict lint adoption committed as `78b8174` — **unreleased on master**.
+The changes are documented in CHANGELOG `[Unreleased]` (Added: two-tier
+lint architecture + `cargo-nextest` in devShell + `unwrap_envelope`
+boundary property test; Changed: `unwrap_envelope` bounds-checked
+rewrite, cipher `new()` infallible constructors, cloud-sync example
+`unreachable!()` → graceful `Err`).
+
+Open items tracked in:
+
+- **TODO_LIST.md**: "Update CONTRIBUTING.md lint commands," "Document
+  panic-free guarantee as public API contract?"
+- **ROADMAP.md**: "Lint evolution — incremental `pedantic` / `nursery`"
+
+The three open questions (Q1–Q3: version bump for lints, `pedantic` at
+`warn` level, panic-free as public guarantee) remain design decisions
+for the user. The lint changes are non-breaking (no API or on-disk
+format change) and will ride along with the next release.
