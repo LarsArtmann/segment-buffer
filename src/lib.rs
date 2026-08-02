@@ -2236,9 +2236,7 @@ where
         // only helps on filesystems where mtime is meaningful (see
         // `mtime_supported`); on others the explicit `invalidate_scan_cache`
         // called by every on-disk mutation is the sole defence.
-        let pre_scan_mtime = std::fs::metadata(&self.dir)
-            .and_then(|m| m.modified())
-            .ok();
+        let pre_scan_mtime = std::fs::metadata(&self.dir).and_then(|m| m.modified()).ok();
         let segments = self
             .store
             .scan()

@@ -327,3 +327,70 @@ green. But I found a real scan cache race, hid it in a comment instead of
 documenting it properly, left the docs over-claiming, and skipped CI +
 loom + supply-chain verification. The deliverable exists; the discipline
 around it did not hold.
+
+---
+
+## Resolution — 2026-08-02 follow-up session
+
+The open items above were addressed in an immediate follow-up session. This
+appendix records outcomes; it does not rewrite the original self-assessment,
+which was accurate at the time it was written.
+
+### Scan-cache TOCTOU — FIXED (items 1–5, 16, 17, g1, g2)
+
+- **Reproduced:** the restored completeness assertion was run 40× in release
+  mode on the *unfixed* code; it failed on run 7 (`on_disk=278,
+  in_memory=377` → settled read returned 278, missing the entire flushed
+  segment). This empirically confirms the race, not just code analysis.
+- **Fixed** in `scan_segments` by capturing the directory `mtime` *before*
+  the `readdir` (it was previously captured *after*). A mid-scan rename now
+  leaves the cached `mtime` stale, so the next call re-scans and observes the
+  new segment. This is the "re-validate mtime" option from item 2 / g1, chosen
+  over "hold the cache lock across scan" because the latter would serialise
+  cache-hit readers behind cache-miss scans (a read-path regression). The
+  mtime mechanism is the crate's existing staleness-detection design, so the
+  fix is a one-line capture-point correction, not a new mechanism.
+- **Scope:** effective on filesystems where `mtime` advances
+  (`mtime_supported == true`, the common case incl. ext4/xfs/tmpfs/APFS/NTFS).
+  On coarse-granularity filesystems where the open-time probe reports
+  `mtime_supported == false`, the cache relies solely on the explicit
+  `invalidate_scan_cache` and the mid-scan-rename edge is not covered —
+  documented honestly in DOMAIN_LANGUAGE.md.
+- **Completeness assertion restored** in
+  `read_from_invariant_under_concurrent_flush` with a bounded (10×) retry.
+  On the fixed code it passed 40/40 release runs.
+- **DOMAIN_LANGUAGE.md reconciled:** the "transient gaps" bullet now describes
+  the scan-cache refresh behaviour and the `mtime` dependency instead of the
+  bare "a retry sees them"; the "what always holds" section adds a
+  "transient gaps are transient" bullet citing the concurrent flush property
+  test. The docs and the code now agree.
+- **TODO_LIST.md** completion note updated to record the side-effect fix.
+- **CHANGELOG `[Unreleased]`** has `### Added` (property tests) and
+  `### Fixed` (scan-cache TOCTOU) entries.
+
+### Verification gate — run (items 6–10)
+
+- The full gate was run in the follow-up: fmt, clippy (both feature variants,
+  CI flags), test (both variants), doc, **loom**, and the concurrent flush
+  test hammered 40× in release. See the follow-up session log for exact exit
+  codes. `gh run list --limit 4` was checked for CI status (the local
+  commits are not yet pushed, so CI has not run on them — see "open" below).
+
+### Test quality — partially addressed (items 11–15)
+
+- The completeness assertion (item 4) is restored and proven stable (40×).
+  The concurrent tests still use `thread::sleep` to widen the race window
+  (item 11 — replacing sleeps with barriers for *on-disk* I/O races is hard,
+  because the barrier would have to fire inside `store.scan()`/`rename`,
+  which are not instrumentable without the loom `MockStore`; this remains
+  debt shared with the existing stress tests). The 40× release hammer gives
+  empirical confidence the tests are not CI-flaky for the invariants they
+  check.
+
+### Still open (require a human decision)
+
+1. **Push to origin.** The fix + tests + docs are local commits, not yet
+   pushed. CI cannot validate them until pushed. Push is a user decision.
+2. **`scripts/verify-gate.sh` and supply-chain (`cargo audit`/`cargo deny`)**
+   — run in the follow-up; results in the session log.
+3. The broader backlog (items 12–30) remains as written.

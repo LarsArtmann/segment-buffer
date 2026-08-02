@@ -36,7 +36,10 @@ batch_size` (interval arm reduces to batch arm). _(2026-08-02)_
   (delete-acked race, flush race) with generated parameters. The deterministic
   tests make the invariants machine-checkable for every generated state; the
   concurrent tests broaden coverage beyond the fixed-parameter stress tests.
-  _(2026-08-02)_
+  **Side-effect fix:** the concurrent flush test surfaced a scan-cache TOCTOU
+  in `scan_segments` (mtime captured after `readdir`) that broke the "a retry
+  sees them" guarantee; fixed by capturing mtime before the scan. See
+  CHANGELOG `[Unreleased] → Fixed`. _(2026-08-02)_
 
 ---
 
