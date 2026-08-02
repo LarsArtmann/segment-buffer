@@ -467,6 +467,60 @@ fn concurrency_4_writers_1_reader_10k_events() {
 }
 
 // =========================================================================
+// Concurrency stress test — BatchOrIntervalMin under contention
+// =========================================================================
+
+#[test]
+fn concurrency_batch_or_interval_min_4_writers_10k_events() {
+    // Proves that BatchOrIntervalMin is safe under concurrent append:
+    // the batch_size auto-flush trigger fires during contention without
+    // corrupting sequence numbers or losing items. The interval and
+    // max_interval are set very high so only the batch_size trigger fires
+    // (no timing flakiness).
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::BatchOrIntervalMin {
+                    batch_size: 1000,
+                    min_batch: 100,
+                    interval: Duration::from_secs(3600),
+                    max_interval: Duration::from_secs(7200),
+                },
+                max_size_bytes: 100 * 1024 * 1024,
+                compression_level: 1,
+                durability: DurabilityPolicy::Throughput,
+                cipher: None,
+            },
+        )
+        .unwrap(),
+    );
+    const WRITERS: usize = 4;
+    const PER_WRITER: usize = 2_500;
+    const TOTAL: usize = WRITERS * PER_WRITER;
+
+    thread::scope(|s| {
+        for writer_id in 0..WRITERS {
+            let buf_w = Arc::clone(&buf);
+            s.spawn(move || {
+                for i in 0..PER_WRITER {
+                    let _ = buf_w.append(test_item((writer_id * PER_WRITER + i) as u64));
+                }
+            });
+        }
+    });
+
+    buf.flush().unwrap();
+
+    assert_eq!(buf.latest_sequence(), (TOTAL - 1) as u64);
+    assert_eq!(buf.pending_count(), TOTAL as u64);
+
+    let all_events = buf.read_from(0, TOTAL * 2).unwrap();
+    assert_eq!(all_events.len(), TOTAL);
+}
+
+// =========================================================================
 // Concurrent read_from + delete_acked boundary (MPMC safety)
 // =========================================================================
 
@@ -792,6 +846,95 @@ fn batch_or_interval_min_flushes_at_batch_size() {
         1,
         "Should flush immediately at batch_size regardless of min_batch/interval"
     );
+}
+
+#[test]
+fn batch_or_interval_min_min_batch_zero_always_flushes_at_interval() {
+    // When min_batch == 0, `pending_len >= 0` is always true, so the
+    // interval trigger fires as soon as `interval` elapses — equivalent to
+    // BatchOrInterval for the interval arm.
+    let policy = FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 0,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    };
+    // Any pending count, at interval: flush (because 0 >= 0 is true)
+    assert!(policy.should_flush(0, Duration::from_secs(5)));
+    assert!(policy.should_flush(1, Duration::from_secs(5)));
+    // Before interval: no flush (unless batch_size or max_interval hit)
+    assert!(!policy.should_flush(0, Duration::from_secs(4)));
+}
+
+#[test]
+fn batch_or_interval_min_max_equals_interval_ignores_min_batch() {
+    // When max_interval == interval, the safety valve fires at the same time
+    // as the interval trigger, so min_batch becomes irrelevant — every
+    // interval expiry is a guaranteed flush.
+    let policy = FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 100,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(5),
+    };
+    // Below min_batch, but at interval (= max_interval): flush via safety valve
+    assert!(policy.should_flush(1, Duration::from_secs(5)));
+    assert!(policy.should_flush(0, Duration::from_secs(5)));
+    // Before interval: no flush
+    assert!(!policy.should_flush(50, Duration::from_secs(4)));
+}
+
+#[test]
+fn batch_or_interval_min_min_batch_equals_batch_size() {
+    // When min_batch == batch_size, the interval trigger requires a full
+    // batch before firing — so the interval arm reduces to the batch arm,
+    // and only max_interval can flush below batch_size.
+    let policy = FlushPolicy::BatchOrIntervalMin {
+        batch_size: 100,
+        min_batch: 100,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    };
+    // Below batch_size, past interval but before max_interval: no flush
+    // (min_batch == batch_size means the interval check also requires 100)
+    assert!(!policy.should_flush(99, Duration::from_secs(10)));
+    assert!(!policy.should_flush(99, Duration::from_secs(59)));
+    // At batch_size: flush regardless of time
+    assert!(policy.should_flush(100, Duration::from_secs(0)));
+    // Past max_interval: flush regardless of pending count
+    assert!(policy.should_flush(0, Duration::from_secs(60)));
+}
+
+// =========================================================================
+// FlushPolicy Display tests
+// =========================================================================
+
+#[test]
+fn flush_policy_display_formats_each_variant() {
+    assert_eq!(FlushPolicy::Batch(256).to_string(), "batch(256)");
+    assert_eq!(
+        FlushPolicy::Interval(Duration::from_secs(5)).to_string(),
+        "interval(5s)"
+    );
+    assert_eq!(
+        FlushPolicy::BatchOrInterval {
+            batch_size: 256,
+            interval: Duration::from_secs(5),
+        }
+        .to_string(),
+        "batch_or_interval(batch=256, interval=5s)"
+    );
+    assert_eq!(
+        FlushPolicy::BatchOrIntervalMin {
+            batch_size: 256,
+            min_batch: 10,
+            interval: Duration::from_secs(5),
+            max_interval: Duration::from_secs(60),
+        }
+        .to_string(),
+        "batch_or_interval_min(batch=256, min=10, interval=5s, max=60s)"
+    );
+    assert_eq!(FlushPolicy::Manual.to_string(), "manual");
 }
 
 // =========================================================================
@@ -2325,4 +2468,41 @@ fn segment_config_clone_shares_cipher_arc() {
         std::ptr::addr_eq(a.as_ref() as *const _, b.as_ref() as *const _),
         "Arc must be shared, not deep-copied"
     );
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn aes_gcm_new_and_from_slice_are_equivalent() {
+    // The infallible `new(&[u8; 32])` and fallible `from_slice(&[u8])`
+    // constructors must produce ciphers with the same underlying key
+    // material: encrypt with one, decrypt with the other.
+    let key = [42u8; 32];
+    let infallible = AesGcmCipher::new(&key);
+    let fallible = AesGcmCipher::from_slice(&key).unwrap();
+
+    let plaintext = b"cross-constructor roundtrip";
+    let ct = infallible.encrypt(plaintext).unwrap();
+    let pt = fallible.decrypt(&ct).unwrap();
+    assert_eq!(pt.as_slice(), plaintext);
+
+    let ct2 = fallible.encrypt(plaintext).unwrap();
+    let pt2 = infallible.decrypt(&ct2).unwrap();
+    assert_eq!(pt2.as_slice(), plaintext);
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn xchacha20_new_and_from_slice_are_equivalent() {
+    let key = [99u8; 32];
+    let infallible = XChaCha20Poly1305Cipher::new(&key);
+    let fallible = XChaCha20Poly1305Cipher::from_slice(&key).unwrap();
+
+    let plaintext = b"cross-constructor roundtrip";
+    let ct = infallible.encrypt(plaintext).unwrap();
+    let pt = fallible.decrypt(&ct).unwrap();
+    assert_eq!(pt.as_slice(), plaintext);
+
+    let ct2 = fallible.encrypt(plaintext).unwrap();
+    let pt2 = infallible.decrypt(&ct2).unwrap();
+    assert_eq!(pt2.as_slice(), plaintext);
 }

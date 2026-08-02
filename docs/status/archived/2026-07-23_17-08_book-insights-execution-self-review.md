@@ -204,3 +204,16 @@ The `nix flake check` in the verification gate bumped `rust-overlay` from `rev 4
 ### Q3: Should I commit this work now (after fixing the three fuckups in §d) or wait for the flush-race test and FEATURES.md/CHANGELOG.md/AGENTS.md updates?
 
 The core work is done and verified, but the bookkeeping (FEATURES.md count, CHANGELOG, AGENTS.md learnings) and the missing flush-race test are unfinished. I cannot decide whether you prefer "commit what's verified now, iterate after" vs "do everything, then commit once."
+
+---
+
+## Resolution (2026-08-02)
+
+All key items resolved:
+- **All work committed** — commits `8a62182` and `8618d65`, pushed to origin/master.
+- **Self-review bugs fixed** — `#[non_exhaustive]` struct-literal examples, dead rustdoc links, FEATURES.md test counts all corrected in the follow-up session (`2026-07-23_20-10`).
+- **Flush-race test written** — `concurrent_read_and_flush_never_corrupts` passes.
+- **v0.5.4 shipped** — all book-insights work is released.
+- **Allocation guard** — part of the test suite (`tests/alloc_guard.rs`).
+- **Verify gate** — now includes loom, supply-chain, actionlint, and lychee.
+Remaining architectural items (streaming AEAD, health-check primitive, `read_from_relaxed`) tracked in TODO_LIST.md and ROADMAP.md.

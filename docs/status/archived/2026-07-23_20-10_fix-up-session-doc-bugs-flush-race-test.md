@@ -194,3 +194,16 @@ All evidence from commands run in this session (`8618d65`, 2026-07-23 18:24):
 | Verify gate         | `scripts/verify-gate.sh --no-supply-chain --no-loom --no-actionlint` | 10/10 GREEN                      |
 | CI status           | `gh run list --limit 4`                                              | All 4 runs: success              |
 | Loom                | **NOT RUN** (`--no-loom`)                                            | **SKIPPED — see d)1**            |
+
+---
+
+## Resolution (2026-08-02)
+
+All key items resolved:
+- **Commit `8618d65` pushed** to origin/master.
+- **v0.5.4 shipped** — all book-insights and fix-up work is released.
+- **Loom gate now enforced** — part of `scripts/verify-gate.sh` (9 tests, exhaustive schedule enumeration) and CI.
+- **Stale report annotations** — the `17-08` report (this file's predecessor) is now annotated.
+- **Allocation guard stability** — running in CI as `tests/alloc_guard.rs`.
+- **`cargo audit` + `cargo deny`** — both in `scripts/verify-gate.sh` and CI.
+Remaining items (flush-race window closing, `read_from_relaxed`, property tests for consistency) tracked in TODO_LIST.md.

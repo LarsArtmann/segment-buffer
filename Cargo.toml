@@ -61,6 +61,13 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(docsrs)'] }
 # examples). The consumer crate (monitor365) uses a stricter set including
 # pedantic + nursery; those produce ~475 errors here and are aspirational.
 #
+# `pedantic` is at `warn` to surface the quality backlog during local
+# development without breaking CI. CI clippy commands include
+# `-A clippy::pedantic` to suppress these warnings in the gate.
+# Run `cargo clippy --lib -- -W clippy::pedantic` to see the full list.
+# Current count: ~62 warnings (mostly missing backticks + must_use).
+pedantic = { level = "warn", priority = -1 }
+#
 # These lints catch runtime panics at compile time — the core philosophy from
 # namtao's "Strict Lints" page: "teach you rust, stop panics at runtime."
 # The library-only panic-prevention lints (unwrap_used, expect_used,

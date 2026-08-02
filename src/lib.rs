@@ -161,6 +161,18 @@ pub mod fuzz_hooks {
     pub use crate::segment::{
         filename, parse_filename, unwrap_envelope, wrap_envelope, SegmentRange,
     };
+    pub use crate::FlushPolicy;
+
+    /// Fuzz-accessible wrapper for the private `should_flush` method.
+    /// Returns whether the given policy would trigger a flush given the
+    /// pending item count and elapsed time since the last flush.
+    pub fn should_flush(
+        policy: &FlushPolicy,
+        pending_len: usize,
+        elapsed: std::time::Duration,
+    ) -> bool {
+        policy.should_flush(pending_len, elapsed)
+    }
 }
 
 use std::path::PathBuf;
@@ -193,6 +205,10 @@ pub enum FlushPolicy {
     Batch(usize),
     /// Flush as soon as `interval` has elapsed since the last flush. No batch
     /// trigger.
+    ///
+    /// **Timing note:** the interval clock starts at `open()`, not at the
+    /// first `append()`. If the buffer sits idle after construction, the
+    /// first append will immediately trigger a flush.
     Interval(std::time::Duration),
     /// Flush when EITHER `batch_size` items are buffered OR `interval` has
     /// elapsed since the last flush — whichever fires first. This is the
@@ -202,6 +218,9 @@ pub enum FlushPolicy {
     /// segment files (as small as 1 event) every `interval`. Use
     /// [`BatchOrIntervalMin`](Self::BatchOrIntervalMin) to suppress interval
     /// flushes below a minimum batch threshold.
+    ///
+    /// **Timing note:** the interval clock starts at `open()`, not at the
+    /// first `append()`.
     BatchOrInterval {
         /// In-memory item count threshold.
         batch_size: usize,
@@ -247,6 +266,40 @@ impl Default for FlushPolicy {
         FlushPolicy::BatchOrInterval {
             batch_size: 256,
             interval: std::time::Duration::from_secs(5),
+        }
+    }
+}
+
+impl std::fmt::Display for FlushPolicy {
+    /// Human-readable representation suitable for logging and diagnostics.
+    ///
+    /// The format is intentionally compact and stable across releases so
+    /// operators can parse it in log-scraping tools without breakage.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FlushPolicy::Batch(n) => write!(f, "batch({n})"),
+            FlushPolicy::Interval(d) => write!(f, "interval({d:?})"),
+            FlushPolicy::BatchOrInterval {
+                batch_size,
+                interval,
+            } => {
+                write!(
+                    f,
+                    "batch_or_interval(batch={batch_size}, interval={interval:?})"
+                )
+            }
+            FlushPolicy::BatchOrIntervalMin {
+                batch_size,
+                min_batch,
+                interval,
+                max_interval,
+            } => {
+                write!(
+                    f,
+                    "batch_or_interval_min(batch={batch_size}, min={min_batch}, interval={interval:?}, max={max_interval:?})"
+                )
+            }
+            FlushPolicy::Manual => write!(f, "manual"),
         }
     }
 }

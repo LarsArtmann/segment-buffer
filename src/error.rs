@@ -71,9 +71,9 @@ use std::path::PathBuf;
 /// Which filesystem site an [`SegmentError::Io`] failure happened on.
 ///
 /// Replaces the pre-v0.5.0 `Option<PathBuf>` on the Io variant with an
-/// explicit enumeration: directory operations (create_dir_all, scan,
-/// clean_tmp, dir fsync), segment-file operations (read/write/rename), and
-/// the catch-all for `?`-propagated io::Errors that have not yet been
+/// explicit enumeration: directory operations (`create_dir_all`, `scan`,
+/// `clean_tmp`, dir fsync), segment-file operations (`read`/`write`/`rename`), and
+/// the catch-all for `?`-propagated `io::Error`s that have not yet been
 /// tagged with context.
 ///
 /// `Dir` carries no path: the directory is reachable via
@@ -86,15 +86,15 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum IoSite {
-    /// The failure happened on the segment directory itself (create_dir_all,
-    /// scan, clean_tmp, directory fsync). The directory path is reachable
+    /// The failure happened on the segment directory itself (`create_dir_all`,
+    /// `scan`, `clean_tmp`, directory fsync). The directory path is reachable
     /// via [`crate::SegmentBuffer::path`].
     Dir,
     /// The failure happened on a specific segment file. Carries the file's
     /// path so an operator can act on it (move aside, quarantine, alert)
     /// without re-deriving it.
     Segment(PathBuf),
-    /// The failure has no specific site attached — typically an io::Error
+    /// The failure has no specific site attached — typically an `io::Error`
     /// propagated via `?` before a high-value call site has upgraded it
     /// via [`SegmentError::with_path`] or [`SegmentError::with_dir`].
     Unknown,
@@ -121,7 +121,7 @@ pub enum SegmentError {
     Io {
         /// Which site the I/O failed on. See [`IoSite`] for the variants.
         site: IoSite,
-        /// The underlying io::Error, reachable via [`std::error::Error::source`].
+        /// The underlying `io::Error`, reachable via [`std::error::Error::source`].
         #[source]
         source: std::io::Error,
     },
@@ -179,7 +179,7 @@ impl SegmentError {
     /// the first call site to attach context wins.
     ///
     /// Use [`SegmentError::with_dir`] for operations on the directory itself
-    /// (create_dir_all, scan, clean_tmp, dir fsync).
+    /// (`create_dir_all`, `scan`, `clean_tmp`, dir fsync).
     #[must_use = "the upgraded error is meaningless if discarded"]
     pub fn with_path(self, path: impl Into<PathBuf>) -> Self {
         match self {
@@ -197,7 +197,7 @@ impl SegmentError {
     /// Tag an [`IoSite::Unknown`] Io error as a directory operation. Returns
     /// the error unchanged for other variants or for Io errors already
     /// tagged (Dir or Segment). Use this at directory-operation call sites
-    /// (create_dir_all, scan, clean_tmp, dir fsync) so operators can
+    /// (`create_dir_all`, `scan`, `clean_tmp`, dir fsync) so operators can
     /// distinguish "the directory itself failed" from "a specific segment
     /// file failed."
     #[must_use = "the upgraded error is meaningless if discarded"]

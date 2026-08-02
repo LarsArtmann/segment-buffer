@@ -259,9 +259,9 @@ src/
   store.rs         SegmentStore trait + RealStore impl: the I/O boundary. create_dir_all / scan / clean_tmp / segment_size / remove_segment / write_atomic / read_bytes
   cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher + XChaCha20Poly1305Cipher (both feature-gated, impls in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
-  tests.rs         `mod tests` — unit tests (count via `grep -c '#[test]' src/tests.rs`)
+  tests.rs         `mod tests` — unit tests (95 tests; `grep -c '#[test]' src/tests.rs`)
   property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / FlushPolicy (16 properties; `grep -c '#[test]' src/property_tests.rs`)
-examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput)
+examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput), batch_or_interval_min (tiny-segment suppression demo)
 benches/           8 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy) + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery, fuzz_parse_filename, fuzz_envelope, fuzz_append_all); requires nightly
 FEATURES.md        Honest capability inventory by status
@@ -314,6 +314,20 @@ Two surfaces, two responsibilities:
 
 - **crates.io:** `.github/workflows/publish.yml` publishes automatically on `git push origin v*.*.*` (needs `CARGO_REGISTRY_TOKEN` secret). To backfill a missing version manually, `git worktree add --detach <dir> <tag>` then `cargo publish --features encryption` from that worktree (the tag's `Cargo.toml` version must match the tag). Verify with `cargo publish --dry-run --features encryption` first.
 - **GitHub releases:** NOT automated by any workflow. They are created manually. `gh release create` fails on this repo demanding the `workflow` scope (a false-positive scope check); use `gh api --method POST repos/LarsArtmann/segment-buffer/releases -f tag_name=vX.Y.Z -f name=... -f body=...` instead (only `repo` scope needed). Do NOT pass `target_commitish` pointing at a tag name — it 404s; the tag is resolved from `tag_name` alone.
+
+### Release runbook (step by step)
+
+1. **Verify CI is green.** Run `gh run list --limit 4` and confirm every run on the target branch shows `success`. Local-only green is not sufficient (AGENTS.md rule 9).
+2. **Run the full local gate.** `scripts/verify-gate.sh` — all 14 gates must pass.
+3. **Bump `Cargo.toml` version.** Edit `version = "X.Y.Z"`. If a new release touches the `html_root_url`, update the version segment in `src/lib.rs` `#![doc(html_root_url = "...")]`.
+4. **Update `CHANGELOG.md`.** Move `[Unreleased]` entries under a new `## [X.Y.Z] - YYYY-MM-DD` heading. Add a compare link at the bottom.
+5. **Commit.** `git commit -am "release vX.Y.Z"`.
+6. **Tag.** `git tag vX.Y.Z` (lightweight tag, no `-a` or `-m` needed — the GitHub release body carries the notes).
+7. **Draft the GitHub release notes** BEFORE pushing the tag. A tag-without-release window breaks link checkers.
+8. **Push.** `git push origin master --tags`. The `publish.yml` workflow will auto-publish to crates.io (now idempotent — safe if the version already exists).
+9. **Create the GitHub release.** Use `gh api --method POST repos/LarsArtmann/segment-buffer/releases -f tag_name=vX.Y.Z -f name="vX.Y.Z" -f body="$(cat CHANGELOG-snippet.md)"` (NOT `gh release create` — see above).
+10. **Verify.** Check `https://crates.io/crates/segment-buffer/X.Y.Z` and `https://docs.rs/segment-buffer/X.Y.Z` render within ~5 minutes.
+11. **Soak.** Never ship two releases in the same day without a soak period between them.
 
 ## Documentation health cadence
 

@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Display` impl for `FlushPolicy`** (`src/lib.rs`): human-readable output for
+  all variants (`batch(256)`, `interval(5s)`, `batch_or_interval_min(batch=256,
+  min=10, interval=5s, max=60s)`, `manual`). Stable format for log-scraping.
+
+- **`pedantic` Clippy lint group at `warn` level** (`Cargo.toml`): surfaces ~62
+  quality warnings (missing backticks, missing `#[must_use]`) during local
+  development without breaking CI. CI clippy commands include
+  `-A clippy::pedantic` to suppress in the gate. `error.rs` is pedantic-clean.
+
+- **Edge-case tests for `BatchOrIntervalMin`** (`src/tests.rs`): three boundary
+  conditions — `min_batch == 0` (always flushes at interval), `max_interval ==
+  interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
+  reduces to batch arm).
+
+- **Cipher equivalence tests** (`src/tests.rs`): prove `new(&[u8; 32])` and
+  `from_slice(&[u8])` constructors produce interchangeable ciphers for both
+  AES-GCM and XChaCha20-Poly1305.
+
+- **Concurrency stress test with `BatchOrIntervalMin`** (`src/tests.rs`): 4
+  writers × 2 500 events with auto-flush at `batch_size=1000`. Proves the new
+  policy is safe under contention.
+
+- **Standalone example for `BatchOrIntervalMin`** (`examples/`): demonstrates
+  the tiny-segment suppression pattern with a burst-then-drip scenario.
+
+- **Fuzz target for flush-policy parameters** (`fuzz/fuzz_targets/`):
+  `fuzz_flush_policy` exercises `should_flush` over arbitrary parameter
+  combinations (variant, sizes, durations). Never panics on any input.
+
+- **`bacon` in the default Nix devShell** (`flake.nix`): live clippy feedback
+  during development.
+
+- **`publish.yml` idempotency guard** (`.github/workflows/`): queries crates.io
+  API before publishing; skips if the version already exists. Prevents red CI
+  when a tag workflow re-runs after a successful publish.
+
+- **CONTRIBUTING.md lint architecture section** (`CONTRIBUTING.md`): documents
+  the two-tier Clippy strategy so contributors understand why library code
+  denies `unwrap`/`expect` while test code allows them.
+
+- **`last_flush` initialization timing docs** (`src/lib.rs`): documents that
+  the interval clock starts at `open()`, not at the first `append()`.
+
+- **`BatchOrIntervalMin` in tradeoffs matrix** (`docs/DOMAIN_LANGUAGE.md`):
+  completes the tradeoffs documentation with the tiny-segment suppression knob.
+
+- **CHANGELOG link-validation script** (`scripts/check-changelog-links.sh`):
+  validates that every GitHub tag URL in CHANGELOG.md points to a real tag.
+
+- **Cargo.lock drift check in CI** (`.github/workflows/ci.yml`):
+  `cargo fetch --locked` step catches unintended transitive dep bumps.
+
+- **Release runbook** (`AGENTS.md`): step-by-step release procedure with
+  gotchas (idempotent publish, GitHub release API, tag-before-push ordering).
+
+- **26 historical status reports archived** (`docs/status/archived/`):
+  resolved reports from July 2026 moved out of the active `docs/status/`
+  directory to reduce noise. 6 current reports remain.
+
+- **4 older status reports annotated** (`docs/status/archived/`): the
+  2026-07-22/23 batch received `## Resolution` appendices closing their open
+  items.
+
+### Changed
+
+- **`error.rs` pedantic-clean**: all missing-backticks doc warnings fixed
+  (first module toward full `pedantic` adoption).
+
 - **Two-tier Clippy lint architecture** (`Cargo.toml`, `src/lib.rs`): a
   declarative `[lints.clippy]` section in `Cargo.toml` enforces panic-prevention
   lints (`exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`,
@@ -26,8 +94,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Property test for `unwrap_envelope` boundary** (`src/property_tests.rs`):
   16th property test, exercising the `ENVELOPE_LEN` byte boundary where the
   pre-rewrite code could panic on untrusted input.
-
-### Changed
 
 - **`unwrap_envelope` rewritten with bounds-checked access** (`src/segment.rs`):
   four direct indexing/slicing operations on untrusted bytes (`raw[..]`,

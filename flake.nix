@@ -109,6 +109,7 @@
                 zstd
                 pkg-config
                 cargo-nextest
+                bacon
               ];
             };
 
@@ -185,7 +186,7 @@
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--all-targets --features encryption";
-                cargoClippyExtraArgs = "-- -D warnings";
+                cargoClippyExtraArgs = "-- -D warnings -A clippy::pedantic";
               }
             );
             fmt = craneLib.cargoFmt { src = ./.; };

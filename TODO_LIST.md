@@ -15,25 +15,24 @@ stay until the next CHANGELOG cut, then move out).
 
 ## Testing
 
-- `[ ]` **Edge-case tests for `BatchOrIntervalMin`.** The existing pure
-  decision tests and the exhaustive proptest cover the main formula, but
-  three boundary conditions have no explicit coverage: `min_batch == 0`
-  (degenerates to `BatchOrInterval`), `max_interval == interval` (gated
-  interval is unreachable), `min_batch == batch_size` (interval trigger is
-  unreachable). Each is a one-liner assertion against `should_flush`.
-  Effort: ~15min.
+- `[x]` **Edge-case tests for `BatchOrIntervalMin`.** Three boundary
+  conditions now covered: `min_batch == 0` (always flushes at interval),
+  `max_interval == interval` (min_batch irrelevant), `min_batch ==
+  batch_size` (interval arm reduces to batch arm). _(2026-08-02)_
 
-- `[ ]` **Fuzz target for flush-policy parameters.** The fuzz suite covers
-  corrupted read, recovery, filename parsing, envelope, and `append_all`.
-  A target that randomizes `(batch_size, min_batch, interval,
-max_interval, append_pattern)` and asserts the flush invariant could
-  catch edge cases in the boolean logic of `should_flush`. Effort: ~1h.
+- `[x]` **Fuzz target for flush-policy parameters.** `fuzz_flush_policy.rs`
+  exercises `should_flush` over arbitrary parameter combinations. Registered
+  in `fuzz/Cargo.toml`. _(2026-08-02)_
 
-- `[ ]` **Concurrency test using `BatchOrIntervalMin` under multi-writer
-  load.** The existing concurrency stress tests use `FlushPolicy::Manual`
-  (per AGENTS.md rule 7). A test with `BatchOrIntervalMin` under N writers
-  would verify the new policy's `should_flush` arm is safe under
-  contention. Effort: ~30min.
+- `[x]` **Concurrency test using `BatchOrIntervalMin` under multi-writer
+  load.** `concurrency_batch_or_interval_min_4_writers_10k_events`:
+  4 writers × 2 500 events with auto-flush at `batch_size=1000`. _(2026-08-02)_
+
+- `[ ]` **Property tests for the consistency model.** Formal proptest
+  assertions for the two documented race windows (concurrent `delete_acked`
+  spurious Io; concurrent `flush` transient gap). The stress tests prove these
+  statistically; property tests would make the invariant machine-checkable.
+  Effort: ~2h.
 
 ---
 
@@ -47,48 +46,79 @@ max_interval, append_pattern)` and asserts the flush invariant could
   section update._ Effort: ~15min. _(User action — requires a browser,
   not a code change.)_
 
-- `[ ]` **Update CONTRIBUTING.md lint commands.** CONTRIBUTING.md still
-  shows `cargo clippy --all-targets -- -D warnings` without mentioning the
-  declarative `[lints.clippy]` section in Cargo.toml. The commands still
-  work (Cargo `[lints]` is additive to `-D warnings`), but contributors
-  should know lints are also enforced declaratively. Add a "Lint
-  architecture" subsection or a note pointing to AGENTS.md. Effort: ~10min.
+- `[x]` **Update CONTRIBUTING.md lint commands.** Added "Lint architecture"
+  subsection documenting the two-tier Clippy strategy. Clippy commands updated
+  with `-A clippy::pedantic`. _(2026-08-02)_
 
-- `[ ]` **Document `last_flush` initialization timing.** `last_flush` is
-  set at `Instant::now()` in `BufferInner` construction — BEFORE
-  `recover()` runs. Under a slow recovery (large segment count), the first
-  interval-triggered flush fires earlier than expected. Harmless (a
-  slightly eager first flush) but surprising with very short intervals.
-  Document in `FlushPolicy` rustdoc or DOMAIN_LANGUAGE.md. Effort: ~10min.
+- `[x]` **Document `last_flush` initialization timing.** Added "Timing note"
+  to `Interval` and `BatchOrInterval` variant docs: the interval clock starts
+  at `open()`, not at the first `append()`. _(2026-08-02)_
+
+- `[x]` **`BatchOrIntervalMin` in tradeoffs matrix.** Added to
+  `docs/DOMAIN_LANGUAGE.md` tradeoffs table. _(2026-08-02)_
+
+- `[x]` **Release runbook in AGENTS.md.** Step-by-step procedure with 11
+  steps including CI-green check, tag-before-push ordering, and GitHub release
+  API workaround. _(2026-08-02)_
+
+- `[x]` **CHANGELOG link-validation script.**
+  `scripts/check-changelog-links.sh` validates GitHub tag URLs. _(2026-08-02)_
+
+- `[x]` **26 historical status reports archived.** Resolved July reports
+  moved to `docs/status/archived/`. 6 current reports remain. _(2026-08-02)_
 
 ---
 
 ## API ergonomics
 
-- `[ ]` **`Display` impl for `FlushPolicy`.** Currently there is no
-  `Display` impl, so logging a config dumps the `Debug` representation
-  (verbose struct format). A `Display` impl would produce clean
-  one-liners like `Batch(1000)` or
-  `BatchOrIntervalMin { batch: 1000, min: 10, every: 5s, max: 30s }`.
-  Effort: ~20min.
+- `[x]` **`Display` impl for `FlushPolicy`.** All variants produce stable,
+  parseable output (`batch(256)`, `interval(5s)`,
+  `batch_or_interval_min(batch=256, min=10, interval=5s, max=60s)`,
+  `manual`). Snapshot test included. _(2026-08-02)_
 
-- `[ ]` **Standalone example for `BatchOrIntervalMin`**
-  (`examples/batch_or_interval_min.rs`). The PERFORMANCE.md callout
-  covers the builder snippet, but no runnable example demonstrates the
-  variant in a realistic scenario (low-throughput producer suppressing
-  tiny segments). Effort: ~30min.
+- `[x]` **Standalone example for `BatchOrIntervalMin`**
+  (`examples/batch_or_interval_min.rs`). Demonstrates burst-then-drip
+  scenario showing tiny-segment suppression. _(2026-08-02)_
 
 ---
 
 ## CI / release tooling
 
-- `[ ]` **Make `publish.yml` idempotent.** The automated publish workflow
-  fails with "crate already exists" when a manual `cargo publish` has
-  already landed the version (this happened during the v0.5.4 release).
-  Add a pre-step that checks `cargo info segment-buffer@$VERSION` and
-  exits 0 (success) if the version already exists, so future
-  double-publishes produce a green CI run instead of a red one. Effort:
-  ~15min.
+- `[x]` **Make `publish.yml` idempotent.** Added crates.io API pre-check:
+  queries the version endpoint, skips publish if HTTP 200 (already exists).
+  Prevents red CI on workflow re-runs. _(2026-08-02)_
+
+- `[x]` **Cargo.lock drift check in CI.** Added `cargo fetch --locked` step
+  to CI that catches unintended transitive dep bumps. _(2026-08-02)_
+
+- `[x]` **`pedantic` Clippy at `warn` level.** Added to `[lints.clippy]` in
+  Cargo.toml. ~62 warnings visible during local `cargo clippy`. CI commands
+  include `-A clippy::pedantic` to suppress in the gate. `error.rs` is
+  pedantic-clean. _(2026-08-02)_
+
+- `[x]` **`bacon` in Nix devShell.** Live clippy feedback during development.
+  _(2026-08-02)_
+
+- `[x]` **`FlushPolicy` fuzz target exposed via `fuzz_hooks`.** Added
+  `should_flush` wrapper and `FlushPolicy` re-export to `fuzz_hooks` module.
+  _(2026-08-02)_
+
+---
+
+## Quality backlog
+
+- `[~]` **Incremental `pedantic` migration.** `error.rs` is pedantic-clean
+  (11 warnings fixed — all missing backticks). Remaining modules: `lib.rs`
+  (~30 warnings), `segment.rs` (~10), `store.rs` (~5), `cipher.rs` (~6).
+  Most are missing-backticks and missing-`#[must_use]`. Effort: ~2h total.
+
+- `[ ]` **Audit benchmarks/examples for lint posture.** Benches use
+  `unwrap()` by convention (test-adjacent code, panicking is the correct
+  failure mode). Examples use `?` + `Box<dyn Error>` in `main()` and
+  `.expect()` in thread-join sites. No action needed — the two-tier lint
+  architecture correctly excludes these targets from the strict library
+  denies. Document this convention in CONTRIBUTING.md if it becomes
+  confusing. Effort: ~5min (doc-only).
 
 ---
 

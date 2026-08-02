@@ -23,8 +23,9 @@ this (see `.github/workflows/ci.yml`).
 cargo test --no-fail-fast --features encryption
 
 # Lint (warnings are hard errors, both in CONTRIBUTING and CI via RUSTFLAGS=-D warnings)
-cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --features encryption -- -D warnings
+# pedantic is at `warn` for visibility but allowed in the gate; see Cargo.toml [lints.clippy]
+cargo clippy --all-targets -- -D warnings -A clippy::pedantic
+cargo clippy --all-targets --features encryption -- -D warnings -A clippy::pedantic
 cargo fmt --all -- --check
 
 # Examples
@@ -62,6 +63,33 @@ nix flake check      # verify the flake
 - Doc comments use `# Errors` and `# Example` sections where relevant.
 - Tests use `tempfile::TempDir`; see `src/tests.rs` for the helper patterns.
 - The MSRV is **1.86** (enforced by a dedicated CI job).
+
+### Lint architecture
+
+This crate uses a **two-tier Clippy lint strategy**:
+
+**Tier 1 — `[lints.clippy]` in `Cargo.toml` (all targets):**
+
+Panic-prevention lints that are safe for every compilation target (library,
+tests, benches, examples). These deny `exit`, `todo`, `unimplemented`,
+`unchecked_time_subtraction`, and `unreachable` — patterns that should never
+appear in any code, including test or bench code.
+
+**Tier 2 — `#![deny(...)]` in `src/lib.rs` (library only):**
+
+Stricter panic-prevention lints that would be too noisy in test code
+(`unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`,
+`panic_in_result_fn`). These are crate-level denies so they apply to every
+source file in the library (`lib.rs`, `segment.rs`, `cipher.rs`, `store.rs`,
+`error.rs`) but NOT to integration tests, benches, or examples — those are
+separate compilation targets where `unwrap`/`expect` are acceptable.
+
+In-crate test modules (`src/tests.rs`, `src/property_tests.rs`) override the
+library denies with `#![allow(...)]` at their top, so unit tests can use
+`unwrap`/`expect` freely.
+
+This means: **library code must never use `unwrap`, `expect`, or direct
+indexing** — use `?`, `let-else`, `get()`, or explicit error returns instead.
 
 ## Semver and stability policy
 

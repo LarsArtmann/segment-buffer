@@ -40,15 +40,17 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
       - name: Clippy (default)
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings -A clippy::pedantic
       - name: Clippy (encryption)
-        run: cargo clippy --all-targets --features encryption -- -D warnings
+        run: cargo clippy --all-targets --features encryption -- -D warnings -A clippy::pedantic
       - name: Test (default)
         run: cargo test --no-fail-fast
       - name: Test (encryption)
         run: cargo test --no-fail-fast --features encryption
       - name: Doc build
         run: cargo doc --no-deps --features encryption
+      - name: Cargo.lock up to date
+        run: cargo fetch --locked
 
   msrv:
     name: Verify MSRV (1.86)
