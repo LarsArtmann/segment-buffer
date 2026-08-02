@@ -1541,7 +1541,7 @@ where
     pub fn delete_acked(&self, acked_seq: u64) -> Result<usize> {
         self.assert_not_reentered("delete_acked");
         let segments = self.scan_segments()?;
-        let mut deleted = 0;
+        let mut deleted: usize = 0;
         let mut freed_bytes: u64 = 0;
         let mut new_head = None;
 
@@ -1747,6 +1747,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[must_use = "the pressure value is meaningless if discarded"]
+    #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
     pub fn store_pressure(&self) -> f32 {
         // store_pressure only needs approx_disk_bytes + max_size_bytes —
         // neither requires the mutex. Read the atomic directly to avoid
@@ -1757,7 +1758,7 @@ where
         let bytes = self
             .approx_disk_bytes
             .load(std::sync::atomic::Ordering::Relaxed);
-        (u64_to_f32(bytes) / u64_to_f32(self.config.max_size_bytes)).min(1.0)
+        (bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
     }
 
     /// True when disk usage exceeds 90% of the configured limit.
@@ -1831,6 +1832,7 @@ where
     /// would deadlock.
     #[must_use = "the snapshot is meaningless if discarded"]
     #[track_caller]
+    #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
     pub fn stats(&self) -> BufferStats {
         self.assert_not_reentered("stats");
         let inner = self.inner.lock();
@@ -1849,7 +1851,7 @@ where
         let store_pressure = if self.config.max_size_bytes == 0 {
             0.0
         } else {
-            (u64_to_f32(approx_disk_bytes) / u64_to_f32(self.config.max_size_bytes)).min(1.0)
+            (approx_disk_bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
         };
         BufferStats {
             pending_count,
@@ -2431,13 +2433,6 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<SegmentBuffer<()>>();
 };
-
-/// Lossy `u64` → `f32` conversion for ratio computations where
-/// precision loss is acceptable (backpressure signalling only).
-#[allow(clippy::as_conversions, clippy::cast_precision_loss)]
-fn u64_to_f32(v: u64) -> f32 {
-    v as f32
-}
 
 #[cfg(test)]
 mod tests;
