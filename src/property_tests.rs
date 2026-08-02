@@ -512,4 +512,546 @@ proptest! {
 
         prop_assert_eq!(should, expected, "flush decision mismatch");
     }
+
+    // ======================================================================
+    // Consistency-model property tests
+    // ======================================================================
+    //
+    // The crate documents two race windows in `read_from` under concurrent
+    // operation (see docs/DOMAIN_LANGUAGE.md → "Concurrent operation"):
+    //
+    // 1. **Delete-acked race:** a segment deleted between `read_from`'s
+    //    directory scan and its file read produces a spurious
+    //    `SegmentError::Io(NotFound)`. Not data loss — the segment was
+    //    already acknowledged.
+    //
+    // 2. **Flush race:** items that leave `unflushed` during a `flush()` that
+    //    completes in the gap between `read_from`'s Phase 1 (scan) and
+    //    Phase 2 (lock + read `unflushed`) are transiently invisible. They
+    //    are durable on disk — a retry sees them.
+    //
+    // The stress tests in `src/tests.rs` prove these invariants
+    // *statistically* under live thread contention. The property tests below
+    // make the invariants *machine-checkable*: they verify that for every
+    // generated state, the data `read_from` returns is always correct,
+    // ascending, and free of corruption — the invariant that holds even when
+    // the race fires. The concurrent variants exercise the actual race
+    // windows with proptest-generated parameters, broadening coverage beyond
+    // the fixed-parameter stress tests.
+
+    /// After `delete_acked` removes segments, every item `read_from` returns
+    /// must be correct: valid id matching the original global sequence,
+    /// correct payload, strictly ascending, and no items from deleted
+    /// segments.
+    ///
+    /// Formal assertion for the **delete-acked race window** invariant: the
+    /// race may produce spurious `SegmentError::Io`, but never wrong,
+    /// duplicate, or out-of-order items.
+    #[test]
+    fn read_from_surviving_items_correct_after_delete(
+        num_segments in 1u8..12,
+        items_per_segment in 1u8..30,
+        delete_count in 0u8..12,
+        read_start in 0u32..360,
+        read_limit in 1u16..150,
+    ) {
+        let items_per_segment = items_per_segment as u64;
+        let num_segments = num_segments as u64;
+        let total = num_segments * items_per_segment;
+        let delete_count = (delete_count as u64).min(num_segments);
+        let read_start = (read_start as u64).min(total);
+        let read_limit = read_limit as usize;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        for seg in 0..num_segments {
+            for i in 0..items_per_segment {
+                let seq = seg * items_per_segment + i;
+                buf.append(PropItem {
+                    id: seq,
+                    payload: format!("payload-{seq}"),
+                })
+                .expect("append must succeed");
+            }
+            buf.flush().expect("flush must succeed");
+        }
+
+        let first_surviving_seq = delete_count * items_per_segment;
+        if delete_count > 0 {
+            let ack_seq = first_surviving_seq - 1;
+            buf.delete_acked(ack_seq).expect("delete must succeed");
+        }
+
+        let result = buf
+            .read_from(read_start, read_limit)
+            .expect("read must succeed");
+
+        prop_assert!(
+            result.len() <= read_limit,
+            "result length {} exceeds limit {}",
+            result.len(),
+            read_limit
+        );
+
+        let mut prev_id: Option<u64> = None;
+        for item in &result {
+            prop_assert!(
+                item.id < total,
+                "item id {} out of range [0, {})",
+                item.id,
+                total
+            );
+            prop_assert!(
+                item.id >= first_surviving_seq,
+                "item id {} from deleted segment (surviving starts at {})",
+                item.id,
+                first_surviving_seq
+            );
+            if let Some(p) = prev_id {
+                prop_assert!(
+                    item.id > p,
+                    "items not strictly ascending: {} after {}",
+                    item.id,
+                    p
+                );
+            }
+            prop_assert_eq!(
+                item.payload,
+                format!("payload-{}", item.id),
+                "payload mismatch for item id {}",
+                item.id
+            );
+            prev_id = Some(item.id);
+        }
+
+        // If there are surviving items at or after read_start, the result must
+        // not be empty — the data is on disk, nothing is racing.
+        if read_start < total && first_surviving_seq < total {
+            let effective_start = read_start.max(first_surviving_seq);
+            if effective_start < total {
+                prop_assert!(
+                    !result.is_empty(),
+                    "read_from returned empty despite surviving items from seq {}",
+                    effective_start
+                );
+            }
+        }
+    }
+
+    /// With items split between on-disk segments and in-memory `unflushed`,
+    /// `read_from` must return correct items from both layers: strictly
+    /// ascending, contiguous (no gaps — nothing is deleted), and with the
+    /// correct payload for each id.
+    ///
+    /// Formal assertion for the **flush race window** correctness invariant:
+    /// a transient gap may cause items to be temporarily invisible under
+    /// concurrency, but every item that IS returned is correct and contiguous.
+    #[test]
+    fn read_from_correct_with_disk_memory_split(
+        on_disk_count in 0u16..80,
+        in_memory_count in 0u16..80,
+        read_start in 0u16..160,
+        read_limit in 1u16..200,
+    ) {
+        let on_disk = on_disk_count as u64;
+        let in_memory = in_memory_count as u64;
+        let total = on_disk + in_memory;
+        let read_start = (read_start as u64).min(total);
+        let read_limit = read_limit as usize;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        for i in 0..on_disk {
+            buf.append(PropItem {
+                id: i,
+                payload: format!("payload-{i}"),
+            })
+            .expect("append must succeed");
+        }
+        if on_disk > 0 {
+            buf.flush().expect("flush must succeed");
+        }
+        for i in 0..in_memory {
+            let seq = on_disk + i;
+            buf.append(PropItem {
+                id: seq,
+                payload: format!("payload-{seq}"),
+            })
+            .expect("append must succeed");
+        }
+
+        let result = buf
+            .read_from(read_start, read_limit)
+            .expect("read must succeed");
+
+        // Nothing is deleted, so the result must be exactly the contiguous
+        // run from read_start up to the limit or total, whichever is smaller.
+        let expected_count = total.saturating_sub(read_start).min(read_limit as u64);
+        prop_assert_eq!(
+            result.len() as u64,
+            expected_count,
+            "expected {} contiguous items from seq {}, got {}",
+            expected_count,
+            read_start,
+            result.len()
+        );
+
+        for (idx, item) in result.iter().enumerate() {
+            let expected_id = read_start + idx as u64;
+            prop_assert_eq!(
+                item.id, expected_id,
+                "item at index {} has id {}, expected {}",
+                idx, item.id, expected_id
+            );
+            prop_assert_eq!(
+                item.payload,
+                format!("payload-{expected_id}"),
+                "payload mismatch for item id {}",
+                expected_id
+            );
+        }
+    }
+
+    /// After flushing from a split state (some on-disk, some in-memory), all
+    /// items must be visible through `read_from` — correct, contiguous, and
+    /// complete. This is the "transient gap closes" half of the flush race
+    /// invariant: the gap is transient, not permanent.
+    #[test]
+    fn read_from_all_visible_after_flush_from_split(
+        on_disk_count in 0u16..80,
+        in_memory_count in 0u16..80,
+    ) {
+        let on_disk = on_disk_count as u64;
+        let in_memory = in_memory_count as u64;
+        let total = on_disk + in_memory;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        for i in 0..on_disk {
+            buf.append(PropItem {
+                id: i,
+                payload: format!("payload-{i}"),
+            })
+            .expect("append must succeed");
+        }
+        if on_disk > 0 {
+            buf.flush().expect("flush must succeed");
+        }
+        for i in 0..in_memory {
+            let seq = on_disk + i;
+            buf.append(PropItem {
+                id: seq,
+                payload: format!("payload-{seq}"),
+            })
+            .expect("append must succeed");
+        }
+
+        // Flush the in-memory tail — simulates the flusher settling.
+        buf.flush().expect("final flush must succeed");
+
+        let result = buf
+            .read_from(0, total.max(1) as usize)
+            .expect("read must succeed");
+
+        prop_assert_eq!(
+            result.len() as u64,
+            total,
+            "after flush, expected {} items, got {}",
+            total,
+            result.len()
+        );
+
+        for (i, item) in result.iter().enumerate() {
+            prop_assert_eq!(
+                item.id,
+                i as u64,
+                "item at position {} has wrong id {}",
+                i,
+                item.id
+            );
+            prop_assert_eq!(
+                item.payload,
+                format!("payload-{i}"),
+                "payload mismatch at position {}",
+                i
+            );
+        }
+    }
+}
+
+// =========================================================================
+// Concurrent property tests (race-window exercisers)
+// =========================================================================
+//
+// These use a reduced case count (8) because each case spawns threads. They
+// exercise the actual race windows — segment deleted between scan and read
+// (delete race), and items flushed between Phase 1 scan and Phase 2 lock
+// (flush race) — with proptest-generated parameters, broadening coverage
+// beyond the fixed-parameter stress tests in `src/tests.rs`.
+//
+// The invariant checked is identical to the stress tests: every item the
+// reader successfully deserializes must have the correct seq-to-value
+// mapping. Spurious `Io` errors and transient gaps are tolerated (the reader
+// retries or skips); corruption, reordering, or wrong values are not.
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 8,
+        ..ProptestConfig::default()
+    })]
+
+    /// Exercises the **delete-acked race window** under concurrent
+    /// `read_from` + `delete_acked` with generated parameters. The reader
+    /// tolerates spurious `Io` errors (segment deleted between scan and read)
+    /// and transient gaps; it fails on any wrong, out-of-order, or
+    /// payload-mismatched item.
+    #[test]
+    fn read_from_invariant_under_concurrent_delete_acked(
+        num_segments in 3u8..15,
+        items_per_segment in 5u8..30,
+        read_batch_size in 10u16..200,
+    ) {
+        let items_per_segment = items_per_segment as u64;
+        let num_segments = num_segments as u64;
+        let total = items_per_segment * num_segments;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                crate::SegmentConfig {
+                    flush_policy: crate::FlushPolicy::Manual,
+                    max_size_bytes: 100 * 1024 * 1024,
+                    compression_level: 1,
+                    durability: crate::DurabilityPolicy::Throughput,
+                    cipher: None,
+                },
+            )
+            .unwrap(),
+        );
+
+        for seg in 0..num_segments {
+            for i in 0..items_per_segment {
+                let seq = seg * items_per_segment + i;
+                buf.append(PropItem {
+                    id: seq,
+                    payload: format!("payload-{seq}"),
+                })
+                .unwrap();
+            }
+            buf.flush().unwrap();
+        }
+
+        let corruption = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            // Reader: scans forward, verifying every item id and payload.
+            // Retries on empty (flush-race analog); skips on Io error
+            // (segment deleted under us — the documented boundary).
+            let buf_r = std::sync::Arc::clone(&buf);
+            let corrupt_r = std::sync::Arc::clone(&corruption);
+            s.spawn(move || {
+                let mut pos = 0u64;
+                let mut prev_id: Option<u64> = None;
+                let mut empty_retries = 0u32;
+                while pos < total {
+                    match buf_r.read_from(pos, read_batch_size as usize) {
+                        Ok(batch) if !batch.is_empty() => {
+                            empty_retries = 0;
+                            for item in &batch {
+                                if item.id >= total
+                                    || item.payload != format!("payload-{}", item.id)
+                                    || prev_id.is_some_and(|p| item.id <= p)
+                                {
+                                    corrupt_r
+                                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                                    return;
+                                }
+                                prev_id = Some(item.id);
+                                pos = item.id + 1;
+                            }
+                        }
+                        Ok(_) => {
+                            empty_retries += 1;
+                            if empty_retries > 5 {
+                                pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                                empty_retries = 0;
+                            } else {
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                            }
+                        }
+                        Err(_) => {
+                            // Io error: segment deleted between scan and
+                            // read. Documented boundary — skip forward.
+                            pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                        }
+                    }
+                }
+            });
+
+            // Deleter: removes segments from the front, racing with reads.
+            let buf_d = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                for acked in (items_per_segment..total)
+                    .step_by(items_per_segment as usize)
+                {
+                    let _ = buf_d.delete_acked(acked);
+                    std::thread::sleep(std::time::Duration::from_micros(10));
+                }
+            });
+        });
+
+        prop_assert!(
+            !corruption.load(std::sync::atomic::Ordering::SeqCst),
+            "read_from returned wrong data under concurrent delete_acked \
+             (num_segments={}, items_per_segment={}, read_batch_size={})",
+            num_segments,
+            items_per_segment,
+            read_batch_size
+        );
+    }
+
+    /// Exercises the **flush race window** under concurrent `read_from` +
+    /// `flush` with generated parameters. The reader tolerates transient
+    /// gaps (items flushed between scan and lock) by retrying; it fails on
+    /// any wrong, out-of-order, or payload-mismatched item. After the
+    /// flusher settles, all items must be visible and correct.
+    #[test]
+    fn read_from_invariant_under_concurrent_flush(
+        on_disk_count in 50u16..400,
+        in_memory_count in 50u16..400,
+        read_batch_size in 10u16..200,
+    ) {
+        let on_disk = on_disk_count as u64;
+        let in_memory = in_memory_count as u64;
+        let total = on_disk + in_memory;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                crate::SegmentConfig {
+                    flush_policy: crate::FlushPolicy::Manual,
+                    max_size_bytes: 100 * 1024 * 1024,
+                    compression_level: 1,
+                    durability: crate::DurabilityPolicy::Throughput,
+                    cipher: None,
+                },
+            )
+            .unwrap(),
+        );
+
+        for i in 0..on_disk {
+            buf.append(PropItem {
+                id: i,
+                payload: format!("payload-{i}"),
+            })
+            .unwrap();
+        }
+        buf.flush().unwrap();
+        for i in 0..in_memory {
+            let seq = on_disk + i;
+            buf.append(PropItem {
+                id: seq,
+                payload: format!("payload-{seq}"),
+            })
+            .unwrap();
+        }
+
+        let corruption = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            // Reader: scans forward, verifying every item id and payload.
+            // Tolerates transient gaps (flush race) by retrying.
+            let buf_r = std::sync::Arc::clone(&buf);
+            let corrupt_r = std::sync::Arc::clone(&corruption);
+            s.spawn(move || {
+                let mut pos = 0u64;
+                let mut prev_id: Option<u64> = None;
+                let mut empty_retries = 0u32;
+                while pos < total {
+                    match buf_r.read_from(pos, read_batch_size as usize) {
+                        Ok(batch) if !batch.is_empty() => {
+                            empty_retries = 0;
+                            for item in &batch {
+                                if item.id >= total
+                                    || item.payload != format!("payload-{}", item.id)
+                                    || prev_id.is_some_and(|p| item.id <= p)
+                                {
+                                    corrupt_r
+                                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                                    return;
+                                }
+                                prev_id = Some(item.id);
+                                pos = item.id + 1;
+                            }
+                        }
+                        Ok(_) => {
+                            empty_retries += 1;
+                            if empty_retries > 200 {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_micros(20));
+                        }
+                        Err(_) => {
+                            std::thread::sleep(std::time::Duration::from_micros(20));
+                        }
+                    }
+                }
+            });
+
+            // Flusher: drains `unflushed` to disk, racing with reads.
+            let buf_f = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                for _ in 0..20 {
+                    let _ = buf_f.flush();
+                    std::thread::sleep(std::time::Duration::from_micros(50));
+                }
+            });
+        });
+
+        prop_assert!(
+            !corruption.load(std::sync::atomic::Ordering::SeqCst),
+            "read_from returned wrong data under concurrent flush \
+             (on_disk={}, in_memory={}, read_batch_size={})",
+            on_disk,
+            in_memory,
+            read_batch_size
+        );
+
+        // After the flusher settles, all items must be visible — the
+        // transient gap is closed.
+        buf.flush().unwrap();
+        let all = buf.read_from(0, total as usize + 10).unwrap();
+        prop_assert_eq!(
+            all.len() as u64,
+            total,
+            "not all items visible after flush settles"
+        );
+        for (i, item) in all.iter().enumerate() {
+            prop_assert_eq!(
+                item.id,
+                i as u64,
+                "item at position {} has wrong id after flush settles",
+                i
+            );
+        }
+    }
 }
