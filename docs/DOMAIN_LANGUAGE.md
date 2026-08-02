@@ -292,8 +292,11 @@ differs:
 **What always holds, even under concurrency:**
 
 - Items are never corrupt or reordered. Every item returned by `read_from`
-  has the correct seq-to-value mapping. (Proven by
-  `concurrent_read_and_delete_never_corrupts` in `src/tests.rs`.)
+  has the correct seq-to-value mapping. (Proven statistically by
+  `concurrent_read_and_delete_never_corrupts` in `src/tests.rs`; verified
+  formally for every generated state by property tests
+  `read_from_surviving_items_correct_after_delete` and
+  `read_from_correct_with_disk_memory_split` in `src/property_tests.rs`.)
 - `delete_acked` is idempotent and never removes segments whose `end >
 acked_seq`. (Proven by loom tests in `tests/loom.rs`.)
 - `append` assigns sequence numbers atomically under one lock acquisition.
