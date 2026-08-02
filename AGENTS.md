@@ -288,13 +288,12 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 The crate uses a **two-tier lint strategy** inspired by [namtao's "Strict Lints" philosophy](https://www.namtao.com/rust/#strict-lints):
 
 **Tier 1 — Cargo.toml `[lints.clippy]` (applies to ALL targets):**
-`exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`, `unreachable` — lints with zero violations across lib, tests, benches, and examples.
+`pedantic` (deny), `nursery` (deny), plus the restriction lints `unwrap_used`, `expect_used`, `indexing_slicing`, `arithmetic_side_effects`, `as_conversions`, `string_slice`, `panic_in_result_fn`, `panic`, `exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`, `unreachable`.
 
-**Tier 2 — `#![deny(...)]` in `src/lib.rs` (library code only):**
-`unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`, `panic_in_result_fn` — panic-prevention lints that fire on test code too. Enforced via crate-level attributes so they apply to `lib.rs`/`segment.rs`/`cipher.rs`/`store.rs`/`error.rs` but NOT to integration tests, benches, or examples (separate compilation targets). In-crate test modules (`src/tests.rs`, `src/property_tests.rs`) override with `#![allow(...)]`.
-
-**Not yet adopted (aspirational):**
-`as_conversions`, `arithmetic_side_effects`, `pedantic`, `nursery` — produce ~570 errors combined. The library's `usize ↔ u64` index math and `u64 → f32` byte-ratio conversions are all legitimate. The consumer crate (monitor365) already uses pedantic + nursery; adopting them here would require a dedicated migration session.
+**Tier 2 — Library code gets real fixes; non-production targets get targeted allows:**
+- **Library code** (`src/lib.rs`, `src/segment.rs`, `src/cipher.rs`, `src/store.rs`, `src/error.rs`): fully clippy-clean under `pedantic + nursery + all restriction lints`. All `as` conversions replaced with `try_from`/`unwrap_or`, all arithmetic replaced with `saturating_*`/`wrapping_*`, `#[must_use]` added to all builders, `Debug` uses `finish_non_exhaustive`, drop guards added for mutex guards.
+- **In-crate test modules** (`src/tests.rs`, `src/property_tests.rs`): override with `#![allow(...)]` covering the panic-prevention lints, `as_conversions`, `arithmetic_side_effects`, and the full `pedantic` + `nursery` groups. Test code uses `unwrap()`, `as u64`, and `count += 1` extensively and safely.
+- **Benches, examples, integration tests** (`benches/`, `examples/`, `tests/`): same `#![allow(...)]` block. These are infrastructure and demonstration code where strict lints add noise without safety value.
 
 **`cargo-nextest`** is available in the Nix devShell (`nix develop`) for faster, more readable local test runs. CI continues to use `cargo test` — the suite runs in ~4 seconds, so nextest's parallelism advantage is negligible for CI.
 

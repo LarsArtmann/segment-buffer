@@ -88,13 +88,14 @@
 #![warn(clippy::missing_panics_doc, clippy::missing_errors_doc)]
 // Library-only panic-prevention lints (inspired by namtao's "Strict Lints"
 // philosophy). These are crate-level denies so they apply to every source
-// file in the library (lib.rs, segment.rs, cipher.rs, store.rs, error.rs)
-// but NOT to integration tests, benches, or examples — those are separate
-// compilation targets. In-crate test modules (src/tests.rs,
-// src/property_tests.rs) override these with `#![allow]` at their top.
+// Panic-prevention lints for library code. These are also denied in
+// Cargo.toml [lints.clippy] for all targets; the in-crate test modules
+// (src/tests.rs, src/property_tests.rs) override with `#![allow]`.
+// Benches and examples carry their own `#![allow]` blocks.
 //
-// The full namtao set also includes `as_conversions`, `arithmetic_side_effects`,
-// `pedantic`, and `nursery` — those produce ~570 errors here and are aspirational.
+// The full strict set (`as_conversions`, `arithmetic_side_effects`,
+// `pedantic`, `nursery`) is also enforced via Cargo.toml. Library code is
+// fully clean under all of them.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -988,7 +989,9 @@ where
         let dir = dir.into();
         let store: Arc<dyn store::SegmentStore + Send + Sync> =
             Arc::new(store::RealStore::new(dir.clone()));
-        store.create_dir_all().map_err(error::SegmentError::with_dir)?;
+        store
+            .create_dir_all()
+            .map_err(error::SegmentError::with_dir)?;
 
         // Acquire the single-process lock BEFORE any filename parsing or
         // state publication. A second opener on the same directory would
@@ -1060,7 +1063,9 @@ where
         // store (production path). When the test harness passes a fresh
         // store, run it here for symmetry. Idempotent, so a second call is
         // a no-op.
-        store.create_dir_all().map_err(error::SegmentError::with_dir)?;
+        store
+            .create_dir_all()
+            .map_err(error::SegmentError::with_dir)?;
 
         // Allocate the pooled zstd CCtx once, at the configured compression
         // level. This is the allocation whose per-flush memset was 66% of
@@ -1327,13 +1332,11 @@ where
         // Phase 2: read from in-memory pending events.
         if result.len() < limit {
             let inner = self.inner.lock();
-            let pending_start =
-                inner
-                    .next_seq
-                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+            let pending_start = inner
+                .next_seq
+                .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
             for (i, event) in inner.unflushed.iter().enumerate() {
-                let seq =
-                    pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
+                let seq = pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
                 if seq < start_seq {
                     continue;
                 }
@@ -1460,7 +1463,9 @@ where
                 if visited >= limit {
                     break;
                 }
-                let seq = seg.start.saturating_add(u64::try_from(offset).unwrap_or(u64::MAX));
+                let seq = seg
+                    .start
+                    .saturating_add(u64::try_from(offset).unwrap_or(u64::MAX));
                 f(seq, event);
                 visited = visited.saturating_add(1);
             }
@@ -1470,16 +1475,14 @@ where
         // the items are borrowed in place under the lock, with zero clones.
         if visited < limit {
             let inner = self.inner.lock();
-            let pending_start =
-                inner
-                    .next_seq
-                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+            let pending_start = inner
+                .next_seq
+                .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
             for (i, event) in inner.unflushed.iter().enumerate() {
                 if visited >= limit {
                     break;
                 }
-                let seq =
-                    pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
+                let seq = pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
                 if seq < start_seq {
                     continue;
                 }
@@ -1583,10 +1586,9 @@ where
             // delete), so head_seq must not advance past them. Without this
             // clamp, acknowledging past a buffer that still holds unflushed
             // items would make `pending_count` under-report the real backlog.
-            let pending_start =
-                inner
-                    .next_seq
-                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+            let pending_start = inner
+                .next_seq
+                .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
             inner.head_seq = new_head.unwrap_or(inner.next_seq).min(pending_start);
         }
 
@@ -2292,7 +2294,7 @@ where
             return true; // directory unreadable → safer to re-scan
         };
         let cached = *self.last_dir_mtime.lock();
-        cached.map_or(true, |prev| prev != current)
+        cached.is_none_or(|prev| prev != current)
     }
 
     /// Invalidate the scan cache. Called by every on-disk mutation

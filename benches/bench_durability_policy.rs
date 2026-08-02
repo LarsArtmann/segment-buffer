@@ -22,9 +22,8 @@
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::pedantic,
-    clippy::nursery,
+    clippy::nursery
 )]
-
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use segment_buffer::{DurabilityPolicy, FlushPolicy, SegmentBuffer, SegmentConfig};

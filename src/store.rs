@@ -192,8 +192,7 @@ impl SegmentStore for RealStore {
     }
 
     fn segment_size(&self, range: SegmentRange) -> u64 {
-        fs::metadata(self.segment_path(range))
-            .map_or(0, |m| m.len())
+        fs::metadata(self.segment_path(range)).map_or(0, |m| m.len())
     }
 
     fn remove_segment(&self, range: SegmentRange) -> Result<bool> {

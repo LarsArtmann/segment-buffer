@@ -13,9 +13,8 @@
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::pedantic,
-    clippy::nursery,
+    clippy::nursery
 )]
-
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;

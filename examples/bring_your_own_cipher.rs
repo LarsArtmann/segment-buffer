@@ -19,9 +19,8 @@
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::pedantic,
-    clippy::nursery,
+    clippy::nursery
 )]
-
 
 use chacha20poly1305::{
     aead::{Aead, Payload},

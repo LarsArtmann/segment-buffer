@@ -20,7 +20,7 @@
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::pedantic,
-    clippy::nursery,
+    clippy::nursery
 )]
 use super::segment;
 use proptest::prelude::*;

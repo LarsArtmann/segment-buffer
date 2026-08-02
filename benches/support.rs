@@ -16,9 +16,8 @@
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::pedantic,
-    clippy::nursery,
+    clippy::nursery
 )]
-
 
 use segment_buffer::{SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};

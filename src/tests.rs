@@ -13,7 +13,7 @@
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::pedantic,
-    clippy::nursery,
+    clippy::nursery
 )]
 use super::*;
 use serde::{Deserialize, Serialize};
@@ -2253,8 +2253,7 @@ fn stress_8_writers_4_readers_latency_histogram() {
         pct(90.0).as_nanos() as f64 / 1000.0,
         pct(99.0).as_nanos() as f64 / 1000.0,
         pct(99.9).as_nanos() as f64 / 1000.0,
-        all.last()
-            .map_or(0.0, |d| d.as_nanos() as f64 / 1000.0),
+        all.last().map_or(0.0, |d| d.as_nanos() as f64 / 1000.0),
         total_read.load(Ordering::Relaxed)
     );
 
