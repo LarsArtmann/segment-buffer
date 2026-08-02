@@ -281,6 +281,21 @@ The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` 
 - The top-level doc example is `#![no_run]`-gated.
 - Lint posture is strict: `RUSTFLAGS=-D warnings` plus clippy `-D warnings`.
 
+### Lint architecture (namtao-inspired, adopted 2026-08-02)
+
+The crate uses a **two-tier lint strategy** inspired by [namtao's "Strict Lints" philosophy](https://www.namtao.com/rust/#strict-lints):
+
+**Tier 1 — Cargo.toml `[lints.clippy]` (applies to ALL targets):**
+`exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`, `unreachable` — lints with zero violations across lib, tests, benches, and examples.
+
+**Tier 2 — `#![deny(...)]` in `src/lib.rs` (library code only):**
+`unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`, `panic_in_result_fn` — panic-prevention lints that fire on test code too. Enforced via crate-level attributes so they apply to `lib.rs`/`segment.rs`/`cipher.rs`/`store.rs`/`error.rs` but NOT to integration tests, benches, or examples (separate compilation targets). In-crate test modules (`src/tests.rs`, `src/property_tests.rs`) override with `#![allow(...)]`.
+
+**Not yet adopted (aspirational):**
+`as_conversions`, `arithmetic_side_effects`, `pedantic`, `nursery` — produce ~570 errors combined. The library's `usize ↔ u64` index math and `u64 → f32` byte-ratio conversions are all legitimate. The consumer crate (monitor365) already uses pedantic + nursery; adopting them here would require a dedicated migration session.
+
+**`cargo-nextest`** is available in the Nix devShell (`nix develop`) for faster, more readable local test runs. CI continues to use `cargo test` — the suite runs in ~4 seconds, so nextest's parallelism advantage is negligible for CI.
+
 ## CI / MSRV
 
 - Matrix: `ubuntu-latest` + `macos-latest` × `stable` + `1.86`.

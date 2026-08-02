@@ -56,6 +56,22 @@ loom = []
 # `doc(cfg(...))` feature-gate badges on the published docs page.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(docsrs)'] }
 
+[lints.clippy]
+# Panic-prevention lints that are safe for ALL targets (lib, tests, benches,
+# examples). The consumer crate (monitor365) uses a stricter set including
+# pedantic + nursery; those produce ~475 errors here and are aspirational.
+#
+# These lints catch runtime panics at compile time — the core philosophy from
+# namtao's "Strict Lints" page: "teach you rust, stop panics at runtime."
+# The library-only panic-prevention lints (unwrap_used, expect_used,
+# indexing_slicing, string_slice) are enforced via `#![deny(...)]` in
+# src/lib.rs so they don't fire in test/example/bench code.
+exit = "deny"
+todo = "deny"
+unimplemented = "deny"
+unchecked_time_subtraction = "deny"
+unreachable = "deny"
+
 [dependencies]
 ciborium = "0.2"
 zstd = "0.13"

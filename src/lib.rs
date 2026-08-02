@@ -86,6 +86,22 @@
 // rotting when new methods land. The 2026-07-20 doc-quality sweep added the
 // sections; these lints keep them there.
 #![warn(clippy::missing_panics_doc, clippy::missing_errors_doc)]
+// Library-only panic-prevention lints (inspired by namtao's "Strict Lints"
+// philosophy). These are crate-level denies so they apply to every source
+// file in the library (lib.rs, segment.rs, cipher.rs, store.rs, error.rs)
+// but NOT to integration tests, benches, or examples — those are separate
+// compilation targets. In-crate test modules (src/tests.rs,
+// src/property_tests.rs) override these with `#![allow]` at their top.
+//
+// The full namtao set also includes `as_conversions`, `arithmetic_side_effects`,
+// `pedantic`, and `nursery` — those produce ~570 errors here and are aspirational.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::panic_in_result_fn
+)]
 // Pin the html root URL so intra-doc links resolve against the published
 // docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
 // `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
@@ -2038,6 +2054,12 @@ where
     /// (`parking_lot::Mutex` is not reentrant), so an explicit panic is
     /// strictly better for diagnosability.
     #[track_caller]
+    // Intentional panic: the caller violated the API contract by re-entering
+    // the buffer from within a `for_each_from` callback. The buffer mutex is
+    // held during iteration; re-entry would deadlock. This is a programming
+    // error, not a recoverable condition — failing silently would hide a
+    // guaranteed hang.
+    #[allow(clippy::panic)]
     fn assert_not_reentered(&self, method: &'static str) {
         if self
             .iteration_in_progress

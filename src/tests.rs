@@ -1,3 +1,13 @@
+// Test modules override the library's panic-prevention lints. In test code,
+// panicking on unexpected conditions (unwrap/expect) is the correct behavior
+// — a test failure should be loud and immediate, not a silent error return.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::panic_in_result_fn
+)]
 use super::*;
 use serde::{Deserialize, Serialize};
 use std::fs;

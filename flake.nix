@@ -108,6 +108,7 @@
                 rust-analyzer
                 zstd
                 pkg-config
+                cargo-nextest
               ];
             };
 

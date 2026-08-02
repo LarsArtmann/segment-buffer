@@ -134,15 +134,19 @@ const ENVELOPE_RESERVED_LEN: usize = 3;
 /// v1 file. Requiring the reserved bytes to be zero is what makes the
 /// legacy-detection false-positive rate negligible (2⁻⁵⁶ per file).
 pub fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
-    let reserved_range = ENVELOPE_MAGIC.len() + 1..ENVELOPE_LEN;
     let reserved_zero = [0u8; ENVELOPE_RESERVED_LEN];
-    if raw.len() >= ENVELOPE_LEN
-        && raw[..ENVELOPE_MAGIC.len()] == ENVELOPE_MAGIC
-        && raw[reserved_range] == reserved_zero
-    {
-        (Some(raw[ENVELOPE_MAGIC.len()]), &raw[ENVELOPE_LEN..])
-    } else {
-        (None, raw)
+    let magic_len = ENVELOPE_MAGIC.len();
+
+    let magic = raw.get(..magic_len);
+    let version = raw.get(magic_len).copied();
+    let reserved = raw.get(magic_len + 1..ENVELOPE_LEN);
+    let payload = raw.get(ENVELOPE_LEN..);
+
+    match (magic, version, reserved, payload) {
+        (Some(m), Some(v), Some(r), Some(p)) if m == ENVELOPE_MAGIC && r == reserved_zero => {
+            (Some(v), p)
+        }
+        _ => (None, raw),
     }
 }
 

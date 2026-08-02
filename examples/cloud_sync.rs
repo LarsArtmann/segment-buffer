@@ -122,7 +122,12 @@ fn drain_loop(
             }
         }
         if !succeeded {
-            unreachable!("either succeeded or returned Err in the loop above");
+            // The retry loop above either sets `succeeded = true` or returns
+            // Err on the final attempt. This branch is defense-in-depth.
+            return Err(format!(
+                "upload failed after {max_retries} retries at seq {}",
+                *cursor
+            ));
         }
 
         // Acknowledge the batch — delete_acked removes every segment whose

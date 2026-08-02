@@ -234,6 +234,10 @@ mod private {
 
         /// Create a new cipher from a 32-byte AES-256 key (const-sized input).
         ///
+        /// Because the key length is fixed at compile time, construction is
+        /// infallible — unlike [`from_slice`](Self::from_slice), which must
+        /// validate runtime slice length.
+        ///
         /// # Example
         ///
         /// ```
@@ -245,18 +249,10 @@ mod private {
         /// let plaintext = cipher.decrypt(&ciphertext).unwrap();
         /// assert_eq!(plaintext, b"hello");
         /// ```
-        ///
-        /// # Panics
-        ///
-        /// Never in practice — a 32-byte key is always valid for AES-256. The
-        /// internal `.expect()` is a defense-in-depth assertion against a future
-        /// logic bug (e.g. a key-type change); callers passing a correctly-sized
-        /// key will never hit it.
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use aes_gcm::KeyInit;
             Self {
-                cipher: aes_gcm::Aes256Gcm::new_from_slice(key_bytes)
-                    .expect("32-byte key is always valid for AES-256"),
+                cipher: aes_gcm::Aes256Gcm::new(key_bytes.into()),
             }
         }
     }
@@ -346,17 +342,13 @@ mod private {
         /// assert_eq!(plaintext, b"hello");
         /// ```
         ///
-        /// # Panics
-        ///
-        /// Never in practice — a 32-byte key is always valid for XChaCha20-Poly1305.
-        /// The internal `.expect()` is a defense-in-depth assertion against a
-        /// future logic bug (e.g. a key-type change); callers passing a
-        /// correctly-sized key will never hit it.
+        /// Because the key length is fixed at compile time, construction is
+        /// infallible — unlike [`from_slice`](Self::from_slice), which must
+        /// validate runtime slice length.
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use chacha20poly1305::KeyInit;
             Self {
-                cipher: chacha20poly1305::XChaCha20Poly1305::new_from_slice(key_bytes)
-                    .expect("32-byte key is always valid for XChaCha20-Poly1305"),
+                cipher: chacha20poly1305::XChaCha20Poly1305::new(key_bytes.into()),
             }
         }
 
