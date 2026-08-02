@@ -622,8 +622,8 @@ proptest! {
                 );
             }
             prop_assert_eq!(
-                item.payload,
-                format!("payload-{}", item.id),
+                &item.payload,
+                &format!("payload-{}", item.id),
                 "payload mismatch for item id {}",
                 item.id
             );
@@ -716,8 +716,8 @@ proptest! {
                 idx, item.id, expected_id
             );
             prop_assert_eq!(
-                item.payload,
-                format!("payload-{expected_id}"),
+                &item.payload,
+                &format!("payload-{expected_id}"),
                 "payload mismatch for item id {}",
                 expected_id
             );
@@ -788,8 +788,8 @@ proptest! {
                 item.id
             );
             prop_assert_eq!(
-                item.payload,
-                format!("payload-{i}"),
+                &item.payload,
+                &format!("payload-{i}"),
                 "payload mismatch at position {}",
                 i
             );
