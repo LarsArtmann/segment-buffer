@@ -1036,16 +1036,37 @@ proptest! {
             read_batch_size
         );
 
-        // Note: we deliberately do NOT assert "all items visible after flush
-        // settles" here. The scan cache (`scan_segments`) has a TOCTOU window
-        // under concurrent flush: a reader's fresh scan can miss a segment
-        // that the flusher renamed mid-scan, then overwrite the cache entry
-        // invalidated by the flusher. Until the next directory mutation, the
-        // cache serves a stale segment list and "a retry sees them" does not
-        // hold. This is a pre-existing limitation of the scan cache, not a
-        // data-integrity issue — the items are durable on disk. The
-        // deterministic property test
-        // `read_from_all_visible_after_flush_from_split` covers the "gap is
-        // transient" invariant without the scan-cache race.
+        // After the flusher settles, the transient gap must close: every
+        // item must become visible. This is the "a retry sees them" half of
+        // the flush-race invariant.
+        let _ = buf.flush(); // settle: drain anything the flusher left behind
+        let mut settled = Vec::new();
+        for _ in 0..10 {
+            settled = buf
+                .read_from(0, total as usize)
+                .expect("settle read must not error");
+            if settled.len() as u64 >= total {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        prop_assert_eq!(
+            settled.len() as u64,
+            total,
+            "after flush settles, not all items visible within retry bound \
+             (on_disk={}, in_memory={}, read_batch_size={})",
+            on_disk,
+            in_memory,
+            read_batch_size,
+        );
+        for (i, item) in settled.iter().enumerate() {
+            prop_assert_eq!(item.id, i as u64, "wrong id at {} after settle", i);
+            prop_assert_eq!(
+                &item.payload,
+                &format!("payload-{i}"),
+                "payload mismatch at {} after settle",
+                i
+            );
+        }
     }
 }
