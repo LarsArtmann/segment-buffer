@@ -239,7 +239,7 @@ pub fn decode_payload<T: DeserializeOwned>(
     // deployments.
     let cbor_buf = match zstd::zstd_safe::get_frame_content_size(compressed.as_ref()) {
         Ok(Some(size)) => {
-            let cap = usize::try_from(size).unwrap_or(compressed.len().saturating_mul(8));
+            let cap = usize::try_from(size).unwrap_or_else(|_| compressed.len().saturating_mul(8));
             match decompressor.decompress(compressed.as_ref(), cap) {
                 Ok(buf) => buf,
                 Err(_) => zstd::decode_all(compressed.as_ref())?,

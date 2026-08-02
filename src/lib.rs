@@ -597,6 +597,7 @@ impl SegmentConfigBuilder {
     ///     .build();
     /// # }
     /// ```
+    #[must_use]
     pub fn cipher(mut self, cipher: Arc<dyn SegmentCipher + Send + Sync>) -> Self {
         self.inner.cipher = Some(cipher);
         self
@@ -623,6 +624,7 @@ impl SegmentConfigBuilder {
     /// ```
     #[cfg(feature = "encryption")]
     #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
+    #[must_use]
     pub fn recommended_cipher(self, key: [u8; 32]) -> Self {
         self.cipher(Arc::new(XChaCha20Poly1305Cipher::new(&key)))
     }
@@ -913,7 +915,7 @@ where
             .field("approx_disk_bytes", &stats.approx_disk_bytes)
             .field("max_size_bytes", &stats.max_size_bytes)
             .field("store_pressure", &stats.store_pressure)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -1153,13 +1155,14 @@ where
         let (should_flush, seq) = {
             let mut inner = self.inner.lock();
             inner.unflushed.push(event);
-            inner.next_seq += 1;
-            let seq = inner.next_seq - 1;
+            inner.next_seq = inner.next_seq.saturating_add(1);
+            let seq = inner.next_seq.saturating_sub(1);
 
             let should_flush = self
                 .config
                 .flush_policy
                 .should_flush(inner.unflushed.len(), inner.last_flush.elapsed());
+            drop(inner);
             (should_flush, seq)
         };
 
@@ -1219,9 +1222,10 @@ where
             // so reserve the old capacity up front instead of forcing
             // `append()` to grow the empty Vec back through log2(N) reallocs.
             inner.unflushed.reserve(events.capacity());
-            let count = events.len() as u64;
-            let end_seq = inner.next_seq - 1;
-            let start_seq = end_seq + 1 - count;
+            let count = u64::try_from(events.len()).unwrap_or(u64::MAX);
+            let end_seq = inner.next_seq.saturating_sub(1);
+            let start_seq = end_seq.saturating_add(1).saturating_sub(count);
+            drop(inner);
             (events, start_seq, end_seq)
         };
 
@@ -1307,7 +1311,7 @@ where
 
             let events = self.read_segment(*seg)?;
             let skip = if seg.start < start_seq {
-                (start_seq - seg.start) as usize
+                usize::try_from(start_seq.saturating_sub(seg.start)).unwrap_or(usize::MAX)
             } else {
                 0
             };
@@ -1323,9 +1327,13 @@ where
         // Phase 2: read from in-memory pending events.
         if result.len() < limit {
             let inner = self.inner.lock();
-            let pending_start = inner.next_seq.saturating_sub(inner.unflushed.len() as u64);
+            let pending_start =
+                inner
+                    .next_seq
+                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
             for (i, event) in inner.unflushed.iter().enumerate() {
-                let seq = pending_start + i as u64;
+                let seq =
+                    pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
                 if seq < start_seq {
                     continue;
                 }
@@ -1443,7 +1451,7 @@ where
 
             let events = self.read_segment(*seg)?;
             let skip = if seg.start < start_seq {
-                (start_seq - seg.start) as usize
+                usize::try_from(start_seq.saturating_sub(seg.start)).unwrap_or(usize::MAX)
             } else {
                 0
             };
@@ -1452,9 +1460,9 @@ where
                 if visited >= limit {
                     break;
                 }
-                let seq = seg.start + offset as u64;
+                let seq = seg.start.saturating_add(u64::try_from(offset).unwrap_or(u64::MAX));
                 f(seq, event);
-                visited += 1;
+                visited = visited.saturating_add(1);
             }
         }
 
@@ -1462,17 +1470,21 @@ where
         // the items are borrowed in place under the lock, with zero clones.
         if visited < limit {
             let inner = self.inner.lock();
-            let pending_start = inner.next_seq.saturating_sub(inner.unflushed.len() as u64);
+            let pending_start =
+                inner
+                    .next_seq
+                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
             for (i, event) in inner.unflushed.iter().enumerate() {
                 if visited >= limit {
                     break;
                 }
-                let seq = pending_start + i as u64;
+                let seq =
+                    pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
                 if seq < start_seq {
                     continue;
                 }
                 f(seq, event);
-                visited += 1;
+                visited = visited.saturating_add(1);
             }
         }
 
@@ -1537,12 +1549,12 @@ where
             if seg.end <= acked_seq {
                 let path = self.segment_path(seg.start, seg.end);
                 let file_bytes = self.store.segment_size(*seg);
-                freed_bytes += file_bytes;
+                freed_bytes = freed_bytes.saturating_add(file_bytes);
                 // remove_segment is idempotent on NotFound so concurrent
                 // delete_acked calls do not race on the same segment file.
                 // Returns true iff THIS call actually removed the file.
                 if self.store.remove_segment(*seg)? {
-                    deleted += 1;
+                    deleted = deleted.saturating_add(1);
                     debug!(
                         path = path.display().to_string(),
                         seq = seg.start,
@@ -1571,7 +1583,10 @@ where
             // delete), so head_seq must not advance past them. Without this
             // clamp, acknowledging past a buffer that still holds unflushed
             // items would make `pending_count` under-report the real backlog.
-            let pending_start = inner.next_seq.saturating_sub(inner.unflushed.len() as u64);
+            let pending_start =
+                inner
+                    .next_seq
+                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
             inner.head_seq = new_head.unwrap_or(inner.next_seq).min(pending_start);
         }
 
