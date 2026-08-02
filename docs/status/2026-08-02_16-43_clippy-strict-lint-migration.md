@@ -12,12 +12,12 @@
 
 All library source files (`src/lib.rs`, `src/segment.rs`, `src/store.rs`, `src/cipher.rs`, `src/error.rs`) are fully clean under `pedantic` + `nursery` + `as_conversions` + `arithmetic_side_effects` + `cast_*` + all restriction lints.
 
-| File | Errors fixed | Key changes |
-|------|-------------|-------------|
-| `src/lib.rs` | 50 | `as u64` → `u64::try_from(x).unwrap_or(u64::MAX)`, `+=` → `.saturating_add()`, `next_seq - 1` → `.saturating_sub(1)`, `#[must_use]` on `cipher()`/`recommended_cipher()`, `finish()` → `finish_non_exhaustive()` on Debug impl, `drop(inner)` guards for `significant_drop_tightening`, `let...else` + `is_none_or` refactor in `dir_mtime_changed`, `#[allow]` on `store_pressure()`/`stats()` for lossy `u64→f32` ratio math |
-| `src/cipher.rs` | 8 | Extracted `AES_GCM_NONCE_LEN` constant (was magic `12`), `#[must_use]` on both cipher `new()` methods, `12 + ciphertext.len()` → `.saturating_add()`, doc backticks for `XChaCha20`/`ChaCha20`/`ARMv8`/`x86` |
-| `src/segment.rs` | 3 | `magic_len + 1` → `.saturating_add(1)`, `ENVELOPE_LEN + payload.len()` → `.saturating_add()`, `compressed.len() * 8` → `.saturating_mul(8)`, `unwrap_or(expr)` → `unwrap_or_else(\|_\| expr)` |
-| `src/store.rs` | 2 | `removed += 1` → `.saturating_add(1)`, `payload.len() as u64` → `u64::try_from(...).unwrap_or(u64::MAX)` |
+| File             | Errors fixed | Key changes                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/lib.rs`     | 50           | `as u64` → `u64::try_from(x).unwrap_or(u64::MAX)`, `+=` → `.saturating_add()`, `next_seq - 1` → `.saturating_sub(1)`, `#[must_use]` on `cipher()`/`recommended_cipher()`, `finish()` → `finish_non_exhaustive()` on Debug impl, `drop(inner)` guards for `significant_drop_tightening`, `let...else` + `is_none_or` refactor in `dir_mtime_changed`, `#[allow]` on `store_pressure()`/`stats()` for lossy `u64→f32` ratio math |
+| `src/cipher.rs`  | 8            | Extracted `AES_GCM_NONCE_LEN` constant (was magic `12`), `#[must_use]` on both cipher `new()` methods, `12 + ciphertext.len()` → `.saturating_add()`, doc backticks for `XChaCha20`/`ChaCha20`/`ARMv8`/`x86`                                                                                                                                                                                                                   |
+| `src/segment.rs` | 3            | `magic_len + 1` → `.saturating_add(1)`, `ENVELOPE_LEN + payload.len()` → `.saturating_add()`, `compressed.len() * 8` → `.saturating_mul(8)`, `unwrap_or(expr)` → `unwrap_or_else(\|_\| expr)`                                                                                                                                                                                                                                  |
+| `src/store.rs`   | 2            | `removed += 1` → `.saturating_add(1)`, `payload.len() as u64` → `u64::try_from(...).unwrap_or(u64::MAX)`                                                                                                                                                                                                                                                                                                                       |
 
 ### Non-production targets — allow blocks (211 errors → 0)
 
@@ -30,15 +30,15 @@ Extended the existing `#![allow(...)]` pattern (already used for `unwrap_used`, 
 
 ### Verification gate (local)
 
-| Gate | Command | Result |
-|------|---------|--------|
-| fmt | `cargo fmt --all -- --check` | **PASS** |
-| clippy (default) | `cargo clippy --all-targets -- -D warnings` | **PASS** |
-| clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | **PASS** |
-| test (default) | `cargo test --no-fail-fast` | **PASS** (97 + 1 + 0 + 33 = 131 tests) |
-| test (encryption) | `cargo test --no-fail-fast --features encryption` | **PASS** (116 + 1 + 0 + 38 = 155 tests) |
-| loom | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | **PASS** (9 tests, 220s) |
-| doc | `cargo doc --no-deps --features encryption` | **PASS** |
+| Gate                | Command                                                                   | Result                                  |
+| ------------------- | ------------------------------------------------------------------------- | --------------------------------------- |
+| fmt                 | `cargo fmt --all -- --check`                                              | **PASS**                                |
+| clippy (default)    | `cargo clippy --all-targets -- -D warnings`                               | **PASS**                                |
+| clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings`         | **PASS**                                |
+| test (default)      | `cargo test --no-fail-fast`                                               | **PASS** (97 + 1 + 0 + 33 = 131 tests)  |
+| test (encryption)   | `cargo test --no-fail-fast --features encryption`                         | **PASS** (116 + 1 + 0 + 38 = 155 tests) |
+| loom                | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | **PASS** (9 tests, 220s)                |
+| doc                 | `cargo doc --no-deps --features encryption`                               | **PASS**                                |
 
 ### Documentation updated
 
@@ -60,6 +60,7 @@ This is now wrong — `pedantic` is `deny`, not `warn`, and CI does NOT suppress
 ### Lint consistency in library code
 
 Two different strategies coexist in `src/lib.rs`:
+
 - **`try_from().unwrap_or(u64::MAX)`** pattern for `as usize` / `as u64` in `read_from`, `for_each_from`, `flush`, `delete_acked` — semantically safe conversions
 - **`#[allow(clippy::as_conversions, clippy::cast_precision_loss)]`** on `store_pressure()` and `stats()` — targeted allows for lossy `u64 → f32` ratio math
 

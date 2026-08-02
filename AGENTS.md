@@ -291,6 +291,7 @@ The crate uses a **two-tier lint strategy** inspired by [namtao's "Strict Lints"
 `pedantic` (deny), `nursery` (deny), plus the restriction lints `unwrap_used`, `expect_used`, `indexing_slicing`, `arithmetic_side_effects`, `as_conversions`, `string_slice`, `panic_in_result_fn`, `panic`, `exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`, `unreachable`.
 
 **Tier 2 — Library code gets real fixes; non-production targets get targeted allows:**
+
 - **Library code** (`src/lib.rs`, `src/segment.rs`, `src/cipher.rs`, `src/store.rs`, `src/error.rs`): fully clippy-clean under `pedantic + nursery + all restriction lints`. All `as` conversions replaced with `try_from`/`unwrap_or`, all arithmetic replaced with `saturating_*`/`wrapping_*`, `#[must_use]` added to all builders, `Debug` uses `finish_non_exhaustive`, drop guards added for mutex guards.
 - **In-crate test modules** (`src/tests.rs`, `src/property_tests.rs`): override with `#![allow(...)]` covering the panic-prevention lints, `as_conversions`, `arithmetic_side_effects`, and the full `pedantic` + `nursery` groups. Test code uses `unwrap()`, `as u64`, and `count += 1` extensively and safely.
 - **Benches, examples, integration tests** (`benches/`, `examples/`, `tests/`): same `#![allow(...)]` block. These are infrastructure and demonstration code where strict lints add noise without safety value.
