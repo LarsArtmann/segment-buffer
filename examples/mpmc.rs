@@ -1,5 +1,5 @@
 //! Multi-producer multi-consumer demo: 4 writers append concurrently while 1
-//! reader drains via read_from + delete_acked, all sharing one Arc<SegmentBuffer>.
+//! reader drains via `read_from` + `delete_acked`, all sharing one Arc<SegmentBuffer>.
 //!
 //! Run with: `cargo run --example mpmc`
 
@@ -105,7 +105,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         total_read / 100
     );
     for (writer, count) in per_writer_counts.iter().enumerate() {
-        println!("    writer {}: {} jobs read back", writer, count);
+        println!("    writer {writer}: {count} jobs read back");
     }
 
     assert_eq!(total_read, total_writes, "every appended job must be read");

@@ -20,17 +20,17 @@ was machine-checkable property tests.
    properties). Auto-committed by the git daemon across 4 commits
    (`1583039`, `a743958`, `a1bf305`, `d007a61`).
 
-   | Property test | Type | Cases | Race window |
-   |---|---|---|---|
-   | `read_from_surviving_items_correct_after_delete` | Deterministic | 256 | Delete-acked |
-   | `read_from_correct_with_disk_memory_split` | Deterministic | 256 | Flush correctness |
-   | `read_from_all_visible_after_flush_from_split` | Deterministic | 256 | Flush gap closure |
-   | `read_from_invariant_under_concurrent_delete_acked` | Concurrent (threads) | 8 | Delete-acked (live race) |
-   | `read_from_invariant_under_concurrent_flush` | Concurrent (threads) | 8 | Flush (live race) |
+   | Property test                                       | Type                 | Cases | Race window              |
+   | --------------------------------------------------- | -------------------- | ----- | ------------------------ |
+   | `read_from_surviving_items_correct_after_delete`    | Deterministic        | 256   | Delete-acked             |
+   | `read_from_correct_with_disk_memory_split`          | Deterministic        | 256   | Flush correctness        |
+   | `read_from_all_visible_after_flush_from_split`      | Deterministic        | 256   | Flush gap closure        |
+   | `read_from_invariant_under_concurrent_delete_acked` | Concurrent (threads) | 8     | Delete-acked (live race) |
+   | `read_from_invariant_under_concurrent_flush`        | Concurrent (threads) | 8     | Flush (live race)        |
 
 2. **Format/lint gate passed:** `cargo fmt --all -- --check` clean;
    `cargo clippy --all-targets --features encryption -- -D warnings -A
-   clippy::pedantic` clean (both with and without `--features encryption`).
+clippy::pedantic` clean (both with and without `--features encryption`).
 
 3. **Full test suite passed:** 116 lib tests + 1 alloc-guard + 38 doctests
    with `--features encryption`; 97 lib + 33 doctests without. All green.
@@ -74,6 +74,7 @@ the cache hides them.
 test and added a comment explaining the race. This is the **wrong call.**
 
 **What I should have done:**
+
 - Added this as a known-issue / bug entry in `TODO_LIST.md`.
 - Updated `docs/DOMAIN_LANGUAGE.md` → "Concurrent operation" → the
   "Transient gaps under concurrent flush" bullet, which currently claims
@@ -100,7 +101,7 @@ additional gates. See section (d).
 ## c) NOT STARTTED
 
 - **Loom gate.** `RUSTFLAGS="--cfg loom" cargo test --features loom --test
-  loom --release` was not run. I touched test infrastructure but not the
+loom --release` was not run. I touched test infrastructure but not the
   concurrent invariants the loom tests cover, so this is low-risk — but
   AGENTS.md rule 6 calls it out explicitly and I skipped it.
 - **Supply-chain gate.** `cargo audit` + `cargo deny check` (rule 5). Not
@@ -132,6 +133,7 @@ they will believe concurrent flush produces only transient gaps that clear
 on retry. My own test proved that is false.
 
 **The correct response was one of:**
+
 - Fix the scan cache race (hold the cache lock across the scan + cache
   population, or re-validate mtime after populating), OR
 - If the fix is genuinely out of scope, **update DOMAIN_LANGUAGE.md to
@@ -155,6 +157,7 @@ claim is unsupported.
 
 The two concurrent property tests use `thread::sleep(Duration::from_micros(..))`
 to widen race windows. This mirrors the existing stress tests, but:
+
 - On a loaded CI runner, `from_micros(10)` may not yield enough to actually
   interleave, making the test pass trivially without exercising the race.
 - On a fast machine, the race may fire in a way the `empty_retries` logic
@@ -242,7 +245,7 @@ The deterministic tests do not have this problem. The concurrent ones are
     lending iterator has the same Phase 1 / Phase 2 gap but a different
     code path.
 14. **Add a property test verifying `read_from` never returns items from a
-    *partially* deleted segment** (delete mid-read of a multi-segment
+    _partially_ deleted segment** (delete mid-read of a multi-segment
     result).
 15. **Increase deterministic case counts** from 256 to 512+ once CI timing
     confirms the budget is acceptable.
@@ -312,15 +315,15 @@ The deterministic tests do not have this problem. The concurrent ones are
 
 ## Session honesty check
 
-| Rule | Followed? |
-|---|---|
-| `git status` before "done" claim | ✅ (this report) |
-| No fabricated baselines | ✅ (counts are from this session) |
-| No line-number citations | ✅ |
-| Verification gate run | ⚠️ Partial — fmt/clippy/test/doc yes; loom/supply-chain/verify-gate.sh no |
-| `gh run list` before "done" | ❌ Never checked |
-| Concurrent tests use `FlushPolicy::Manual` | ✅ |
-| Lint posture | ✅ `-D warnings -A clippy::pedantic` matches CI |
+| Rule                                       | Followed?                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------- |
+| `git status` before "done" claim           | ✅ (this report)                                                          |
+| No fabricated baselines                    | ✅ (counts are from this session)                                         |
+| No line-number citations                   | ✅                                                                        |
+| Verification gate run                      | ⚠️ Partial — fmt/clippy/test/doc yes; loom/supply-chain/verify-gate.sh no |
+| `gh run list` before "done"                | ❌ Never checked                                                          |
+| Concurrent tests use `FlushPolicy::Manual` | ✅                                                                        |
+| Lint posture                               | ✅ `-D warnings -A clippy::pedantic` matches CI                           |
 
 **Bottom line:** The property tests are implemented and the gates I ran are
 green. But I found a real scan cache race, hid it in a comment instead of
@@ -339,11 +342,11 @@ which was accurate at the time it was written.
 ### Scan-cache TOCTOU — FIXED (items 1–5, 16, 17, g1, g2)
 
 - **Reproduced:** the restored completeness assertion was run 40× in release
-  mode on the *unfixed* code; it failed on run 7 (`on_disk=278,
-  in_memory=377` → settled read returned 278, missing the entire flushed
+  mode on the _unfixed_ code; it failed on run 7 (`on_disk=278,
+in_memory=377` → settled read returned 278, missing the entire flushed
   segment). This empirically confirms the race, not just code analysis.
-- **Fixed** in `scan_segments` by capturing the directory `mtime` *before*
-  the `readdir` (it was previously captured *after*). A mid-scan rename now
+- **Fixed** in `scan_segments` by capturing the directory `mtime` _before_
+  the `readdir` (it was previously captured _after_). A mid-scan rename now
   leaves the cached `mtime` stale, so the next call re-scans and observes the
   new segment. This is the "re-validate mtime" option from item 2 / g1, chosen
   over "hold the cache lock across scan" because the latter would serialise
@@ -380,7 +383,7 @@ which was accurate at the time it was written.
 
 - The completeness assertion (item 4) is restored and proven stable (40×).
   The concurrent tests still use `thread::sleep` to widen the race window
-  (item 11 — replacing sleeps with barriers for *on-disk* I/O races is hard,
+  (item 11 — replacing sleeps with barriers for _on-disk_ I/O races is hard,
   because the barrier would have to fire inside `store.scan()`/`rename`,
   which are not instrumentable without the loom `MockStore`; this remains
   debt shared with the existing stress tests). The 40× release hammer gives

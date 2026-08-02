@@ -146,8 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "buffer must not silently drop events under backpressure"
     );
     println!(
-        "\nBackpressure applied {} times — producer slowed but never dropped.",
-        backpressure_events
+        "\nBackpressure applied {backpressure_events} times — producer slowed but never dropped."
     );
     Ok(())
 }

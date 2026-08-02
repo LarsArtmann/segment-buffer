@@ -35,7 +35,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout)
+        System.dealloc(ptr, layout);
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
@@ -69,7 +69,7 @@ struct Item {
     payload: [u8; 32],
 }
 
-fn item(n: u64) -> Item {
+const fn item(n: u64) -> Item {
     Item {
         id: n,
         payload: [0; 32],

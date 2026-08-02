@@ -211,7 +211,7 @@ proptest! {
         // Drop a mix of segment-named and non-segment files with garbage bytes.
         let mut blob = Vec::new();
         for i in 0..file_count {
-            blob.extend_from_slice(&blob_seed.wrapping_add(i as u64).to_le_bytes());
+            blob.extend_from_slice(&blob_seed.wrapping_add(u64::from(i)).to_le_bytes());
             blob.extend_from_slice(b"garbage");
             let entry_name = if i % 2 == 0 {
                 format!("seg_{i:012}_{file_count:012}.zst")
@@ -243,25 +243,23 @@ proptest! {
             .expect("open must succeed");
 
         for i in 0..n {
-            let _ = buf.append(PropItem { id: i as u64, payload: format!("p-{i}") });
+            let _ = buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") });
         }
 
         // After up to 499 appends under Manual, there must be zero segment
         // files on disk. Items live only in memory until the caller flushes.
         let segment_count = std::fs::read_dir(tmp.path())
-            .map(|entries| entries.filter_map(|e| e.ok()).filter(|e| {
+            .map_or(0, |entries| entries.filter_map(std::result::Result::ok).filter(|e| {
                 e.file_name().to_string_lossy().ends_with(".zst")
-            }).count())
-            .unwrap_or(0);
+            }).count());
         prop_assert_eq!(segment_count, 0, "Manual policy must not auto-flush");
 
         // But an explicit flush must still work and make items durable.
         buf.flush().expect("explicit flush must succeed");
         let segment_count_after = std::fs::read_dir(tmp.path())
-            .map(|entries| entries.filter_map(|e| e.ok()).filter(|e| {
+            .map_or(0, |entries| entries.filter_map(std::result::Result::ok).filter(|e| {
                 e.file_name().to_string_lossy().ends_with(".zst")
-            }).count())
-            .unwrap_or(0);
+            }).count());
         if n > 0 {
             prop_assert_eq!(segment_count_after, 1, "explicit flush must create exactly one segment");
         }
@@ -282,7 +280,7 @@ proptest! {
         let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
             .expect("open must succeed");
         for i in 0..n {
-            buf.append(PropItem { id: i as u64, payload: format!("p-{i}") }).expect("append");
+            buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
         }
         buf.flush().expect("flush");
 
@@ -312,7 +310,7 @@ proptest! {
         let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
             .expect("open must succeed");
         for i in 0..n {
-            buf.append(PropItem { id: i as u64, payload: format!("p-{i}") }).expect("append");
+            buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
         }
         buf.flush().expect("flush");
 
@@ -345,7 +343,7 @@ proptest! {
         let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
             .expect("open must succeed");
         for i in 0..n {
-            buf.append(PropItem { id: i as u64, payload: format!("p-{i}") }).expect("append");
+            buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
         }
         buf.flush().expect("flush");
 
@@ -386,7 +384,7 @@ proptest! {
         for (batch_idx, &size) in batch_sizes.iter().enumerate() {
             let items: Vec<PropItem> = (0..size)
                 .map(|i| PropItem {
-                    id: u64::try_from(batch_idx).unwrap() * 1000 + i as u64,
+                    id: u64::try_from(batch_idx).unwrap() * 1000 + u64::from(i),
                     payload: format!("batch-{batch_idx}-item-{i}"),
                 })
                 .collect();
@@ -402,7 +400,7 @@ proptest! {
                 );
                 // expected_next stays the same.
             } else {
-                let batch_end = expected_next + size as u64;
+                let batch_end = expected_next + u64::from(size);
                 prop_assert_eq!(
                     last_assigned, batch_end - 1,
                     "batch {} (size {}) assigned last seq {} but expected {}",
@@ -442,7 +440,7 @@ proptest! {
         for _ in 0..n_flushes {
             for i in 0..items_per_flush {
                 buf.append(PropItem {
-                    id: i as u64,
+                    id: u64::from(i),
                     payload: format!("payload-{i}"),
                 }).expect("append");
             }
@@ -456,9 +454,9 @@ proptest! {
         // Compute the actual disk usage: sum of `.zst` file sizes.
         let actual: u64 = std::fs::read_dir(tmp.path())
             .expect("read_dir")
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
-            .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+            .map(|e| e.metadata().map_or(0, |m| m.len()))
             .sum();
 
         prop_assert_eq!(
@@ -555,11 +553,11 @@ proptest! {
         read_start in 0u32..360,
         read_limit in 1u16..150,
     ) {
-        let items_per_segment = items_per_segment as u64;
-        let num_segments = num_segments as u64;
+        let items_per_segment = u64::from(items_per_segment);
+        let num_segments = u64::from(num_segments);
         let total = num_segments * items_per_segment;
-        let delete_count = (delete_count as u64).min(num_segments);
-        let read_start = (read_start as u64).min(total);
+        let delete_count = u64::from(delete_count).min(num_segments);
+        let read_start = u64::from(read_start).min(total);
         let read_limit = read_limit as usize;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -659,10 +657,10 @@ proptest! {
         read_start in 0u16..160,
         read_limit in 1u16..200,
     ) {
-        let on_disk = on_disk_count as u64;
-        let in_memory = in_memory_count as u64;
+        let on_disk = u64::from(on_disk_count);
+        let in_memory = u64::from(in_memory_count);
         let total = on_disk + in_memory;
-        let read_start = (read_start as u64).min(total);
+        let read_start = u64::from(read_start).min(total);
         let read_limit = read_limit as usize;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -733,8 +731,8 @@ proptest! {
         on_disk_count in 0u16..80,
         in_memory_count in 0u16..80,
     ) {
-        let on_disk = on_disk_count as u64;
-        let in_memory = in_memory_count as u64;
+        let on_disk = u64::from(on_disk_count);
+        let in_memory = u64::from(in_memory_count);
         let total = on_disk + in_memory;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -828,8 +826,8 @@ proptest! {
         items_per_segment in 5u8..30,
         read_batch_size in 10u16..200,
     ) {
-        let items_per_segment = items_per_segment as u64;
-        let num_segments = num_segments as u64;
+        let items_per_segment = u64::from(items_per_segment);
+        let num_segments = u64::from(num_segments);
         let total = items_per_segment * num_segments;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -939,8 +937,8 @@ proptest! {
         in_memory_count in 50u16..400,
         read_batch_size in 10u16..200,
     ) {
-        let on_disk = on_disk_count as u64;
-        let in_memory = in_memory_count as u64;
+        let on_disk = u64::from(on_disk_count);
+        let in_memory = u64::from(in_memory_count);
         let total = on_disk + in_memory;
 
         let tmp = tempfile::tempdir().unwrap();

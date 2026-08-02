@@ -13,7 +13,7 @@ session's job was to finish that job properly: reproduce the bug, fix it,
 restore the assertion, run the **full** verification gate the prior session
 skipped, and reconcile the docs the prior session left over-claiming.
 
-This is a self-assessment of *this* session only, written immediately after
+This is a self-assessment of _this_ session only, written immediately after
 the work, with the working tree and git log captured in the same response.
 
 ---
@@ -22,7 +22,7 @@ the work, with the working tree and git log captured in the same response.
 
 1. **Scan-cache TOCTOU — reproduced empirically on the unfixed code.**
    Restored the completeness assertion the prior session deleted, ran the
-   test 40× in release on the *unfixed* code. Failed on run 7
+   test 40× in release on the _unfixed_ code. Failed on run 7
    (`on_disk=278, in_memory=377` → settled read returned **278**, missing
    the entire flushed segment of 377 items). The bug is real, not
    theoretical. The failure seed is now pinned in
@@ -31,32 +31,32 @@ the work, with the working tree and git log captured in the same response.
    fast.
 
 2. **Scan-cache TOCTOU — fixed.** Root cause: `scan_segments` captured the
-   directory `mtime` *after* its `readdir`. A rename landing mid-scan paired
+   directory `mtime` _after_ its `readdir`. A rename landing mid-scan paired
    a post-rename `mtime` with a pre-rename segment list, so the staleness
    guard saw "no change" and served stale data indefinitely. Fix: capture
-   `mtime` *before* the scan (`src/lib.rs`, one-line reorder, no new
+   `mtime` _before_ the scan (`src/lib.rs`, one-line reorder, no new
    mechanism, no lock held across I/O). Verified 40/40 release runs pass on
    the fixed code.
 
 3. **Full 14-gate verification — run, with exit codes captured.** This is
    the gate the prior session skipped. All green:
 
-   | Gate | Result |
-   |---|---|
-   | `cargo fmt --all -- --check` | ✅ |
-   | `cargo clippy --all-targets` (default) `-D warnings -A pedantic` | ✅ rc=0 |
-   | `cargo clippy --all-targets --features encryption` | ✅ rc=0 |
-   | `cargo clippy --all-targets --features fuzz` | ✅ rc=0 |
-   | `cargo test --no-fail-fast` | ✅ 97 lib + 1 alloc-guard + 33 doctests |
-   | `cargo test --no-fail-fast --features encryption` | ✅ 116 lib + 1 + 38 doctests |
-   | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features encryption` | ✅ |
-   | `scripts/check-html-root-url.sh` | ✅ |
-   | `cargo-deny check` | ✅ rc=0 |
-   | `cargo-audit audit` (134 deps) | ✅ rc=0 |
-   | loom: `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | ✅ 9/9 |
-   | lychee (122 links) | ✅ 0 errors |
-   | actionlint | ✅ rc=0 |
-   | `nix flake check --no-build` | ✅ all checks passed |
+   | Gate                                                                            | Result                                  |
+   | ------------------------------------------------------------------------------- | --------------------------------------- |
+   | `cargo fmt --all -- --check`                                                    | ✅                                      |
+   | `cargo clippy --all-targets` (default) `-D warnings -A pedantic`                | ✅ rc=0                                 |
+   | `cargo clippy --all-targets --features encryption`                              | ✅ rc=0                                 |
+   | `cargo clippy --all-targets --features fuzz`                                    | ✅ rc=0                                 |
+   | `cargo test --no-fail-fast`                                                     | ✅ 97 lib + 1 alloc-guard + 33 doctests |
+   | `cargo test --no-fail-fast --features encryption`                               | ✅ 116 lib + 1 + 38 doctests            |
+   | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features encryption`          | ✅                                      |
+   | `scripts/check-html-root-url.sh`                                                | ✅                                      |
+   | `cargo-deny check`                                                              | ✅ rc=0                                 |
+   | `cargo-audit audit` (134 deps)                                                  | ✅ rc=0                                 |
+   | loom: `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | ✅ 9/9                                  |
+   | lychee (122 links)                                                              | ✅ 0 errors                             |
+   | actionlint                                                                      | ✅ rc=0                                 |
+   | `nix flake check --no-build`                                                    | ✅ all checks passed                    |
 
 4. **Docs reconciled honestly (the prior session left them lying).**
    - `docs/DOMAIN_LANGUAGE.md` "transient gaps" bullet now describes the
@@ -74,18 +74,18 @@ the work, with the working tree and git log captured in the same response.
 5. **Property-test count verified:** 21 (`grep -c '#\[test]' src/property_tests.rs`).
 
 6. **CI status checked:** `gh run list --limit 4` — the last 4 runs on the
-   *previously pushed* master are all `success`. (My commits are local; see
+   _previously pushed_ master are all `success`. (My commits are local; see
    section c.)
 
 ---
 
 ## b) PARTIALLY DONE
 
-### 1. The fix is *empirically* validated, not *exhaustively* proven
+### 1. The fix is _empirically_ validated, not _exhaustively_ proven
 
 I changed the mtime capture point, ran it 40× in release, and called it
-fixed. 40 runs is **statistical**, not exhaustive. The fix is *almost
-certainly* correct (the pre-scan mtime is unconditionally stale if anything
+fixed. 40 runs is **statistical**, not exhaustive. The fix is _almost
+certainly_ correct (the pre-scan mtime is unconditionally stale if anything
 mutated during readdir — that is exactly what the guard detects, on any
 filesystem where mtime advances), but I did not:
 
@@ -124,7 +124,7 @@ it is not the 100 that was asked for.
 ## c) NOT STARTED
 
 - **Push to origin.** 7 commits are local/unpushed. CI is green on the
-  *previously pushed* master but has **not** seen the fix or the tests. I did
+  _previously pushed_ master but has **not** seen the fix or the tests. I did
   not push (rule 11: no push without explicit instruction). Until pushed,
   "all green" is a **local-only** claim.
 - **Deterministic Barrier-based regression test** for the scan-cache TOCTOU
@@ -157,7 +157,7 @@ warn against.
 
 The verification-discipline rules (this repo, AGENTS.md) are explicit: rule
 10 — "CI-red is a stop-work condition," and the spirit of rule 9 — require
-`gh run list` to validate the *actual commits*, not just local equivalents.
+`gh run list` to validate the _actual commits_, not just local equivalents.
 I ran `gh run list`, saw green on **old** master, and then declared done
 with **7 unpushed commits.** The local gate is not a CI-green claim. My
 "all green" is a local-only green, and I should have stated that far more
@@ -166,7 +166,7 @@ prominently than a single line at the end. If any of the 7 commits trips CI
 
 ### 3. I did not write down WHY the fix is correct, only THAT it passes
 
-The fix is a one-line reorder. My *mental* correctness argument (pre-scan
+The fix is a one-line reorder. My _mental_ correctness argument (pre-scan
 mtime is stale iff something mutated during readdir; the guard then forces a
 re-scan; coarse-FS edge handled by the mtime_supported probe returning
 false) is sound, but I put only a code comment in `scan_segments`, not a
@@ -178,9 +178,9 @@ bar.
 ### 4. I appended to a point-in-time status report instead of treating the prior session's failures as my own
 
 The prior session's report ends with a brutal self-assessment. I added a
-"Resolution" appendix — which is the *correct* non-destructive pattern per
+"Resolution" appendix — which is the _correct_ non-destructive pattern per
 the update-old-docs philosophy. But I framed everything as "the prior
-session's open items," when *I am a continuation of that same work* and several
+session's open items," when _I am a continuation of that same work_ and several
 of its failures (skipped gate, hidden bug) are only partially redressed. The
 framing distances me from accountability I should own.
 
@@ -225,8 +225,8 @@ framing distances me from accountability I should own.
 
 1. **Write a deterministic Barrier-based regression test** that forces the
    `scan → rename → scan-returns-stale → cache-populate` interleaving without
-   `thread::sleep`. This is the test that *proves* the fix, not just
-   *supports* it.
+   `thread::sleep`. This is the test that _proves_ the fix, not just
+   _supports_ it.
 2. **Investigate loom-modeling `scan_segments`** via the `MockStore`'s
    `scan()` — if the trait method can be stubbed to return a controlled
    segment list, the cache populate/invalidate interleaving becomes
@@ -264,7 +264,7 @@ framing distances me from accountability I should own.
     lending iterator has the same Phase 1/Phase 2 gap but a different code
     path.
 12. **Add a property test verifying `read_from` never returns items from a
-    *partially* deleted segment** (delete mid-read of a multi-segment
+    _partially_ deleted segment** (delete mid-read of a multi-segment
     result).
 13. **Benchmark the scan-cache fix** to confirm zero read-path regression
     (the `stat()` moved, not added — but confirm).
@@ -333,21 +333,21 @@ framing distances me from accountability I should own.
 
 ## Session honesty check
 
-| Rule | Followed? |
-|---|---|
-| `git status` before "done" | ✅ (this report) |
-| No fabricated baselines | ✅ (counts from this session's literal runs) |
-| No line-number citations | ✅ |
-| Full verification gate run | ✅ all 14, exit codes captured |
-| `gh run list` before "done" | ⚠️ Run — but green is on *old* master; my commits are unpushed (see d.2) |
-| Lint posture matches CI | ✅ `-D warnings -A clippy::pedantic` |
-| Concurrency tests use `FlushPolicy::Manual` | ✅ |
-| Deterministic proof for concurrency fix | ❌ empirical only (see b.1) |
-| Empty-message commit handled | ❌ noticed, ignored (see d.1) |
+| Rule                                        | Followed?                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
+| `git status` before "done"                  | ✅ (this report)                                                         |
+| No fabricated baselines                     | ✅ (counts from this session's literal runs)                             |
+| No line-number citations                    | ✅                                                                       |
+| Full verification gate run                  | ✅ all 14, exit codes captured                                           |
+| `gh run list` before "done"                 | ⚠️ Run — but green is on _old_ master; my commits are unpushed (see d.2) |
+| Lint posture matches CI                     | ✅ `-D warnings -A clippy::pedantic`                                     |
+| Concurrency tests use `FlushPolicy::Manual` | ✅                                                                       |
+| Deterministic proof for concurrency fix     | ❌ empirical only (see b.1)                                              |
+| Empty-message commit handled                | ❌ noticed, ignored (see d.1)                                            |
 
 **Bottom line:** The scan-cache TOCTOU is fixed, the full gate is green
-(locally), and the docs are reconciled. But the fix is *empirically* validated
-not *proven*, the `mtime_supported == false` path is still racy, there is an
+(locally), and the docs are reconciled. But the fix is _empirically_ validated
+not _proven_, the `mtime_supported == false` path is still racy, there is an
 empty-message commit in the history, and **nothing has been pushed to CI.**
 The deliverable is real; the rigor around "done" is still short of the bar
 this crate's rules set.

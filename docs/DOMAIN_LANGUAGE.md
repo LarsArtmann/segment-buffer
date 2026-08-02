@@ -288,7 +288,7 @@ differs:
   `unflushed` into a segment file the scan already missed. `read_from`
   returns an incomplete result for that call. The items are durable on disk;
   a subsequent `read_from` observes them once the scan cache refreshes. The
-  cache captures the directory `mtime` *before* its `readdir`, so any rename
+  cache captures the directory `mtime` _before_ its `readdir`, so any rename
   landing mid-scan leaves the cached `mtime` stale and forces a re-scan on
   the next call — the gap is transient, not permanent. (On filesystems where
   `mtime` does not advance — `mtime_supported == false` — the cache relies

@@ -1,6 +1,6 @@
 //! Crash-recovery demo: shows that segment files survive a "crash" (a process
-//! restart = dropping the SegmentBuffer and re-opening), and that the recovery
-//! scan rebuilds head_seq / next_seq from filenames without reading segment
+//! restart = dropping the `SegmentBuffer` and re-opening), and that the recovery
+//! scan rebuilds `head_seq` / `next_seq` from filenames without reading segment
 //! contents.
 //!
 //! Run with: `cargo run --example crash_recovery`

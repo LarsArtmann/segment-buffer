@@ -19,7 +19,7 @@ fn bench_append(c: &mut Criterion) {
                     buf.flush().unwrap();
                     black_box(buf.latest_sequence());
                 },
-            )
+            );
         });
     }
     group.finish();

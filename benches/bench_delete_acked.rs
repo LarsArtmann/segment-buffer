@@ -1,4 +1,4 @@
-//! Benchmark: delete_acked throughput after populating segments.
+//! Benchmark: `delete_acked` throughput after populating segments.
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
@@ -22,7 +22,7 @@ fn bench_delete_acked(c: &mut Criterion) {
                 let deleted = buf.delete_acked(199).unwrap();
                 black_box(deleted);
             },
-        )
+        );
     });
     group.finish();
 }
@@ -49,7 +49,7 @@ fn bench_delete_acked_10k_segments(c: &mut Criterion) {
                 let deleted = buf.delete_acked(4_999).unwrap();
                 black_box(deleted);
             },
-        )
+        );
     });
     group.finish();
 }

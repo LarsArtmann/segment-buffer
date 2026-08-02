@@ -48,7 +48,7 @@ fn test_buffer(dir: &Path) -> TestBuffer {
     SegmentBuffer::open(dir, test_config(1024 * 1024)).expect("Failed to create buffer")
 }
 
-/// Buffer with max_size_bytes=1000 so pressure percentages are exact.
+/// Buffer with `max_size_bytes=1000` so pressure percentages are exact.
 fn pressure_test_buffer(dir: &Path) -> TestBuffer {
     SegmentBuffer::open(dir, test_config(1000)).expect("Failed to create pressure-test buffer")
 }
@@ -524,7 +524,7 @@ fn concurrency_batch_or_interval_min_4_writers_10k_events() {
 // Concurrent read_from + delete_acked boundary (MPMC safety)
 // =========================================================================
 
-/// Proves the MPMC read/delete boundary documented in DOMAIN_LANGUAGE.md's
+/// Proves the MPMC read/delete boundary documented in `DOMAIN_LANGUAGE.md`'s
 /// "Consistency Model → Concurrent operation" subsection.
 ///
 /// Under concurrent `read_from` + `delete_acked`, `read_from` may return a
@@ -1427,7 +1427,7 @@ fn flock_creates_lock_sidecar_file() {
 
     let entries: Vec<String> = std::fs::read_dir(tmp.path())
         .expect("dir readable")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     assert!(
@@ -1558,7 +1558,7 @@ fn mtime_probe_returns_true_on_real_filesystem() {
 }
 
 /// External directory mutation must be detected by the mtime guard: if
-/// someone removes a segment file out from under us, the next scan_cache
+/// someone removes a segment file out from under us, the next `scan_cache`
 /// hit must NOT serve the stale list (would silently drop the segment's
 /// items from reads).
 #[test]
@@ -1580,7 +1580,7 @@ fn external_segment_removal_invalidates_scan_cache() {
     // Simulate an external process quarantining one segment.
     let segments: Vec<_> = std::fs::read_dir(tmp.path())
         .expect("dir readable")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "zst"))
         .collect();
@@ -1614,7 +1614,7 @@ fn debug_impl_formats_cleanly() {
     buf.append(test_item(1)).unwrap();
     buf.append(test_item(2)).unwrap();
 
-    let rendered = format!("{:?}", buf);
+    let rendered = format!("{buf:?}");
     // Structural sanity: struct name + path field + every BufferStats field.
     assert!(
         rendered.starts_with("SegmentBuffer {"),
@@ -2088,7 +2088,7 @@ fn stress_8_writers_2_readers_throughput() {
     // do NOT widen the bound, investigate the regression.
     let segment_files_before_flush = std::fs::read_dir(tmp.path())
         .expect("temp dir readable")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "zst"))
         .count();
     assert_eq!(
@@ -2208,7 +2208,7 @@ fn stress_8_writers_4_readers_latency_histogram() {
     // must create ZERO segment files.
     let segment_files_before_flush = std::fs::read_dir(tmp.path())
         .expect("temp dir readable")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "zst"))
         .count();
     assert_eq!(
@@ -2247,8 +2247,7 @@ fn stress_8_writers_4_readers_latency_histogram() {
         pct(99.0).as_nanos() as f64 / 1000.0,
         pct(99.9).as_nanos() as f64 / 1000.0,
         all.last()
-            .map(|d| d.as_nanos() as f64 / 1000.0)
-            .unwrap_or(0.0),
+            .map_or(0.0, |d| d.as_nanos() as f64 / 1000.0),
         total_read.load(Ordering::Relaxed)
     );
 
@@ -2284,7 +2283,7 @@ fn durability_config(max_size_bytes: u64, policy: DurabilityPolicy) -> SegmentCo
 /// functional roundtrip test, NOT a crash-semantics test — proving the
 /// fsync branches fire correctly under a host crash requires killing the
 /// process mid-flush and is out of scope for unit tests. (The fsync calls
-/// are also exercised here: if a sync_all path is broken on the host, this
+/// are also exercised here: if a `sync_all` path is broken on the host, this
 /// test surfaces it as an Err.)
 #[test]
 fn durability_policy_segment_roundtrip() {
@@ -2358,7 +2357,7 @@ fn durability_policy_maximal_roundtrip() {
     // left behind) — verifies the rename completed under every policy.
     let zst_count = std::fs::read_dir(tmp.path())
         .expect("temp dir readable")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "zst"))
         .count();
     assert_eq!(
@@ -2402,7 +2401,7 @@ fn durability_policy_all_policies_recover_after_reopen() {
     }
 }
 
-/// The default SegmentConfig must select `Segment` (the documented
+/// The default `SegmentConfig` must select `Segment` (the documented
 /// backward-compat default for one release after the enum lands).
 #[test]
 fn durability_policy_default_is_segment() {

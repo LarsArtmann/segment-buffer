@@ -249,6 +249,7 @@ mod private {
         /// let plaintext = cipher.decrypt(&ciphertext).unwrap();
         /// assert_eq!(plaintext, b"hello");
         /// ```
+        #[must_use]
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use aes_gcm::KeyInit;
             Self {
@@ -262,7 +263,7 @@ mod private {
             use aes_gcm::aead::Aead;
             use rand::Rng;
 
-            let mut nonce_bytes = [0u8; 12];
+            let mut nonce_bytes = [0u8; AES_GCM_NONCE_LEN];
             rand::rng().fill_bytes(&mut nonce_bytes);
             let nonce = aes_gcm::Nonce::from(nonce_bytes);
 
@@ -271,7 +272,7 @@ mod private {
                 .encrypt(&nonce, plaintext)
                 .map_err(|e| wrap("AES-GCM encryption failed", e))?;
 
-            let mut out = Vec::with_capacity(12 + ciphertext.len());
+            let mut out = Vec::with_capacity(AES_GCM_NONCE_LEN.saturating_add(ciphertext.len()));
             out.extend_from_slice(&nonce_bytes);
             out.extend_from_slice(&ciphertext);
             Ok(out)
@@ -280,13 +281,14 @@ mod private {
         fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, CipherError> {
             use aes_gcm::aead::Aead;
 
-            if ciphertext.len() < 12 {
+            if ciphertext.len() < AES_GCM_NONCE_LEN {
                 return Err(CipherError::msg("ciphertext too small for nonce prefix"));
             }
-            let (nonce_bytes, encrypted) = ciphertext.split_at(12);
-            let nonce: [u8; 12] = nonce_bytes
+            let (nonce_bytes, encrypted) = ciphertext.split_at(AES_GCM_NONCE_LEN);
+            let nonce: [u8; AES_GCM_NONCE_LEN] = nonce_bytes
                 .try_into()
                 .map_err(|_| CipherError::msg("invalid nonce length: expected 12 bytes"))?;
+            let nonce = aes_gcm::Nonce::from_slice(&nonce);;
             let nonce = aes_gcm::Nonce::from(nonce);
 
             self.cipher
@@ -301,7 +303,7 @@ mod private {
 
     /// Nonce length for XChaCha20-Poly1305: 24 bytes. Public so callers can
     /// reason about the on-disk payload shape without importing the AEAD crate.
-    const XCHACHA_NONCE_LEN: usize = 24;
+    const AES_GCM_NONCE_LEN: usize = 12;
 
     /// XChaCha20-Poly1305 cipher with a random 24-byte nonce prepended to each
     /// ciphertext.
@@ -309,15 +311,15 @@ mod private {
     /// The on-disk payload format is:
     /// `[24-byte nonce][ciphertext + 16-byte Poly1305 tag]`.
     ///
-    /// # Why XChaCha20 over AES-GCM for new buffers
+    /// # Why `XChaCha20` over AES-GCM for new buffers
     ///
     /// - **No 2³²-message limit per key.** AES-GCM's 12-byte nonce collides
     ///   after ~2³² messages under the same key (a collision breaks
-    ///   confidentiality). XChaCha20's 24-byte nonce makes random-nonce
+    ///   confidentiality). `XChaCha20`'s 24-byte nonce makes random-nonce
     ///   collision negligible well past 2⁴⁸ messages.
-    /// - **Constant-time on hosts without AES-NI.** ChaCha20 is constant-time
+    /// - **Constant-time on hosts without AES-NI.** `ChaCha20` is constant-time
     ///   in software; AES-GCM relies on hardware acceleration (AES-NI on
-    ///   x86, ARMv8 Crypto Extensions on aarch64) for performance and leaks
+    ///   `x86`, `ARMv8` Crypto Extensions on aarch64) for performance and leaks
     ///   timing on hosts without it (older CPUs, some embedded ARM).
     ///
     /// Legacy AES-GCM segments still decrypt through [`AesGcmCipher`]; the
@@ -345,6 +347,7 @@ mod private {
         /// Because the key length is fixed at compile time, construction is
         /// infallible — unlike [`from_slice`](Self::from_slice), which must
         /// validate runtime slice length.
+        #[must_use]
         pub fn new(key_bytes: &[u8; 32]) -> Self {
             use chacha20poly1305::KeyInit;
             Self {
@@ -380,7 +383,7 @@ mod private {
                 .encrypt(&nonce, plaintext)
                 .map_err(|e| wrap("XChaCha20 encryption failed", e))?;
 
-            let mut out = Vec::with_capacity(XCHACHA_NONCE_LEN + ciphertext.len());
+            let mut out = Vec::with_capacity(XCHACHA_NONCE_LEN.saturating_add(ciphertext.len()));
             out.extend_from_slice(&nonce_bytes);
             out.extend_from_slice(&ciphertext);
             Ok(out)

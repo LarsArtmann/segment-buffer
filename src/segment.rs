@@ -96,6 +96,7 @@ impl SegmentRange {
 }
 
 /// Build the segment filename for an inclusive `[start, end]` range.
+#[must_use]
 pub fn filename(start: u64, end: u64) -> String {
     format!("{SEGMENT_PREFIX}{start:012}_{end:012}{SEGMENT_SUFFIX}")
 }
@@ -106,6 +107,7 @@ pub fn filename(start: u64, end: u64) -> String {
 /// this to filter directory listings. Note: the format does not enforce
 /// `start <= end` at the parse level (legacy files in the wild may violate it),
 /// so callers that need the invariant must check.
+#[must_use]
 pub fn parse_filename(name: &str) -> Option<SegmentRange> {
     let core = name
         .strip_prefix(SEGMENT_PREFIX)?
@@ -133,13 +135,14 @@ const ENVELOPE_RESERVED_LEN: usize = 3;
 /// cipher and zstd/CBOR layers operate on; it is identical in layout to a
 /// v1 file. Requiring the reserved bytes to be zero is what makes the
 /// legacy-detection false-positive rate negligible (2⁻⁵⁶ per file).
+#[must_use]
 pub fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
     let reserved_zero = [0u8; ENVELOPE_RESERVED_LEN];
     let magic_len = ENVELOPE_MAGIC.len();
 
     let magic = raw.get(..magic_len);
     let version = raw.get(magic_len).copied();
-    let reserved = raw.get(magic_len + 1..ENVELOPE_LEN);
+    let reserved = raw.get(magic_len.saturating_add(1)..ENVELOPE_LEN);
     let payload = raw.get(ENVELOPE_LEN..);
 
     match (magic, version, reserved, payload) {
@@ -151,8 +154,9 @@ pub fn unwrap_envelope(raw: &[u8]) -> (Option<u8>, &[u8]) {
 }
 
 /// Prepend the envelope to `payload`.
+#[must_use]
 pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(ENVELOPE_LEN + payload.len());
+    let mut out = Vec::with_capacity(ENVELOPE_LEN.saturating_add(payload.len()));
     out.extend_from_slice(&ENVELOPE_MAGIC);
     out.push(ENVELOPE_VERSION);
     // 3 reserved bytes, all zero (future: checksum type, compression algo, …).
@@ -164,14 +168,14 @@ pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
 /// Encode `events` to the v1 payload bytes: CBOR → zstd → optional encrypt.
 ///
 /// `compressor` is a pooled `zstd::bulk::Compressor` reused across flushes to
-/// avoid re-initialising the ~200 KB zstd CCtx on every segment write. A
+/// avoid re-initialising the ~200 KB zstd `CCtx` on every segment write. A
 /// flamegraph on 2026-07-20 showed 66% of `flush` time was inside the
 /// `__memset` that `zstd::encode_all` triggers when it constructs a fresh
-/// CCtx per call; pooling drops that cost to a one-time `open` expense. The
+/// `CCtx` per call; pooling drops that cost to a one-time `open` expense. The
 /// trade-off is one extra `Mutex` acquisition per flush (`segment-buffer`
 /// already serialises flushes via the re-entrancy guard, so this is
 /// uncontended in practice). See `docs/perf/2026-07-20_hot-path-flamegraph.md`.
-pub(crate) fn encode_payload<T: Serialize>(
+pub fn encode_payload<T: Serialize>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     compressor: &mut zstd::bulk::Compressor<'static>,
     path: &Path,
@@ -200,13 +204,13 @@ pub(crate) fn encode_payload<T: Serialize>(
 /// Decode the v1 payload bytes back to events: optional decrypt → zstd → CBOR.
 ///
 /// `decompressor` is a pooled `zstd::bulk::Decompressor` reused across reads
-/// to avoid re-initialising the ~200 KB zstd DCtx on every segment read
+/// to avoid re-initialising the ~200 KB zstd `DCtx` on every segment read
 /// (symmetric to the write-side `Compressor` pooling). When the frame
 /// includes its content size (the default for `bulk::Compressor` writes),
 /// the capacity is read from the frame header via
 /// `zstd_safe::get_frame_content_size`; otherwise the call falls back to
-/// `zstd::decode_all`, which allocates a fresh DCtx (the rare, non-hot path).
-pub(crate) fn decode_payload<T: DeserializeOwned>(
+/// `zstd::decode_all`, which allocates a fresh `DCtx` (the rare, non-hot path).
+pub fn decode_payload<T: DeserializeOwned>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     decompressor: &mut zstd::bulk::Decompressor<'static>,
     payload: &[u8],
@@ -235,7 +239,7 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
     // deployments.
     let cbor_buf = match zstd::zstd_safe::get_frame_content_size(compressed.as_ref()) {
         Ok(Some(size)) => {
-            let cap = usize::try_from(size).unwrap_or(compressed.len() * 8);
+            let cap = usize::try_from(size).unwrap_or(compressed.len().saturating_mul(8));
             match decompressor.decompress(compressed.as_ref(), cap) {
                 Ok(buf) => buf,
                 Err(_) => zstd::decode_all(compressed.as_ref())?,
@@ -258,7 +262,7 @@ pub(crate) fn decode_payload<T: DeserializeOwned>(
 /// error context on the encode pipeline (CBOR/zstd/cipher failures).
 ///
 /// Returns the enveloped bytes (`wrap_envelope(encode_payload(events))`).
-pub(crate) fn encode_segment<T: Serialize>(
+pub fn encode_segment<T: Serialize>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     compressor: &mut zstd::bulk::Compressor<'static>,
     path: &Path,
@@ -277,7 +281,7 @@ pub(crate) fn encode_segment<T: Serialize>(
 /// rationale). Encrypted payloads shorter than the AEAD nonce are rejected
 /// as [`SegmentError::Integrity`] with the offending path, before the
 /// cipher is invoked.
-pub(crate) fn decode_segment<T: DeserializeOwned>(
+pub fn decode_segment<T: DeserializeOwned>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     decompressor: &mut zstd::bulk::Decompressor<'static>,
     raw: &[u8],

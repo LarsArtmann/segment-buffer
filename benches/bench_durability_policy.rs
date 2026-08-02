@@ -57,7 +57,7 @@ fn bench_durability_policy(c: &mut Criterion) {
                     buf.flush().unwrap();
                     black_box(buf.latest_sequence());
                 },
-            )
+            );
         });
     }
     group.finish();

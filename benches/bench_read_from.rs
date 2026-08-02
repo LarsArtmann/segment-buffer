@@ -1,4 +1,4 @@
-//! Benchmark: read_from throughput with varying limits.
+//! Benchmark: `read_from` throughput with varying limits.
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use std::hint::black_box;
@@ -23,7 +23,7 @@ fn bench_read_from(c: &mut Criterion) {
                     let events = buf.read_from(0, limit).unwrap();
                     black_box(events.len());
                 },
-            )
+            );
         });
     }
     group.finish();
@@ -59,7 +59,7 @@ fn bench_read_from_scan_cache(c: &mut Criterion) {
                     black_box(events.len());
                 },
                 BatchSize::PerIteration,
-            )
+            );
         });
 
         group.bench_function(format!("warm_{n_segments}_segments"), |b| {
@@ -76,7 +76,7 @@ fn bench_read_from_scan_cache(c: &mut Criterion) {
                     black_box(events.len());
                 },
                 BatchSize::PerIteration,
-            )
+            );
         });
     }
     group.finish();

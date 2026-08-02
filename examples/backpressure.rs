@@ -1,7 +1,7 @@
-//! Backpressure: use store_pressure() to implement a custom admission policy.
+//! Backpressure: use `store_pressure()` to implement a custom admission policy.
 //!
 //! This example demonstrates how a caller can apply its own priority-based
-//! admission policy using the buffer's store_pressure() metric.
+//! admission policy using the buffer's `store_pressure()` metric.
 
 use segment_buffer::{SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ enum Priority {
     Ephemeral,
 }
 
-/// A caller-defined admission policy based on store_pressure().
+/// A caller-defined admission policy based on `store_pressure()`.
 fn should_accept(priority: Priority, pressure: f32) -> bool {
     match priority {
         // Always accept critical data (security events, process info)
@@ -60,7 +60,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         if should_accept(priority, pressure) {
             buffer.append(Metric {
                 name: format!("metric_{i}"),
-                value: i as f64,
+                value: f64::from(i),
             })?;
             accepted += 1;
         } else {

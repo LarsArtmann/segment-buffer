@@ -28,7 +28,7 @@ fn bench_recover(c: &mut Criterion) {
                         .unwrap();
                     black_box(buf.pending_count());
                 },
-            )
+            );
         });
     }
     group.finish();

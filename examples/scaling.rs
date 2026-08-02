@@ -107,18 +107,18 @@ impl std::fmt::Display for PayloadKind {
     }
 }
 
-/// Deterministic PRNG (SplitMix64) so every run with the same item ids
+/// Deterministic PRNG (`SplitMix64`) so every run with the same item ids
 /// produces byte-identical payloads — reproducible benchmarks without a `rand`
 /// dependency. Seeded per-item from the event id.
 struct SplitMix64(u64);
 
 impl SplitMix64 {
-    fn new(seed: u64) -> Self {
+    const fn new(seed: u64) -> Self {
         // SplitMix64 produces a degenerate first value from seed 0; mixing in
         // a constant gives item 0 a well-distributed payload too.
         Self(seed.wrapping_add(0x9E3779B9_7F4A7C15))
     }
-    fn next_u64(&mut self) -> u64 {
+    const fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E3779B9_7F4A7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF5847_6D1CE4E5B9);
@@ -392,7 +392,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ------------------------------------------------------------------
     println!("--- phase 2: recover (drop + reopen) ---");
     let t1 = Instant::now();
-    let (buf, report) = SegmentBuffer::<Event>::open_with_report(&dir, config.clone())?;
+    let (buf, report) = SegmentBuffer::<Event>::open_with_report(&dir, config)?;
     let recover_elapsed = t1.elapsed();
     let recover_secs = recover_elapsed.as_secs_f64();
     let segs = report.segment_count;

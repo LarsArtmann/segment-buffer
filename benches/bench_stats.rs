@@ -9,7 +9,7 @@
 //! so the doc comment can be corrected.
 //!
 //! Run with:
-//!   cargo bench --bench bench_stats --features encryption
+//!   cargo bench --bench `bench_stats` --features encryption
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
@@ -38,7 +38,7 @@ fn bench_stats(c: &mut Criterion) {
                 snapshot.max_size_bytes,
                 snapshot.store_pressure,
             ))
-        })
+        });
     });
 
     group.bench_function("individual_accessors", |b| {
@@ -47,7 +47,7 @@ fn bench_stats(c: &mut Criterion) {
             let latest = buf.latest_sequence();
             let pressure = buf.store_pressure();
             black_box((pending, latest, pressure))
-        })
+        });
     });
 
     group.finish();

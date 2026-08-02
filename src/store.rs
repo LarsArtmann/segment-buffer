@@ -145,7 +145,7 @@ pub struct RealStore {
 
 impl RealStore {
     /// Construct a [`RealStore`] rooted at `dir`.
-    pub(crate) fn new(dir: PathBuf) -> Self {
+    pub(crate) const fn new(dir: PathBuf) -> Self {
         Self { dir }
     }
 
@@ -185,7 +185,7 @@ impl SegmentStore for RealStore {
                 .is_some_and(|n| n.to_string_lossy().ends_with(TMP_SUFFIX))
                 && fs::remove_file(&path).is_ok()
             {
-                removed += 1;
+                removed = removed.saturating_add(1);
             }
         }
         Ok(removed)
@@ -193,8 +193,7 @@ impl SegmentStore for RealStore {
 
     fn segment_size(&self, range: SegmentRange) -> u64 {
         fs::metadata(self.segment_path(range))
-            .map(|m| m.len())
-            .unwrap_or(0)
+            .map_or(0, |m| m.len())
     }
 
     fn remove_segment(&self, range: SegmentRange) -> Result<bool> {
@@ -252,7 +251,7 @@ impl SegmentStore for RealStore {
             dir_file.sync_all()?;
         }
 
-        Ok(payload.len() as u64)
+        Ok(u64::try_from(payload.len()).unwrap_or(u64::MAX))
     }
 
     fn read_bytes(&self, range: SegmentRange) -> Result<Vec<u8>> {

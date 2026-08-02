@@ -4,7 +4,7 @@
 //! Quantifies the clone cost the lending iterator was introduced to avoid.
 //!
 //! Run with:
-//!   cargo bench --bench bench_read_vs_for_each --features encryption
+//!   cargo bench --bench `bench_read_vs_for_each` --features encryption
 //!
 //! # Why the shared buffer is correct
 //!
@@ -42,14 +42,14 @@ fn bench_read_vs_for_each(c: &mut Criterion) {
             b.iter(|| {
                 let items = buf.read_from(0, n).unwrap();
                 black_box(items.len());
-            })
+            });
         });
 
         group.bench_function(format!("for_each_from/{n}"), |b| {
             b.iter(|| {
                 let count = buf.for_each_from(0, n, |_, _| {}).unwrap();
                 black_box(count);
-            })
+            });
         });
     }
 

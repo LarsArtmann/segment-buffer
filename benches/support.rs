@@ -20,6 +20,7 @@ pub struct Item {
 }
 
 /// Build [`Item`] number `n` with a recognizable payload.
+#[must_use]
 pub fn item(n: u64) -> Item {
     Item {
         id: n,
@@ -30,6 +31,7 @@ pub fn item(n: u64) -> Item {
 /// The shared benchmark config. The `flush_at_batch` argument is the only knob
 /// that varies between benchmarks, so it is the single parameter; everything
 /// else is pinned for cross-target consistency.
+#[must_use]
 pub fn config(flush_at_batch: usize) -> SegmentConfig {
     SegmentConfig::builder()
         .flush_at_batch_size(flush_at_batch)
@@ -39,6 +41,7 @@ pub fn config(flush_at_batch: usize) -> SegmentConfig {
 }
 
 /// Open a buffer in a fresh temp directory using [`config`].
+#[must_use]
 pub fn open_buffer(flush_at_batch: usize) -> (SegmentBuffer<Item>, tempfile::TempDir) {
     let tmp = tempfile::tempdir().unwrap();
     let buf = SegmentBuffer::<Item>::open(tmp.path(), config(flush_at_batch)).unwrap();
@@ -53,6 +56,7 @@ pub fn open_buffer(flush_at_batch: usize) -> (SegmentBuffer<Item>, tempfile::Tem
 /// so each batch lands as its own segment file; the explicit `flush()` after
 /// every batch is belt-and-braces for the partial tail.
 #[allow(dead_code)] // only bench_read_from uses this; other bench binaries see it as dead
+#[must_use]
 pub fn open_buffer_with_segments(
     n_segments: usize,
     items_per_segment: usize,

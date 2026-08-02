@@ -166,6 +166,7 @@ pub mod fuzz_hooks {
     /// Fuzz-accessible wrapper for the private `should_flush` method.
     /// Returns whether the given policy would trigger a flush given the
     /// pending item count and elapsed time since the last flush.
+    #[must_use]
     pub fn should_flush(
         policy: &FlushPolicy,
         pending_len: usize,
@@ -263,7 +264,7 @@ pub enum FlushPolicy {
 impl Default for FlushPolicy {
     fn default() -> Self {
         // Matches the pre-v0.4.0 SegmentConfig::default: 256 events or 5s.
-        FlushPolicy::BatchOrInterval {
+        Self::BatchOrInterval {
             batch_size: 256,
             interval: std::time::Duration::from_secs(5),
         }
@@ -277,9 +278,9 @@ impl std::fmt::Display for FlushPolicy {
     /// operators can parse it in log-scraping tools without breakage.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FlushPolicy::Batch(n) => write!(f, "batch({n})"),
-            FlushPolicy::Interval(d) => write!(f, "interval({d:?})"),
-            FlushPolicy::BatchOrInterval {
+            Self::Batch(n) => write!(f, "batch({n})"),
+            Self::Interval(d) => write!(f, "interval({d:?})"),
+            Self::BatchOrInterval {
                 batch_size,
                 interval,
             } => {
@@ -288,7 +289,7 @@ impl std::fmt::Display for FlushPolicy {
                     "batch_or_interval(batch={batch_size}, interval={interval:?})"
                 )
             }
-            FlushPolicy::BatchOrIntervalMin {
+            Self::BatchOrIntervalMin {
                 batch_size,
                 min_batch,
                 interval,
@@ -299,7 +300,7 @@ impl std::fmt::Display for FlushPolicy {
                     "batch_or_interval_min(batch={batch_size}, min={min_batch}, interval={interval:?}, max={max_interval:?})"
                 )
             }
-            FlushPolicy::Manual => write!(f, "manual"),
+            Self::Manual => write!(f, "manual"),
         }
     }
 }
@@ -311,13 +312,13 @@ impl FlushPolicy {
     /// `time_since_last_flush` is `last_flush.elapsed()`.
     fn should_flush(&self, pending_len: usize, time_since_last_flush: std::time::Duration) -> bool {
         match self {
-            FlushPolicy::Batch(n) => pending_len >= *n,
-            FlushPolicy::Interval(d) => time_since_last_flush >= *d,
-            FlushPolicy::BatchOrInterval {
+            Self::Batch(n) => pending_len >= *n,
+            Self::Interval(d) => time_since_last_flush >= *d,
+            Self::BatchOrInterval {
                 batch_size,
                 interval,
             } => pending_len >= *batch_size || time_since_last_flush >= *interval,
-            FlushPolicy::BatchOrIntervalMin {
+            Self::BatchOrIntervalMin {
                 batch_size,
                 min_batch,
                 interval,
@@ -327,7 +328,7 @@ impl FlushPolicy {
                     || time_since_last_flush >= *max_interval
                     || (pending_len >= *min_batch && time_since_last_flush >= *interval)
             }
-            FlushPolicy::Manual => false,
+            Self::Manual => false,
         }
     }
 }
@@ -363,7 +364,7 @@ impl FlushPolicy {
 /// before `fs::rename`, but it does **not** `dir.sync_all()` after the
 /// rename. On ext4/xfs defaults, a host crash within the kernel's dir-inode
 /// flush window (~5–30s) can leave the renamed file's data on disk but
-/// unreachable through the directory. SQLite went through this exact lesson.
+/// unreachable through the directory. `SQLite` went through this exact lesson.
 /// So `Segment` was already not fully durable; the enum just makes the
 /// tradeoff explicit. `Maximal` closes the rename-window gap.
 ///
@@ -486,24 +487,28 @@ pub struct SegmentConfigBuilder {
 
 impl SegmentConfigBuilder {
     /// Override the auto-flush policy. See [`FlushPolicy`] for variants.
-    pub fn flush_policy(mut self, policy: FlushPolicy) -> Self {
+    #[must_use]
+    pub const fn flush_policy(mut self, policy: FlushPolicy) -> Self {
         self.inner.flush_policy = policy;
         self
     }
 
     /// Convenience: install a `FlushPolicy::Batch(batch_size)`.
-    pub fn flush_at_batch_size(self, batch_size: usize) -> Self {
+    #[must_use]
+    pub const fn flush_at_batch_size(self, batch_size: usize) -> Self {
         self.flush_policy(FlushPolicy::Batch(batch_size))
     }
 
     /// Convenience: install a `FlushPolicy::Interval(interval)`.
-    pub fn flush_at_interval(self, interval: std::time::Duration) -> Self {
+    #[must_use]
+    pub const fn flush_at_interval(self, interval: std::time::Duration) -> Self {
         self.flush_policy(FlushPolicy::Interval(interval))
     }
 
     /// Convenience: install a `FlushPolicy::BatchOrInterval { .. }` with both
     /// triggers set.
-    pub fn flush_at_batch_or_interval(
+    #[must_use]
+    pub const fn flush_at_batch_or_interval(
         self,
         batch_size: usize,
         interval: std::time::Duration,
@@ -517,6 +522,7 @@ impl SegmentConfigBuilder {
     /// Convenience: install a [`FlushPolicy::BatchOrIntervalMin`] with all four
     /// parameters. Suppresses tiny segments during low-throughput periods by
     /// gating interval flushes on a minimum batch count.
+    #[must_use]
     pub fn flush_at_batch_or_interval_min(
         self,
         batch_size: usize,
@@ -543,18 +549,21 @@ impl SegmentConfigBuilder {
     }
 
     /// Convenience: install a `FlushPolicy::Manual` (no auto-flush).
-    pub fn flush_manually(self) -> Self {
+    #[must_use]
+    pub const fn flush_manually(self) -> Self {
         self.flush_policy(FlushPolicy::Manual)
     }
 
     /// Override the disk-usage ceiling that triggers `is_overloaded()`.
-    pub fn max_size_bytes(mut self, max_size_bytes: u64) -> Self {
+    #[must_use]
+    pub const fn max_size_bytes(mut self, max_size_bytes: u64) -> Self {
         self.inner.max_size_bytes = max_size_bytes;
         self
     }
 
     /// Override the zstd compression level (1-22; default 3, fast with a good ratio).
-    pub fn compression_level(mut self, compression_level: i32) -> Self {
+    #[must_use]
+    pub const fn compression_level(mut self, compression_level: i32) -> Self {
         self.inner.compression_level = compression_level;
         self
     }
@@ -567,7 +576,8 @@ impl SegmentConfigBuilder {
     /// holds the durable copy, [`DurabilityPolicy::Throughput`] eliminates
     /// the per-flush fsync from the hot path (typically a 5–10× win on fast
     /// storage).
-    pub fn durability(mut self, policy: DurabilityPolicy) -> Self {
+    #[must_use]
+    pub const fn durability(mut self, policy: DurabilityPolicy) -> Self {
         self.inner.durability = policy;
         self
     }
@@ -618,6 +628,7 @@ impl SegmentConfigBuilder {
     }
 
     /// Materialise the configured [`SegmentConfig`].
+    #[must_use]
     pub fn build(self) -> SegmentConfig {
         self.inner
     }
@@ -629,7 +640,7 @@ impl SegmentConfig {
     #[must_use = "the builder is meaningless if discarded"]
     pub fn builder() -> SegmentConfigBuilder {
         SegmentConfigBuilder {
-            inner: SegmentConfig::default(),
+            inner: Self::default(),
         }
     }
 }
@@ -831,10 +842,10 @@ pub struct SegmentBuffer<T> {
     /// [`SegmentBuffer::open`] and reused for every subsequent
     /// [`SegmentBuffer::read_from`] / [`SegmentBuffer::for_each_from`] call.
     /// Cloud-sync drain loops are read-heavy (draining the buffer is the
-    /// primary workload), so the DCtx pooling matters symmetrically to the
-    /// CCtx pooling on the write side. Falls back to `zstd::decode_all`
-    /// (fresh DCtx per call) only when the frame header lacks a content
-    /// size — the bulk::Compressor write path always includes it, so the
+    /// primary workload), so the `DCtx` pooling matters symmetrically to the
+    /// `CCtx` pooling on the write side. Falls back to `zstd::decode_all`
+    /// (fresh `DCtx` per call) only when the frame header lacks a content
+    /// size — the `bulk::Compressor` write path always includes it, so the
     /// fallback is rare in practice (legacy or externally-written files).
     decompressor: Mutex<zstd::bulk::Decompressor<'static>>,
     /// I/O backend. Production uses [`RealStore`] (real filesystem via
@@ -874,7 +885,7 @@ pub struct SegmentBuffer<T> {
     /// rationale for why a bare stat comparison without the probe is
     /// unsafe.
     mtime_supported: bool,
-    /// Last-observed mtime of `dir`, captured alongside every scan_cache
+    /// Last-observed mtime of `dir`, captured alongside every `scan_cache`
     /// population. Used by [`scan_segments`](Self::scan_segments) to
     /// detect external directory manipulation (a backup tool, a manual
     /// `rm`, an operator quarantining a file) without paying for a full
@@ -975,7 +986,7 @@ where
         let dir = dir.into();
         let store: Arc<dyn store::SegmentStore + Send + Sync> =
             Arc::new(store::RealStore::new(dir.clone()));
-        store.create_dir_all().map_err(|e| e.with_dir())?;
+        store.create_dir_all().map_err(error::SegmentError::with_dir)?;
 
         // Acquire the single-process lock BEFORE any filename parsing or
         // state publication. A second opener on the same directory would
@@ -1047,7 +1058,7 @@ where
         // store (production path). When the test harness passes a fresh
         // store, run it here for symmetry. Idempotent, so a second call is
         // a no-op.
-        store.create_dir_all().map_err(|e| e.with_dir())?;
+        store.create_dir_all().map_err(error::SegmentError::with_dir)?;
 
         // Allocate the pooled zstd CCtx once, at the configured compression
         // level. This is the allocation whose per-flush memset was 66% of
@@ -1882,7 +1893,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[must_use = "the config is meaningless if discarded"]
-    pub fn config(&self) -> &SegmentConfig {
+    pub const fn config(&self) -> &SegmentConfig {
         &self.config
     }
 
@@ -2152,7 +2163,7 @@ where
             .store(total_bytes, std::sync::atomic::Ordering::Relaxed);
         // Recovery just scanned the directory; populate the cache so the
         // first read_from/delete_acked after open does not re-scan.
-        *self.scan_cache.lock() = Some(segments.clone());
+        *self.scan_cache.lock() = Some(segments);
 
         info!(
             path = self.dir.display().to_string(),
@@ -2240,7 +2251,7 @@ where
         let segments = self
             .store
             .scan()
-            .map_err(|e| e.with_dir())
+            .map_err(error::SegmentError::with_dir)
             .map_err(|e| e.with_path(&self.dir))?;
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());

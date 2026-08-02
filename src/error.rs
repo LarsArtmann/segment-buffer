@@ -183,10 +183,10 @@ impl SegmentError {
     #[must_use = "the upgraded error is meaningless if discarded"]
     pub fn with_path(self, path: impl Into<PathBuf>) -> Self {
         match self {
-            SegmentError::Io {
+            Self::Io {
                 site: IoSite::Unknown,
                 source,
-            } => SegmentError::Io {
+            } => Self::Io {
                 site: IoSite::Segment(path.into()),
                 source,
             },
@@ -203,10 +203,10 @@ impl SegmentError {
     #[must_use = "the upgraded error is meaningless if discarded"]
     pub fn with_dir(self) -> Self {
         match self {
-            SegmentError::Io {
+            Self::Io {
                 site: IoSite::Unknown,
                 source,
-            } => SegmentError::Io {
+            } => Self::Io {
                 site: IoSite::Dir,
                 source,
             },
@@ -217,7 +217,7 @@ impl SegmentError {
 
 impl From<std::io::Error> for SegmentError {
     fn from(source: std::io::Error) -> Self {
-        SegmentError::Io {
+        Self::Io {
             site: IoSite::Unknown,
             source,
         }

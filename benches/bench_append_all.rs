@@ -24,7 +24,7 @@ fn bench_append_all_vs_loop(c: &mut Criterion) {
                     buf.flush().unwrap();
                     black_box(buf.latest_sequence());
                 },
-            )
+            );
         });
 
         group.bench_function(format!("append_all_{batch_size}"), |b| {
@@ -36,7 +36,7 @@ fn bench_append_all_vs_loop(c: &mut Criterion) {
                     buf.flush().unwrap();
                     black_box(buf.latest_sequence());
                 },
-            )
+            );
         });
     }
     group.finish();

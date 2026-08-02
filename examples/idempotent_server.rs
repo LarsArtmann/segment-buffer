@@ -14,7 +14,7 @@
 //!    sequence number (returned by `append`).
 //! 2. The server keeps a durable record of the highest `seq` it has
 //!    ack'd per `producer_id` (typically a `UNIQUE(producer_id)` row in
-//!    Postgres, an upsert-key in DynamoDB, etc.).
+//!    Postgres, an upsert-key in `DynamoDB`, etc.).
 //! 3. On each "upload", the server upserts the event keyed by
 //!    `(producer_id, seq)`. A duplicate upload is a no-op.
 //!
@@ -36,8 +36,8 @@ struct Event {
 }
 
 /// Idempotent in-process "server". A real server would use Postgres /
-/// DynamoDB / etc. with a UNIQUE constraint on (producer_id, seq); this
-/// struct mirrors that semantics with a HashMap.
+/// `DynamoDB` / etc. with a UNIQUE constraint on (`producer_id`, seq); this
+/// struct mirrors that semantics with a `HashMap`.
 struct IdempotentServer {
     /// Highest ack'd seq per producer. Mirrors `CREATE UNIQUE INDEX on
     /// events(producer_id, seq)` plus a `max(ack_seq) GROUP BY producer_id`

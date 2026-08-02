@@ -123,11 +123,11 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
 ### Fixed
 
 - **Scan-cache TOCTOU under concurrent `flush`** (`src/lib.rs`): `scan_segments`
-  captured the directory `mtime` *after* its `readdir`. A segment rename landing
+  captured the directory `mtime` _after_ its `readdir`. A segment rename landing
   mid-scan could then pair a post-rename `mtime` with a pre-rename (stale)
   segment list in the cache, so the `mtime` staleness guard failed to detect it
   and "a retry sees them" did not hold until the next directory mutation. The
-  `mtime` is now captured *before* the scan, so any mid-scan rename leaves the
+  `mtime` is now captured _before_ the scan, so any mid-scan rename leaves the
   cached `mtime` stale and forces a re-scan on the next call. Surfaced by the
   new `read_from_invariant_under_concurrent_flush` property test. (Effective on
   filesystems where `mtime` advances; the `mtime_supported == false` path still
