@@ -90,7 +90,7 @@
 // docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
 // `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
 // Bump the version segment when cutting a release.
-#![doc(html_root_url = "https://docs.rs/segment-buffer/0.6.0")]
+#![doc(html_root_url = "https://docs.rs/segment-buffer/0.5.4")]
 // On docs.rs (nightly), enable the `doc_cfg` feature so feature-gated items
 // show an "Available on feature `encryption` only" badge. Inert on local
 // builds (stable) where `docsrs` is never set.
@@ -455,6 +455,16 @@ impl SegmentConfigBuilder {
         interval: std::time::Duration,
         max_interval: std::time::Duration,
     ) -> Self {
+        debug_assert!(
+            min_batch <= batch_size,
+            "min_batch ({min_batch}) must not exceed batch_size ({batch_size}) — \
+             otherwise the interval trigger is unreachable"
+        );
+        debug_assert!(
+            interval <= max_interval,
+            "interval ({interval:?}) must not exceed max_interval ({max_interval:?}) — \
+             otherwise the gated interval is unreachable"
+        );
         self.flush_policy(FlushPolicy::BatchOrIntervalMin {
             batch_size,
             min_batch,

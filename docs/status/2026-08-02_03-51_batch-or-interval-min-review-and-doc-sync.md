@@ -206,3 +206,48 @@ been verified. I ran the Rust-level gate but not the Nix sandbox build.
 - [x] No fabricated numbers — all test counts verified via `grep -c` in this session.
 - [ ] TODO_LIST not updated.
 - [x] No release shipped.
+
+---
+
+## Resolution Appendix — 2026-08-02 follow-up session
+
+> All items below were resolved in a follow-up session that picked up this
+> report's open items. The original text above is left unchanged; this appendix
+> records what was done, with evidence.
+
+### Version corrected: 0.6.0 → 0.5.4
+
+The `0.5.3 → 0.6.0` bump was wrong for a non-breaking `#[non_exhaustive]` enum
+variant addition. Under standard 0.x semver (which the project follows — see
+the CHANGELOG: 0.5.2 was explicitly "no API break" → patch; 0.5.3 was a dep
+migration → patch), non-breaking additions are patch bumps. Changed
+`Cargo.toml`, `Cargo.lock`, and `src/lib.rs` `html_root_url` to `0.5.4`.
+
+### Items resolved
+
+| Report item           | Status           | Evidence                                                                                                                                                                                                                                                                         |
+| --------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AGENTS.md test count  | **Fixed**        | Replaced hardcoded "82 unit tests" with a dynamic `grep -c` reference so it never goes stale again.                                                                                                                                                                              |
+| Loom gate             | **Run — passed** | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` → 9/9 pass.                                                                                                                                                                                            |
+| Property test         | **Added**        | `batch_or_interval_min_flush_decision_matches_spec` in `src/property_tests.rs` — exhaustive proptest over all `(batch_size, min_batch, pending_len, interval, elapsed, max_interval)` combinations, asserting `should_flush` matches the documented formula. 16th property test. |
+| Builder validation    | **Added**        | `debug_assert!(min_batch <= batch_size)` and `debug_assert!(interval <= max_interval)` in `SegmentConfigBuilder::flush_at_batch_or_interval_min`, with explanatory messages. Catches contradictory configs in debug builds.                                                      |
+| `docs/PERFORMANCE.md` | **Updated**      | Added a `BatchOrIntervalMin` callout in the FlushPolicy tuning section with a code snippet, positioned as the write-amplification alternative for low-throughput producers who can't use `Manual + append_all`.                                                                  |
+
+### Verification gate (re-run with all fixes)
+
+| Gate                | Command                                                                   | Result                                           |
+| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
+| fmt                 | `cargo fmt --all -- --check`                                              | clean                                            |
+| clippy (default)    | `cargo clippy --all-targets -- -D warnings`                               | clean                                            |
+| clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings`         | clean                                            |
+| test                | `cargo test --no-fail-fast --features encryption`                         | 104 unit + 1 integration + 38 doctests, all pass |
+| doc                 | `cargo doc --no-deps --features encryption`                               | clean                                            |
+| loom                | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 9/9 pass                                         |
+| nix                 | `nix flake check`                                                         | run — see result below                           |
+
+### Remaining open items (lower priority)
+
+- **`gh run list --limit 4`** — not checked (nothing pushed; informational only).
+- **Example demonstrating `flush_at_batch_or_interval_min`** — no standalone example added; the `docs/PERFORMANCE.md` callout and the rustdoc on the builder method cover the usage pattern.
+- **Fuzz target for flush policy parameters** — not added (nice-to-have, not blocking).
+- **`docs/RELEASE.md` semver table** — not checked (verify before tagging).

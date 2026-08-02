@@ -181,6 +181,23 @@ buffer.flush()?;
 acquisition; `flush()` then writes one segment file. This beats N individual
 `append()` calls (N lock acquisitions) when the producer can batch.
 
+> **Low-throughput producers:** if you can't call `append_all` (items arrive
+> one at a time from a slow source), `FlushPolicy::BatchOrIntervalMin` is the
+> write-amplification alternative. It gates interval-triggered flushes on a
+> `min_batch` threshold, so a trickle of events groups into fewer, larger
+> segments instead of producing a tiny 1-event segment every `interval`.
+> The `max_interval` safety valve bounds crash-recovery latency:
+>
+> ```rust
+> use segment_buffer::{FlushPolicy, SegmentConfig};
+> use std::time::Duration;
+>
+> let config = SegmentConfig::builder()
+>     .flush_at_batch_or_interval_min(256, 10, Duration::from_secs(5), Duration::from_secs(60))
+>     .build();
+> // Flush at 256 items; every 5s only if 10+ pending; every 60s regardless.
+> ```
+
 ### 3. `compression_level(1)` (faster encode, marginal ratio loss)
 
 The default zstd level is **3** (fast with a good ratio). Level **1** is

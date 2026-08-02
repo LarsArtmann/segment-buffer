@@ -463,4 +463,44 @@ proptest! {
             synced, actual,
         );
     }
+
+    /// `BatchOrIntervalMin::should_flush` must match its documented decision
+    /// formula across all combinations of batch sizes, thresholds, and time
+    /// values. This is the regression guard for the three trigger paths
+    /// (immediate batch, max-interval safety valve, gated interval) and the
+    /// suppression case (below min_batch and before max_interval).
+    #[test]
+    fn batch_or_interval_min_flush_decision_matches_spec(
+        batch_size in 1u16..500,
+        min_batch in 0u16..500,
+        pending_len in 0u16..500,
+        interval_ms in 0u64..20_000,
+        elapsed_ms in 0u64..20_000,
+        max_interval_ms in 0u64..20_000,
+    ) {
+        // Honour builder invariants: min_batch <= batch_size, interval <= max_interval.
+        let min_batch = min_batch.min(batch_size) as usize;
+        let batch_size = batch_size as usize;
+        let pending_len = pending_len as usize;
+        let interval = std::time::Duration::from_millis(interval_ms);
+        let max_interval = std::time::Duration::from_millis(max_interval_ms).max(interval);
+        let elapsed = std::time::Duration::from_millis(elapsed_ms);
+
+        let policy = crate::FlushPolicy::BatchOrIntervalMin {
+            batch_size,
+            min_batch,
+            interval,
+            max_interval,
+        };
+
+        let should = policy.should_flush(pending_len, elapsed);
+
+        // Reconstruct the expected decision independently from the doc spec:
+        // flush at batch_size OR at max_interval OR (min_batch met AND interval elapsed).
+        let expected = pending_len >= batch_size
+            || elapsed >= max_interval
+            || (pending_len >= min_batch && elapsed >= interval);
+
+        prop_assert_eq!(should, expected, "flush decision mismatch");
+    }
 }
