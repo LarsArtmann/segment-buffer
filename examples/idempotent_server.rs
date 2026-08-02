@@ -24,6 +24,21 @@
 //!
 //! Run with: `cargo run --example idempotent_server`
 
+// Example/demo code: unwrap/expect, `as` conversions, and counter
+// arithmetic are idiomatic in examples for clarity.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::panic_in_result_fn,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
+)]
+
+
 use std::collections::HashMap;
 
 /// A producer-supplied event. The `(producer_id, seq)` pair is the durable

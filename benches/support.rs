@@ -7,6 +7,19 @@
 //! These helpers are bench-internal and not part of the crate's public API;
 //! `missing_panics_doc` / `missing_errors_doc` are not enforced here.
 
+// Non-production code: unwrap/expect on setup failures, `as` conversions for
+// batch sizes, and counter arithmetic are idiomatic and safe here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic_in_result_fn,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
+)]
+
+
 use segment_buffer::{SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 

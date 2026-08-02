@@ -1,6 +1,19 @@
 //! Benchmark: crash recovery throughput — `SegmentBuffer::open()` on a
 //! directory with pre-existing segment files.
 
+// Non-production code: unwrap/expect on setup failures, `as` conversions for
+// batch sizes, and counter arithmetic are idiomatic and safe here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic_in_result_fn,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
+)]
+
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 #[path = "support.rs"]

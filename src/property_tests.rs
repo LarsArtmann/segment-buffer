@@ -8,14 +8,19 @@
 //! 3. **Envelope transparency:** wrap→unwrap is identity on the payload.
 //! 4. **Full pipeline:** write→read through the filesystem reproduces the input.
 
-// Test modules override the library's panic-prevention lints. See the
+// Test modules override the library's strict lints. See the
 // comment in `src/tests.rs` for rationale.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::string_slice,
-    clippy::panic_in_result_fn
+    clippy::panic_in_result_fn,
+    clippy::panic,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
 )]
 use super::segment;
 use proptest::prelude::*;

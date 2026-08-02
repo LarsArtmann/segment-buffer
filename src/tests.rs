@@ -1,12 +1,19 @@
-// Test modules override the library's panic-prevention lints. In test code,
-// panicking on unexpected conditions (unwrap/expect) is the correct behavior
-// — a test failure should be loud and immediate, not a silent error return.
+// Test modules override the library's strict lints. In test code, panicking
+// on unexpected conditions (unwrap/expect) is the correct behavior — a test
+// failure should be loud and immediate, not a silent error return. Likewise,
+// `as` conversions and arithmetic on counters/indices are safe in tests, and
+// the full pedantic/nursery style groups are not worth the churn.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::string_slice,
-    clippy::panic_in_result_fn
+    clippy::panic_in_result_fn,
+    clippy::panic,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
 )]
 use super::*;
 use serde::{Deserialize, Serialize};

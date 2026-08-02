@@ -11,6 +11,19 @@
 //! See `docs/perf/2026-07-23_percentile-latency-baseline.md` for the full
 //! rationale and the relationship between allocation counts and p99 latency.
 
+// Non-production code: unwrap/expect on setup failures, `as` conversions for
+// batch sizes, and counter arithmetic are idiomatic and safe here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic_in_result_fn,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
+)]
+
+
 use segment_buffer::{DurabilityPolicy, FlushPolicy, SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 use std::alloc::{GlobalAlloc, Layout, System};

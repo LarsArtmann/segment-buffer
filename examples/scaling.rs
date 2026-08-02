@@ -50,6 +50,21 @@
 //! models the cloud-sync deployment where the cloud is the durable layer — edit
 //! the constant below to test `Maximal`/`Segment`.
 
+// Example/demo code: unwrap/expect, `as` conversions, and counter
+// arithmetic are idiomatic in examples for clarity.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::panic_in_result_fn,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
+)]
+
+
 use segment_buffer::{DurabilityPolicy, FlushPolicy, SegmentBuffer, SegmentConfig};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;

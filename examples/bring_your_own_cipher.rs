@@ -8,6 +8,21 @@
 //!
 //! See `docs/CIPHERS.md` → "Bring-your-own: ChaCha20-Poly1305" for the prose.
 
+// Example/demo code: unwrap/expect, `as` conversions, and counter
+// arithmetic are idiomatic in examples for clarity.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::panic_in_result_fn,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::pedantic,
+    clippy::nursery,
+)]
+
+
 use chacha20poly1305::{
     aead::{Aead, Payload},
     ChaCha20Poly1305, KeyInit, Nonce,
