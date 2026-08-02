@@ -674,38 +674,33 @@ fn concurrent_read_and_flush_never_corrupts() {
 // Time-based auto-flush
 // =========================================================================
 
+// ---------------------------------------------------------------------
+// FlushPolicy time-based decision tests (pure, no wall-clock dependency)
+// ---------------------------------------------------------------------
+//
+// These tests call FlushPolicy::should_flush directly with synthetic time
+// values instead of going through open() → append() → thread::sleep →
+// check files. This eliminates CI flakiness from scheduler jitter and makes
+// the exact decision boundary precisely testable.
+//
+// The integration path (should_flush → flush → segment file on disk) is
+// already covered by auto_flush_at_batch_threshold and
+// batch_or_interval_min_flushes_at_batch_size below, which trigger via
+// batch_size (instantaneous, no timing dependency).
+
 #[test]
-fn time_based_auto_flush() {
-    let tmp = TempDir::new().unwrap();
-    let buf: TestBuffer = SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            flush_policy: FlushPolicy::BatchOrInterval {
-                batch_size: 256,
-                interval: std::time::Duration::from_secs(1),
-            },
-            max_size_bytes: 1024 * 1024,
-            compression_level: 3,
-            durability: DurabilityPolicy::Segment,
-            cipher: None,
-        },
-    )
-    .expect("create buffer");
-
-    buf.append(test_item(0)).unwrap();
-    assert!(
-        buf.scan_segments().unwrap().is_empty(),
-        "Event should remain in memory, not flushed yet"
-    );
-
-    thread::sleep(Duration::from_millis(1100));
-    buf.append(test_item(1)).unwrap();
-
-    let segments = buf.scan_segments().unwrap();
-    assert!(
-        !segments.is_empty(),
-        "Time-based flush should have created a segment file"
-    );
+fn batch_or_interval_flushes_after_interval() {
+    let policy = FlushPolicy::BatchOrInterval {
+        batch_size: 256,
+        interval: Duration::from_secs(5),
+    };
+    // Below batch_size, before interval: no flush
+    assert!(!policy.should_flush(10, Duration::from_secs(4)));
+    assert!(!policy.should_flush(255, Duration::from_secs(4)));
+    // Below batch_size, at interval: flush
+    assert!(policy.should_flush(10, Duration::from_secs(5)));
+    // Below batch_size, well past interval: flush
+    assert!(policy.should_flush(1, Duration::from_secs(10)));
 }
 
 // =========================================================================
@@ -714,99 +709,48 @@ fn time_based_auto_flush() {
 
 #[test]
 fn batch_or_interval_min_suppresses_small_flush() {
-    let tmp = TempDir::new().unwrap();
-    let buf: TestBuffer = SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            flush_policy: FlushPolicy::BatchOrIntervalMin {
-                batch_size: 256,
-                min_batch: 10,
-                interval: std::time::Duration::from_millis(100),
-                max_interval: std::time::Duration::from_secs(30),
-            },
-            max_size_bytes: 1024 * 1024,
-            compression_level: 3,
-            durability: DurabilityPolicy::Segment,
-            cipher: None,
-        },
-    )
-    .expect("create buffer");
-
-    buf.append(test_item(0)).unwrap();
-    thread::sleep(Duration::from_millis(200));
-    buf.append(test_item(1)).unwrap();
-
-    assert!(
-        buf.scan_segments().unwrap().is_empty(),
-        "Should NOT flush below min_batch even after interval elapsed"
-    );
+    let policy = FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 10,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    };
+    // Below min_batch, even past interval but before max_interval: NO flush
+    assert!(!policy.should_flush(1, Duration::from_secs(10)));
+    assert!(!policy.should_flush(9, Duration::from_secs(10)));
+    assert!(!policy.should_flush(9, Duration::from_secs(59)));
+    // Zero pending: never flush (unless past max_interval)
+    assert!(!policy.should_flush(0, Duration::from_secs(59)));
 }
 
 #[test]
 fn batch_or_interval_min_flushes_at_min_batch() {
-    let tmp = TempDir::new().unwrap();
-    let buf: TestBuffer = SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            flush_policy: FlushPolicy::BatchOrIntervalMin {
-                batch_size: 256,
-                min_batch: 5,
-                interval: std::time::Duration::from_millis(100),
-                max_interval: std::time::Duration::from_secs(30),
-            },
-            max_size_bytes: 1024 * 1024,
-            compression_level: 3,
-            durability: DurabilityPolicy::Segment,
-            cipher: None,
-        },
-    )
-    .expect("create buffer");
-
-    for i in 0..5 {
-        buf.append(test_item(i)).unwrap();
-    }
-    thread::sleep(Duration::from_millis(150));
-    buf.append(test_item(5)).unwrap();
-
-    assert!(
-        !buf.scan_segments().unwrap().is_empty(),
-        "Should flush when min_batch met and interval elapsed"
-    );
+    let policy = FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 10,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    };
+    // At min_batch AND past interval: flush
+    assert!(policy.should_flush(10, Duration::from_secs(5)));
+    assert!(policy.should_flush(10, Duration::from_secs(6)));
+    // Well above min_batch, past interval: flush
+    assert!(policy.should_flush(50, Duration::from_secs(10)));
 }
 
 #[test]
 fn batch_or_interval_min_flushes_at_max_interval() {
-    let tmp = TempDir::new().unwrap();
-    let buf: TestBuffer = SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            flush_policy: FlushPolicy::BatchOrIntervalMin {
-                batch_size: 256,
-                min_batch: 100,
-                interval: std::time::Duration::from_millis(100),
-                max_interval: std::time::Duration::from_millis(300),
-            },
-            max_size_bytes: 1024 * 1024,
-            compression_level: 3,
-            durability: DurabilityPolicy::Segment,
-            cipher: None,
-        },
-    )
-    .expect("create buffer");
-
-    buf.append(test_item(0)).unwrap();
-    assert!(
-        buf.scan_segments().unwrap().is_empty(),
-        "Should not flush immediately"
-    );
-
-    thread::sleep(Duration::from_millis(400));
-    buf.append(test_item(1)).unwrap();
-
-    assert!(
-        !buf.scan_segments().unwrap().is_empty(),
-        "Should flush at max_interval regardless of min_batch"
-    );
+    let policy = FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 100,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    };
+    // Below min_batch AND below batch_size, but past max_interval: flush (safety valve)
+    assert!(policy.should_flush(1, Duration::from_secs(60)));
+    assert!(policy.should_flush(0, Duration::from_secs(120)));
+    // Before max_interval and below min_batch: no flush
+    assert!(!policy.should_flush(1, Duration::from_secs(59)));
 }
 
 #[test]
