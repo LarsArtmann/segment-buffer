@@ -28,11 +28,15 @@ batch_size` (interval arm reduces to batch arm). _(2026-08-02)_
   load.** `concurrency_batch_or_interval_min_4_writers_10k_events`:
   4 writers × 2 500 events with auto-flush at `batch_size=1000`. _(2026-08-02)_
 
-- `[ ]` **Property tests for the consistency model.** Formal proptest
+- `[x]` **Property tests for the consistency model.** Formal proptest
   assertions for the two documented race windows (concurrent `delete_acked`
-  spurious Io; concurrent `flush` transient gap). The stress tests prove these
-  statistically; property tests would make the invariant machine-checkable.
-  Effort: ~2h.
+  spurious Io; concurrent `flush` transient gap). Five property tests added:
+  three deterministic (surviving-items-correct-after-delete,
+  disk-memory-split-correctness, all-visible-after-flush) and two concurrent
+  (delete-acked race, flush race) with generated parameters. The deterministic
+  tests make the invariants machine-checkable for every generated state; the
+  concurrent tests broaden coverage beyond the fixed-parameter stress tests.
+  _(2026-08-02)_
 
 ---
 
