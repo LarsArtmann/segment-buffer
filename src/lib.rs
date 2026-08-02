@@ -1636,7 +1636,7 @@ where
         if inner.next_seq == 0 {
             0
         } else {
-            inner.next_seq - 1
+            inner.next_seq.saturating_sub(1)
         }
     }
 
@@ -1757,7 +1757,7 @@ where
         let bytes = self
             .approx_disk_bytes
             .load(std::sync::atomic::Ordering::Relaxed);
-        (bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
+        (u64_to_f32(bytes) / u64_to_f32(self.config.max_size_bytes)).min(1.0)
     }
 
     /// True when disk usage exceeds 90% of the configured limit.
@@ -1838,7 +1838,7 @@ where
         let latest_sequence = if inner.next_seq == 0 {
             0
         } else {
-            inner.next_seq - 1
+            inner.next_seq.saturating_sub(1)
         };
         // Load the atomic OUTSIDE the mutex's critical section logic — the
         // value is approximate by design, so a torn read between this load
@@ -1849,7 +1849,7 @@ where
         let store_pressure = if self.config.max_size_bytes == 0 {
             0.0
         } else {
-            (approx_disk_bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
+            (u64_to_f32(approx_disk_bytes) / u64_to_f32(self.config.max_size_bytes)).min(1.0)
         };
         BufferStats {
             pending_count,
@@ -2024,8 +2024,8 @@ where
             for item in items {
                 inner.unflushed.push(item);
                 inner.next_seq = inner.next_seq.wrapping_add(1);
-                last_seq = inner.next_seq - 1;
-                count += 1;
+                last_seq = inner.next_seq.saturating_sub(1);
+                count = count.saturating_add(1);
             }
             if count == 0 {
                 // Empty iterator: no-op, return current last seq (or 0).
@@ -2035,6 +2035,7 @@ where
                 .config
                 .flush_policy
                 .should_flush(inner.unflushed.len(), inner.last_flush.elapsed());
+            drop(inner);
             (should_flush, last_seq, count)
         };
         debug_assert!(count > 0);
@@ -2116,7 +2117,12 @@ where
         let indexed: Vec<(u64, T)> = items
             .into_iter()
             .enumerate()
-            .map(|(i, item)| (start_seq + i as u64, item))
+            .map(|(i, item)| {
+                (
+                    start_seq.saturating_add(u64::try_from(i).unwrap_or(u64::MAX)),
+                    item,
+                )
+            })
             .collect();
         Ok(SegmentIter {
             inner: indexed.into_iter(),
@@ -2163,7 +2169,7 @@ where
         let total_bytes: u64 = segments.iter().map(|s| self.store.segment_size(*s)).sum();
 
         let (head_seq, next_seq) = match (segments.first(), segments.last()) {
-            (Some(first), Some(last)) => (first.start, last.end + 1),
+            (Some(first), Some(last)) => (first.start, last.end.saturating_add(1)),
             _ => (0, 0),
         };
 
@@ -2270,6 +2276,7 @@ where
             .map_err(|e| e.with_path(&self.dir))?;
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());
+        drop(cache);
         *self.last_dir_mtime.lock() = pre_scan_mtime;
         Ok(segments)
     }
@@ -2279,15 +2286,11 @@ where
     /// scan cache should be invalidated. Cheap (`stat` is one syscall;
     /// `readdir` is many).
     fn dir_mtime_changed(&self) -> bool {
-        let current = match std::fs::metadata(&self.dir).and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => return true, // directory unreadable → safer to re-scan
+        let Ok(current) = std::fs::metadata(&self.dir).and_then(|m| m.modified()) else {
+            return true; // directory unreadable → safer to re-scan
         };
         let cached = *self.last_dir_mtime.lock();
-        match cached {
-            Some(prev) => prev != current,
-            None => true,
-        }
+        cached.map_or(true, |prev| prev != current)
     }
 
     /// Invalidate the scan cache. Called by every on-disk mutation
@@ -2428,6 +2431,13 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<SegmentBuffer<()>>();
 };
+
+/// Lossy `u64` → `f32` conversion for ratio computations where
+/// precision loss is acceptable (backpressure signalling only).
+#[allow(clippy::as_conversions, clippy::cast_precision_loss)]
+fn u64_to_f32(v: u64) -> f32 {
+    v as f32
+}
 
 #[cfg(test)]
 mod tests;
