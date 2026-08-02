@@ -210,10 +210,11 @@ The core work is done and verified, but the bookkeeping (FEATURES.md count, CHAN
 ## Resolution (2026-08-02)
 
 All key items resolved:
+
 - **All work committed** — commits `8a62182` and `8618d65`, pushed to origin/master.
 - **Self-review bugs fixed** — `#[non_exhaustive]` struct-literal examples, dead rustdoc links, FEATURES.md test counts all corrected in the follow-up session (`2026-07-23_20-10`).
 - **Flush-race test written** — `concurrent_read_and_flush_never_corrupts` passes.
 - **v0.5.4 shipped** — all book-insights work is released.
 - **Allocation guard** — part of the test suite (`tests/alloc_guard.rs`).
 - **Verify gate** — now includes loom, supply-chain, actionlint, and lychee.
-Remaining architectural items (streaming AEAD, health-check primitive, `read_from_relaxed`) tracked in TODO_LIST.md and ROADMAP.md.
+  Remaining architectural items (streaming AEAD, health-check primitive, `read_from_relaxed`) tracked in TODO_LIST.md and ROADMAP.md.

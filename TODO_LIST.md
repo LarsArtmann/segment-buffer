@@ -18,7 +18,7 @@ stay until the next CHANGELOG cut, then move out).
 - `[x]` **Edge-case tests for `BatchOrIntervalMin`.** Three boundary
   conditions now covered: `min_batch == 0` (always flushes at interval),
   `max_interval == interval` (min_batch irrelevant), `min_batch ==
-  batch_size` (interval arm reduces to batch arm). _(2026-08-02)_
+batch_size` (interval arm reduces to batch arm). _(2026-08-02)_
 
 - `[x]` **Fuzz target for flush-policy parameters.** `fuzz_flush_policy.rs`
   exercises `should_flush` over arbitrary parameter combinations. Registered

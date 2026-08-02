@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`Display` impl for `FlushPolicy`** (`src/lib.rs`): human-readable output for
   all variants (`batch(256)`, `interval(5s)`, `batch_or_interval_min(batch=256,
-  min=10, interval=5s, max=60s)`, `manual`). Stable format for log-scraping.
+min=10, interval=5s, max=60s)`, `manual`). Stable format for log-scraping.
 
 - **`pedantic` Clippy lint group at `warn` level** (`Cargo.toml`): surfaces ~62
   quality warnings (missing backticks, missing `#[must_use]`) during local
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Edge-case tests for `BatchOrIntervalMin`** (`src/tests.rs`): three boundary
   conditions — `min_batch == 0` (always flushes at interval), `max_interval ==
-  interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
+interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   reduces to batch arm).
 
 - **Cipher equivalence tests** (`src/tests.rs`): prove `new(&[u8; 32])` and

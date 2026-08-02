@@ -115,9 +115,10 @@ Nothing critically broken. No data loss, no broken builds, no reverted commits, 
 ## Resolution (2026-08-02)
 
 All key items resolved:
+
 - **PR #10 merged, v0.5.3 shipped** — the chacha20poly1305 0.11 bump is released.
 - **CIPHERS.md doc drift fixed** — deprecated `from_slice` snippets corrected.
 - **Dependabot labels created** — `cargo` and `dependencies` labels exist.
 - **v0.5.4 shipped** — all subsequent changes (BatchOrIntervalMin, strict lints, etc.) released.
 - **Supply-chain gate** — `cargo audit` + `cargo deny` are now part of `scripts/verify-gate.sh` and CI.
-Remaining backlog items (streaming AEAD, envelope v2, compiled doc snippets) are tracked in TODO_LIST.md and ROADMAP.md.
+  Remaining backlog items (streaming AEAD, envelope v2, compiled doc snippets) are tracked in TODO_LIST.md and ROADMAP.md.
