@@ -288,7 +288,6 @@ mod private {
             let nonce: [u8; AES_GCM_NONCE_LEN] = nonce_bytes
                 .try_into()
                 .map_err(|_| CipherError::msg("invalid nonce length: expected 12 bytes"))?;
-            let nonce = aes_gcm::Nonce::from_slice(&nonce);;
             let nonce = aes_gcm::Nonce::from(nonce);
 
             self.cipher
@@ -304,6 +303,7 @@ mod private {
     /// Nonce length for XChaCha20-Poly1305: 24 bytes. Public so callers can
     /// reason about the on-disk payload shape without importing the AEAD crate.
     const AES_GCM_NONCE_LEN: usize = 12;
+    const XCHACHA_NONCE_LEN: usize = 24;
 
     /// XChaCha20-Poly1305 cipher with a random 24-byte nonce prepended to each
     /// ciphertext.
