@@ -127,6 +127,7 @@ cargo supply-chain publishers --features encryption
 
 ```bash
 nix develop                 # devShell: rustc/cargo/clippy/rustfmt/rust-analyzer + zstd + pkg-config
+                            #           + nixfmt/dprint/shfmt/prettier (formatters invoked by buildflow)
 nix fmt                     # treefmt: nixfmt + rustfmt (edition 2021, agrees with `cargo fmt`)
 nix flake check             # build, test, clippy, fmt, doc — all under the sandbox
 nix build .#checks.x86_64-linux.test   # run just the test check
@@ -262,14 +263,16 @@ src/
   cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher + XChaCha20Poly1305Cipher (both feature-gated, impls in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
   tests.rs         `mod tests` — unit tests (109 tests; `grep -c '#[test]' src/tests.rs`)
-  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / segment_size_stats / FlushPolicy / consistency-model race-window invariants (22 properties; `grep -c '#[test]' src/property_tests.rs`)
+  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / segment_size_stats / FlushPolicy / consistency-model race-window invariants (25 properties; `grep -c '#[test]' src/property_tests.rs`)
 examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput), batch_or_interval_min (tiny-segment suppression demo)
 benches/           8 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy) + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery, fuzz_parse_filename, fuzz_envelope, fuzz_append_all); requires nightly
 FEATURES.md        Honest capability inventory by status
 TODO_LIST.md       Short/mid-term improvement tasks with status
 ROADMAP.md         Long-term direction and explicit non-goals
-flake.nix          Reproducible devShell (zstd, pkg-config, Rust toolchain)
+flake.nix          Reproducible devShell (zstd, pkg-config, Rust toolchain, formatters)
+dprint.json        dprint config — JSON-only (markdown/yaml skipped, see .buildflow.yml)
+.buildflow.yml     buildflow config — skips markdown-format and yaml-format (prettier handles markdown)
 ```
 
 The split between `lib.rs` (in-memory orchestration + locking) and `segment.rs` (byte-level disk format) is deliberate: the buffer doesn't know how segments are encoded, and the segment module doesn't know about the mutex. `SegmentBuffer`'s private `write_segment`/`read_segment`/`scan_segments`/`segment_path` methods are thin instance-bound wrappers over the stateless `segment::` free functions.
@@ -306,7 +309,7 @@ The crate uses a **two-tier lint strategy** inspired by [namtao's "Strict Lints"
 - **MSRV consistency guard:** `scripts/check-msrv.sh` asserts that `Cargo.toml rust-version`, `ci.yml` matrix + msrv job, `flake.nix` msrv shell pin, and `docs/MSRV.md` headline all agree. Run by the CI `msrv-consistency` job to prevent drift.
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
-- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. 11 tests covering the in-memory hot path (`append`/`append_all`/`stats` snapshot), the `delete_acked` + `append` interleaving (4 tests that exhaustively enumerate every two-thread schedule via a loom-aware `MockStore`), AND, since 2026-08-03, the scan-cache populate path under `read_from` (2 tests exercising `flush` and `delete_acked` racing the cache-populate interleaving). `flush` (the byte-level encode pipeline) and `recover` still touch byte-level I/O that loom has no interest in enumerating, so they stay covered _statistically_ by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs`. Use `--release` — loom's schedule enumeration is slow in debug.
+- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. 12 tests covering the in-memory hot path (`append`/`append_all`/`stats` snapshot), the `delete_acked` + `append` interleaving (4 tests that exhaustively enumerate every two-thread schedule via a loom-aware `MockStore`), the scan-cache populate path under `read_from` (2 tests exercising `flush` and `delete_acked` racing the cache-populate interleaving), AND `segment_count` self-healing under concurrent flush + delete (proves the atomic counter never panics and is recalibrated by `sync_disk_bytes` after a momentary wrap). `flush` (the byte-level encode pipeline) and `recover` still touch byte-level I/O that loom has no interest in enumerating, so they stay covered _statistically_ by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs`. Use `--release` — loom's schedule enumeration is slow in debug.
 
 ## Releases
 

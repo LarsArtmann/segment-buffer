@@ -321,13 +321,19 @@ differs:
   `concurrent_read_and_delete_never_corrupts` in `src/tests.rs`; verified
   formally for every generated state by property tests
   `read_from_surviving_items_correct_after_delete` and
-  `read_from_correct_with_disk_memory_split` in `src/property_tests.rs`.)
+  `read_from_correct_with_disk_memory_split` in `src/property_tests.rs`;
+  the scan-cache mtime-guard that underpins this is proven deterministically
+  by `scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename`
+  (Barrier-forced exact `scan → rename → scan-returns-stale` interleaving)
+  and exhaustively by the two loom scan-cache tests in `tests/loom.rs`.)
 - Transient gaps are transient. After concurrent `flush`/`delete_acked`
   operations settle, every durable item becomes visible to `read_from`
   within a bounded number of retries. (Verified statistically by
   `read_from_invariant_under_concurrent_flush` in `src/property_tests.rs`;
   the single-threaded "gap closes" half is verified for every generated
-  state by `read_from_all_visible_after_flush_from_split`.)
+  state by `read_from_all_visible_after_flush_from_split`. The dual-mutation
+  case — reader vs deleter AND flusher at once — is covered by
+  `read_from_invariant_under_concurrent_delete_acked_and_flush`.)
 - `delete_acked` is idempotent and never removes segments whose `end >
 acked_seq`. (Proven by loom tests in `tests/loom.rs`.)
 - `append` assigns sequence numbers atomically under one lock acquisition.
