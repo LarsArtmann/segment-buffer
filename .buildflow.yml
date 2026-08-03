@@ -1,8 +1,10 @@
 # buildflow configuration for segment-buffer
 #
-# markdown-format (dprint) is skipped because prettier-format already handles
-# Markdown formatting and passes. dprint's markdown formatter produces large
-# diffs (line reflow, table re-alignment) that conflict with the project's
-# manual writing style. JSON formatting via dprint is kept (json-format step).
+# markdown-format and yaml-format (both dprint-backed) are skipped:
+# - Markdown: prettier-format already handles it and passes; dprint's markdown
+#   formatter produces large diffs (line reflow, table re-alignment).
+# - YAML: GitHub Actions workflows have stable hand-maintained formatting.
+# JSON formatting via dprint is kept (json-format step).
 skip_steps:
   - markdown-format
+  - yaml-format
