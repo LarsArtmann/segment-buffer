@@ -925,8 +925,8 @@ pub struct SegmentBuffer<T> {
     /// that holding it during the compression step does not extend the
     /// hot-path `inner` mutex hold time. The mutex is uncontended in
     /// practice: `flush` already takes `inner.lock()` briefly to drain the
-    /// pending events, and the re-entrancy guard serialises concurrent
-    /// flushers against `for_each_from` anyway.
+    /// pending events, and concurrent `flush` calls serialise on the `inner`
+    /// mutex anyway.
     compressor: Mutex<zstd::bulk::Compressor<'static>>,
     /// Pooled zstd decompression context — the read-side mirror of
     /// [`compressor`](Self::compressor). Allocated once at
