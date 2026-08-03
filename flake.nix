@@ -111,6 +111,12 @@
                 cargo-nextest
                 bacon
                 curl
+                # Formatters invoked by buildflow via `nix develop --command <tool>`.
+                # nixfmt also backs the treefmt config below (programs.nixfmt).
+                nixfmt
+                dprint
+                shfmt
+                prettier
               ];
             };
 
