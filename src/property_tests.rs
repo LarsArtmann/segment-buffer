@@ -455,14 +455,19 @@ proptest! {
         // Sync, then read both the returned value and the cached stats value.
         let synced = buf.sync_disk_bytes().expect("sync_disk_bytes");
         let cached = buf.stats().approx_disk_bytes;
+        let cached_segments = buf.stats().segment_count;
 
         // Compute the actual disk usage: sum of `.zst` file sizes.
-        let actual: u64 = std::fs::read_dir(tmp.path())
+        let actual_files: Vec<_> = std::fs::read_dir(tmp.path())
             .expect("read_dir")
             .filter_map(std::result::Result::ok)
             .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+            .collect();
+        let actual: u64 = actual_files
+            .iter()
             .map(|e| e.metadata().map_or(0, |m| m.len()))
             .sum();
+        let actual_segment_count = actual_files.len() as u64;
 
         prop_assert_eq!(
             synced, actual,
@@ -473,6 +478,11 @@ proptest! {
             cached, actual,
             "stats().approx_disk_bytes disagrees with du after sync; synced={}, actual={}",
             synced, actual,
+        );
+        prop_assert_eq!(
+            cached_segments, actual_segment_count,
+            "stats().segment_count disagrees with file count after sync; segments={}, actual={}",
+            cached_segments, actual_segment_count,
         );
     }
 

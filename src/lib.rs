@@ -675,6 +675,13 @@ pub struct BufferStats {
     /// Approximate total bytes used by segment files on disk. Decreases when
     /// [`SegmentBuffer::delete_acked`] removes files.
     pub approx_disk_bytes: u64,
+    /// Number of segment files currently on disk. Incremented by
+    /// [`SegmentBuffer::flush`], decremented by
+    /// [`SegmentBuffer::delete_acked`], and recalibrated by
+    /// [`SegmentBuffer::sync_disk_bytes`]. Unlike
+    /// [`RecoveryReport::segment_count`] (a one-time open-time snapshot),
+    /// this value is live — call [`SegmentBuffer::stats`] to observe it.
+    pub segment_count: u64,
     /// Configured ceiling on disk usage (`max_size_bytes`). `0` disables the
     /// limit; in that case [`store_pressure`](Self::store_pressure) is `0.0`.
     pub max_size_bytes: u64,
@@ -807,6 +814,15 @@ pub struct SegmentBuffer<T> {
     /// touched outside this crate, so it is suitable for backpressure
     /// signalling and metrics, NOT for billing.
     approx_disk_bytes: std::sync::atomic::AtomicU64,
+    /// Number of segment files on disk, tracked incrementally alongside
+    /// [`approx_disk_bytes`](Self::approx_disk_bytes). Incremented by one
+    /// on every [`flush`](Self::flush), decremented by the removal count on
+    /// every [`delete_acked`](Self::delete_acked), and recalibrated to the
+    /// directory scan result by [`recover`](Self::recover) and
+    /// [`sync_disk_bytes`](Self::sync_disk_bytes). Uses `Relaxed` ordering —
+    /// it is an approximate metric like `approx_disk_bytes`, so a torn read
+    /// relative to other operations is acceptable.
+    segment_count: std::sync::atomic::AtomicU64,
     /// Cache of `scan_segments()`. `None` means stale (must re-scan); `Some`
     /// means a flush/`delete_acked` has not touched the directory since the
     /// last scan. The cache is invalidated by every on-disk mutation
@@ -914,6 +930,7 @@ where
             .field("head_sequence", &stats.head_sequence)
             .field("next_sequence", &stats.next_sequence)
             .field("approx_disk_bytes", &stats.approx_disk_bytes)
+            .field("segment_count", &stats.segment_count)
             .field("max_size_bytes", &stats.max_size_bytes)
             .field("store_pressure", &stats.store_pressure)
             .finish_non_exhaustive()
@@ -1102,6 +1119,7 @@ where
                 last_flush: Instant::now(),
             }),
             approx_disk_bytes: std::sync::atomic::AtomicU64::new(0),
+            segment_count: std::sync::atomic::AtomicU64::new(0),
             scan_cache: Mutex::new(None),
             iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
             compressor: Mutex::new(compressor),
@@ -1240,6 +1258,8 @@ where
         // to re-acquire the mutex just to bump one u64.
         self.approx_disk_bytes
             .fetch_add(compressed_len, std::sync::atomic::Ordering::Relaxed);
+        self.segment_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // A new segment file invalidates the directory-scan cache.
         self.invalidate_scan_cache();
 
@@ -1575,6 +1595,10 @@ where
         // head_seq, but approx_disk_bytes can update independently.
         self.approx_disk_bytes
             .fetch_sub(freed_bytes, std::sync::atomic::Ordering::Relaxed);
+        self.segment_count.fetch_sub(
+            u64::try_from(deleted).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         // Deleted segment files invalidate the directory-scan cache.
         self.invalidate_scan_cache();
 
@@ -1861,6 +1885,9 @@ where
         let approx_disk_bytes = self
             .approx_disk_bytes
             .load(std::sync::atomic::Ordering::Relaxed);
+        let segment_count = self
+            .segment_count
+            .load(std::sync::atomic::Ordering::Relaxed);
         let store_pressure = if self.config.max_size_bytes == 0 {
             0.0
         } else {
@@ -1872,6 +1899,7 @@ where
             head_sequence: inner.head_seq,
             next_sequence: inner.next_seq,
             approx_disk_bytes,
+            segment_count,
             max_size_bytes: self.config.max_size_bytes,
             store_pressure,
         }
@@ -1977,6 +2005,10 @@ where
         let total: u64 = segments.iter().map(|s| self.store.segment_size(*s)).sum();
         self.approx_disk_bytes
             .store(total, std::sync::atomic::Ordering::Relaxed);
+        self.segment_count.store(
+            u64::try_from(segments.len()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         Ok(total)
     }
 
@@ -2202,6 +2234,10 @@ where
         // Store the recovered disk-bytes total into the atomic directly.
         self.approx_disk_bytes
             .store(total_bytes, std::sync::atomic::Ordering::Relaxed);
+        self.segment_count.store(
+            u64::try_from(segment_count).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         // Recovery just scanned the directory; populate the cache so the
         // first read_from/delete_acked after open does not re-scan.
         *self.scan_cache.lock() = Some(segments);

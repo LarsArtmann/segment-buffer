@@ -12,11 +12,13 @@
 #   scripts/verify-gate.sh --no-loom           # skip the loom gate
 #   scripts/verify-gate.sh --no-lychee         # skip the markdown link check
 #   scripts/verify-gate.sh --no-actionlint     # skip the GitHub workflow lint
+#   scripts/verify-gate.sh --no-changelog-links # skip the CHANGELOG tag-link check
 #
 # Tool availability: cargo fmt/clippy/test/doc come with the toolchain.
 # cargo-deny, cargo-audit, lychee, and actionlint are invoked via
 # `nix run nixpkgs#...` so the script works on a plain `nix develop` shell
-# without global installs.
+# without global installs. check-changelog-links.sh and check-html-root-url.sh
+# use curl (coreutils-grade, available in the devShell and any standard OS).
 
 set -u
 
@@ -27,6 +29,7 @@ RUN_SUPPLY_CHAIN=1
 RUN_LOOM=1
 RUN_LYCHEE=1
 RUN_ACTIONLINT=1
+RUN_CHANGELOG_LINKS=1
 for arg in "$@"; do
   case "$arg" in
     -a|--all) STOP_ON_FIRST=0 ;;
@@ -34,8 +37,9 @@ for arg in "$@"; do
     --no-loom) RUN_LOOM=0 ;;
     --no-lychee) RUN_LYCHEE=0 ;;
     --no-actionlint) RUN_ACTIONLINT=0 ;;
+    --no-changelog-links) RUN_CHANGELOG_LINKS=0 ;;
     -h|--help)
-      sed -n '2,18p' "$0"; exit 0 ;;
+      sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -93,6 +97,14 @@ if [[ "$RUN_LYCHEE" == "1" ]]; then
   # A persistent failure on the SAME URL across 2+ standalone runs is a real
   # broken link; a one-shot failure that clears on re-run is transient.
   run "lychee" nix run nixpkgs#lychee -- --config .github/lychee.toml '*.md' 'docs/**/*.md' 'fuzz/README.md'
+fi
+
+if [[ "$RUN_CHANGELOG_LINKS" == "1" ]]; then
+  # Validate that every version link in CHANGELOG.md resolves to a real GitHub
+  # tag. Catches the drift where a release entry points at a tag that was never
+  # pushed (or was renamed). Hits the GitHub API — skip with
+  # --no-changelog-links when offline.
+  run "changelog-links" scripts/check-changelog-links.sh
 fi
 
 # actionlint: YAML parse is the floor. Catches ${{ }} expression syntax errors,

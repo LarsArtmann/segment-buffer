@@ -23,7 +23,7 @@ fi
 # Matches patterns like:
 #   https://github.com/LarsArtmann/segment-buffer/compare/v0.5.3...v0.5.4
 #   https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.4
-MAPFILE -t URLS < <(
+mapfile -t URLS < <(
     grep -oE 'https://github\.com/LarsArtmann/segment-buffer/(compare|releases/tag)/[^"<>[:space:]]+' "$CHANGELOG" || true
 )
 
@@ -44,6 +44,12 @@ for url in "${URLS[@]}"; do
         tag_a="${tags%%...*}"
         tag_b="${tags##*...}"
         for tag in "$tag_a" "$tag_b"; do
+            # Skip HEAD — the Keep-a-Changelog convention for the [Unreleased]
+            # compare link. It resolves to the default-branch tip on GitHub, not
+            # a tag, so the git/ref/tags API correctly 404s.
+            if [[ "$tag" == "HEAD" ]]; then
+                continue
+            fi
             http_code=$(curl -sSL -o /dev/null -w '%{http_code}' \
                 "https://api.github.com/repos/LarsArtmann/segment-buffer/git/ref/tags/$tag" 2>/dev/null || echo "000")
             if [[ "$http_code" == "200" ]]; then

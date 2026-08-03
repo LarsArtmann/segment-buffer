@@ -47,6 +47,7 @@ fn bench_stats(c: &mut Criterion) {
                 snapshot.next_sequence,
                 snapshot.head_sequence,
                 snapshot.approx_disk_bytes,
+                snapshot.segment_count,
                 snapshot.max_size_bytes,
                 snapshot.store_pressure,
             ))

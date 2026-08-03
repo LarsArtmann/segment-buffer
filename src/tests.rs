@@ -1869,6 +1869,7 @@ fn debug_impl_formats_cleanly() {
         "head_sequence",
         "next_sequence",
         "approx_disk_bytes",
+        "segment_count",
         "max_size_bytes",
         "store_pressure",
     ] {
@@ -2246,7 +2247,163 @@ fn sync_disk_bytes_recovers_after_external_truncation() {
 }
 
 // =========================================================================
-// Throughput stress test — 8 writers × 2 readers, measures events/sec
+// Live segment_count in BufferStats — tracks the on-disk segment file count
+// incrementally alongside approx_disk_bytes.
+// =========================================================================
+
+/// Helper: count `.zst` segment files actually on disk.
+fn count_disk_segments(dir: &Path) -> u64 {
+    fs::read_dir(dir)
+        .expect("read_dir")
+        .filter_map(std::result::Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .ends_with(".zst")
+        })
+        .count() as u64
+}
+
+#[test]
+fn segment_count_zero_on_fresh_buffer() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    assert_eq!(buf.stats().segment_count, 0, "fresh buffer must report 0 segments");
+}
+
+#[test]
+fn segment_count_increments_on_flush() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    assert_eq!(
+        buf.stats().segment_count,
+        1,
+        "one flush must produce exactly one segment in the live count"
+    );
+    assert_eq!(
+        count_disk_segments(tmp.path()),
+        1,
+        "live count must match actual disk file count"
+    );
+}
+
+#[test]
+fn segment_count_tracks_multiple_flushes() {
+    let tmp = TempDir::new().unwrap();
+    let config = SegmentConfig {
+        flush_policy: FlushPolicy::Manual,
+        ..test_config(1024 * 1024)
+    };
+    let buf = SegmentBuffer::open(tmp.path(), config).unwrap();
+
+    for round in 1..=5u64 {
+        for i in 0..3u64 {
+            buf.append(test_item(round * 10 + i)).unwrap();
+        }
+        buf.flush().unwrap();
+        assert_eq!(
+            buf.stats().segment_count,
+            round,
+            "after {round} flushes the live segment_count must be {round}"
+        );
+        assert_eq!(
+            count_disk_segments(tmp.path()),
+            round,
+            "live count must match disk after {round} flushes"
+        );
+    }
+}
+
+#[test]
+fn segment_count_decrements_on_delete_acked() {
+    let tmp = TempDir::new().unwrap();
+    let config = SegmentConfig {
+        flush_policy: FlushPolicy::Manual,
+        ..test_config(1024 * 1024)
+    };
+    let buf = SegmentBuffer::open(tmp.path(), config).unwrap();
+
+    // Three independent segments: [0..=0], [1..=1], [2..=2].
+    buf.append(test_item(0)).unwrap();
+    buf.flush().unwrap();
+    buf.append(test_item(1)).unwrap();
+    buf.flush().unwrap();
+    buf.append(test_item(2)).unwrap();
+    buf.flush().unwrap();
+    assert_eq!(buf.stats().segment_count, 3);
+
+    // Ack seq 0 → removes one segment.
+    let removed = buf.delete_acked(0).unwrap();
+    assert_eq!(removed, 1);
+    assert_eq!(buf.stats().segment_count, 2);
+    assert_eq!(count_disk_segments(tmp.path()), 2);
+
+    // Ack seq 2 → removes both remaining.
+    let removed = buf.delete_acked(2).unwrap();
+    assert_eq!(removed, 2);
+    assert_eq!(buf.stats().segment_count, 0);
+    assert_eq!(count_disk_segments(tmp.path()), 0);
+}
+
+#[test]
+fn segment_count_recalibrated_by_sync_disk_bytes() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    buf.append(test_item(0)).unwrap();
+    buf.append(test_item(1)).unwrap();
+    buf.flush().unwrap();
+    assert_eq!(buf.stats().segment_count, 1);
+
+    // Simulate an external process removing the segment file behind the buffer.
+    for entry in fs::read_dir(tmp.path()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "zst") {
+            fs::remove_file(&path).unwrap();
+        }
+    }
+
+    let _synced = buf.sync_disk_bytes().unwrap();
+    assert_eq!(
+        buf.stats().segment_count,
+        0,
+        "sync_disk_bytes must recalibrate segment_count to the directory reality"
+    );
+}
+
+#[test]
+fn segment_count_recovered_on_reopen() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+
+    // First instance: write and flush two segments.
+    {
+        let config = SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        };
+        let buf: TestBuffer = SegmentBuffer::open(dir, config).unwrap();
+        buf.append(test_item(0)).unwrap();
+        buf.flush().unwrap();
+        buf.append(test_item(1)).unwrap();
+        buf.flush().unwrap();
+        assert_eq!(buf.stats().segment_count, 2);
+    }
+
+    // Re-open: recovery must restore the live segment_count.
+    let (buf, report) =
+        SegmentBuffer::<TestItem>::open_with_report(dir, test_config(1024 * 1024)).unwrap();
+    assert_eq!(report.segment_count, 2, "recovery report snapshot");
+    assert_eq!(
+        buf.stats().segment_count, 2,
+        "live segment_count must match recovery report right after open"
+    );
+}
+
+
 // under contention. Verifies correctness (all items readable) AND reports
 // a throughput number so perf regressions show up in test output.
 // =========================================================================
