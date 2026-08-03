@@ -2256,11 +2256,7 @@ fn count_disk_segments(dir: &Path) -> u64 {
     fs::read_dir(dir)
         .expect("read_dir")
         .filter_map(std::result::Result::ok)
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .ends_with(".zst")
-        })
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
         .count() as u64
 }
 
@@ -2268,7 +2264,11 @@ fn count_disk_segments(dir: &Path) -> u64 {
 fn segment_count_zero_on_fresh_buffer() {
     let tmp = TempDir::new().unwrap();
     let buf = test_buffer(tmp.path());
-    assert_eq!(buf.stats().segment_count, 0, "fresh buffer must report 0 segments");
+    assert_eq!(
+        buf.stats().segment_count,
+        0,
+        "fresh buffer must report 0 segments"
+    );
 }
 
 #[test]
@@ -2398,11 +2398,11 @@ fn segment_count_recovered_on_reopen() {
         SegmentBuffer::<TestItem>::open_with_report(dir, test_config(1024 * 1024)).unwrap();
     assert_eq!(report.segment_count, 2, "recovery report snapshot");
     assert_eq!(
-        buf.stats().segment_count, 2,
+        buf.stats().segment_count,
+        2,
         "live segment_count must match recovery report right after open"
     );
 }
-
 
 // under contention. Verifies correctness (all items readable) AND reports
 // a throughput number so perf regressions show up in test output.

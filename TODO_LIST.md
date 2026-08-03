@@ -13,21 +13,32 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## Testing
 
-- `[ ]` **Deterministic Barrier-based regression test for the scan-cache
+- `[x]` **Deterministic Barrier-based regression test for the scan-cache
   TOCTOU.** The scan-cache mtime-ordering fix (`dc7ea7a`) is validated 40×
   in release but not via a deterministic `std::sync::Barrier` test that
   forces the exact `scan → rename → scan-returns-stale` interleaving. A
   deterministic test _proves_ the fix rather than _supporting_ it. Effort:
   ~2h. Source: `docs/status/2026-08-02_15-50_scan-cache-toctou-fix-and-gate.md`
   item b.1.
+  **Done (2026-08-03):** `scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename`
+  in `src/tests.rs` uses a `HookedStore` wrapping `RealStore` with two
+  `std::sync::Barrier` sync points to force the exact interleaving.
+  Verified by temporarily reverting the fix: the test fails (10 items
+  instead of 11), confirming it catches the regression.
 
-- `[ ]` **Loom coverage for `scan_segments`.** The 9 loom tests cover the
+- `[x]` **Loom coverage for `scan_segments`.** The 9 loom tests cover the
   in-memory hot path and the `delete_acked` + `append` interleaving, but
   none exercise the scan cache. The `MockStore` injected via
   `open_with_store` could in principle stub `scan()` to return a controlled
   segment list, making the cache populate/invalidate interleaving
   exhaustively checkable. Effort: investigation + ~3h if tractable. Source:
   `docs/status/2026-08-02_15-50_scan-cache-toctou-fix-and-gate.md` item b.1.
+  **Done (2026-08-03):** Two new loom tests in `tests/loom.rs`:
+  `read_from_concurrent_flush_scan_cache_no_corruption` and
+  `read_from_concurrent_delete_acked_scan_cache_no_corruption`.
+  These are the first loom tests to exercise `read_from` (the scan-cache
+  populate path) under concurrent mutation. Loom count is now 11 (was 9).
+  Tractable: ~220s total for the full loom suite.
 
 ---
 
@@ -40,7 +51,7 @@ Status legend: `[ ]` pending · `[~]` in progress.
   regressions. _Standing item._ Effort: ~15min. _(User action — requires a
   browser, not a code change.)_
 
-- `[ ]` **Wire `check-changelog-links.sh` into `scripts/verify-gate.sh`.**
+- `[x]` **Wire `check-changelog-links.sh` into `scripts/verify-gate.sh`.**
   The script exists (`scripts/check-changelog-links.sh`) but is not part
   of the automated gate. A check that isn't wired into the gate rots.
   Effort: ~10min.
@@ -49,15 +60,13 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## Features
 
-- `[ ]` **Live segment count in `BufferStats`.** `RecoveryReport` has
+- `[x]` **Live segment count in `BufferStats`.** ~~`RecoveryReport` has
   `segment_count` (a one-time snapshot from the open-time scan, already stale
   by the time the caller reads it); `BufferStats` (the live `stats()`
-  snapshot) does not. Adding a `segment_count: u64` field tracked alongside
-  `approx_disk_bytes` (increment on flush, decrement on `delete_acked`) gives
-  callers a live count without a directory scan. `BufferStats` is already
-  `#[non_exhaustive]`, so the field addition is a non-breaking change. Effort:
-  ~1h. Source: moved from ROADMAP.md (not blocked on format change or missing
-  consumer).
+  snapshot) does not.~~ **DONE (unreleased):** `BufferStats` now carries a
+  `segment_count: u64` field tracked alongside `approx_disk_bytes`
+  (increment on flush, decrement on `delete_acked`, recalibrate in `recover`
+  and `sync_disk_bytes`). Non-breaking (`#[non_exhaustive]`).
 
 - `[ ]` **Per-segment size distribution for tuning.** A size summary (e.g.
   p50/p90/max segment size) would help callers tune `FlushPolicy::Batch(N)`

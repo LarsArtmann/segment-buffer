@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deterministic Barrier-based regression test for the scan-cache TOCTOU**
+  (`src/tests.rs`): `scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename`
+  forces the exact `scan → rename → scan-returns-stale` interleaving via a
+  `HookedStore` wrapping `RealStore` with two `std::sync::Barrier` sync points.
+  No `thread::sleep`, no retry loop — deterministic. Verified by temporarily
+  reverting the fix: the test fails (10 items instead of 11), confirming it
+  catches the regression.
+
+- **Loom coverage for `scan_segments`** (`tests/loom.rs`): two new loom tests
+  (`read_from_concurrent_flush_scan_cache_no_corruption` and
+  `read_from_concurrent_delete_acked_scan_cache_no_corruption`) — the first
+  loom tests to exercise `read_from` (the scan-cache populate path) under
+  concurrent mutation. Loom count is now 11 (was 9). Proves no deadlocks, no
+  panics, data integrity, and eventual consistency across every interleaving
+  of the scan-cache populate/invalidate surface.
+
+- **Live `segment_count` in `BufferStats`** (`src/lib.rs`): a new
+  `segment_count: u64` field tracked incrementally alongside
+  `approx_disk_bytes` — incremented on `flush`, decremented on
+  `delete_acked`, recalibrated by `recover` and `sync_disk_bytes`. Gives
+  callers a live on-disk segment-file count without a directory scan, unlike
+  the one-time `RecoveryReport::segment_count` snapshot. Non-breaking:
+  `BufferStats` is `#[non_exhaustive]`.
+
 - **`Display` impl for `FlushPolicy`** (`src/lib.rs`): human-readable output for
   all variants (`batch(256)`, `interval(5s)`, `batch_or_interval_min(batch=256,
 min=10, interval=5s, max=60s)`, `manual`). Stable format for log-scraping.
