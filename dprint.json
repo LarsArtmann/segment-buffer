@@ -1,0 +1,14 @@
+{
+  "json": {},
+  "excludes": [
+    "**/target/**",
+    "**/.git/**",
+    "**/*-lock.json",
+    "**/Cargo.lock",
+    "**/flake.lock",
+    "**/proptest-regressions/**",
+    "**/Cargo.toml",
+    "**/*.md"
+  ],
+  "plugins": ["https://plugins.dprint.dev/json-0.23.0.wasm"]
+}

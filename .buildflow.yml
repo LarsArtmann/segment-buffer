@@ -1,0 +1,8 @@
+# buildflow configuration for segment-buffer
+#
+# markdown-format (dprint) is skipped because prettier-format already handles
+# Markdown formatting and passes. dprint's markdown formatter produces large
+# diffs (line reflow, table re-alignment) that conflict with the project's
+# manual writing style. JSON formatting via dprint is kept (json-format step).
+skip_steps:
+  - markdown-format
