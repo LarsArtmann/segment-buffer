@@ -76,6 +76,13 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
 
 - **CHANGELOG link-validation script** (`scripts/check-changelog-links.sh`):
   validates that every GitHub tag URL in CHANGELOG.md points to a real tag.
+  Wired into `scripts/verify-gate.sh` (with `--no-changelog-links` skip
+  flag for offline runs).
+
+- **`curl` in the Nix devShell** (`flake.nix`): `check-changelog-links.sh`
+  uses curl for GitHub API tag validation. Added to `devShells.default`
+  `buildInputs` so the gate runs reproducibly under `nix develop` without
+  relying on a system curl.
 
 - **Cargo.lock drift check in CI** (`.github/workflows/ci.yml`):
   `cargo fetch --locked` step catches unintended transitive dep bumps.
@@ -152,6 +159,17 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   new `read_from_invariant_under_concurrent_flush` property test. (Effective on
   filesystems where `mtime` advances; the `mtime_supported == false` path still
   relies solely on explicit invalidation.)
+
+- **`MAPFILE` → `mapfile` bug in `check-changelog-links.sh`**: the script used
+  uppercase `MAPFILE`, which is not recognized as a builtin on GNU bash 5.x.
+  The script would have always failed with `command not found` — it was dead
+  code that had never run successfully before being wired into the gate.
+
+- **`HEAD` tag skip in `check-changelog-links.sh`**: the `[Unreleased]` compare
+  link uses `v0.5.4...HEAD` per Keep-a-Changelog convention. `HEAD` resolves
+  to the default-branch tip on GitHub but 404s on the tag-ref API. The script
+  now skips `HEAD` refs, preventing a false failure on every run with
+  unreleased changes.
 
 ### Documentation
 

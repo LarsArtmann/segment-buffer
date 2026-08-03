@@ -122,7 +122,7 @@ Nothing catastrophically broken. But the self-review found real gaps (see below)
 
 ### Immediate (this feature — polish)
 
-1. Update AGENTS.md data-flow diagram to include `segment_count += 1` alongside `approx_disk_bytes += len`.
+1. ~~Update AGENTS.md data-flow diagram to include `segment_count += 1` alongside `approx_disk_bytes += len`.~~ done in docs-health pass (AGENTS.md data-flow diagram now shows `approx_disk_bytes += len; segment_count += 1`)
 2. Add a property test: arbitrary `flush` + `delete_acked` sequences → `stats().segment_count` always matches `count_disk_segments(dir)`.
 3. Add a loom test: concurrent `flush + delete_acked` → `segment_count` never underflows past 0 (or document that it can momentarily and `sync_disk_bytes` recalibrates).
 4. Document the `segment_count` underflow contract (can momentarily overshoot to a huge value if external deletion races; `sync_disk_bytes` recalibrates).
@@ -135,8 +135,8 @@ Nothing catastrophically broken. But the self-review found real gaps (see below)
 8. Release `v0.6.0` (or `v0.5.5` if semver-minor) with the `segment_count` field. `BufferStats` is `#[non_exhaustive]` so it's non-breaking, but the feature is user-visible.
 9. Update `docs/DOMAIN_LANGUAGE.md` if it references `BufferStats` field semantics.
 10. Consider adding `segment_count` to the `backpressure` example to showcase live segment monitoring.
-11. Wire `check-changelog-links.sh` into `scripts/verify-gate.sh` (existing TODO_LIST item).
-12. Run the `docs-health` skill to catch any remaining doc drift from this change.
+11. ~~Wire `check-changelog-links.sh` into `scripts/verify-gate.sh` (existing TODO_LIST item).~~ done at `47b31cd` (already wired before this report was written; TODO_LIST item marked [x])
+12. ~~Run the `docs-health` skill to catch any remaining doc drift from this change.~~ done (this is the docs-health pass that resolved items f.1, f.11, and fixed the loom count, unit test count, and scan-cache coverage claims across AGENTS.md and FEATURES.md)
 13. Run the `brutal-self-review` skill on the full codebase for a deeper audit.
 
 ### Medium-term (next few releases)
@@ -194,3 +194,15 @@ Nothing catastrophically broken. But the self-review found real gaps (see below)
 2. **Should we release this as `v0.5.5` (minor) or wait and bundle with other work into `v0.6.0`?** The field addition is non-breaking (`#[non_exhaustive]`), but it is a user-visible new capability. The current `Cargo.toml` version is `0.5.4`. The release runbook requires CI-green verification and a soak period — when do you want to ship?
 
 3. **Should I add a standalone `pub fn segment_count(&self) -> u64` accessor**, or is `stats().segment_count` sufficient? The crate already has standalone accessors for `pending_count`, `latest_sequence`, `store_pressure` — but those predate `stats()` or serve hot-path callers. Adding `segment_count()` would follow the pattern but increase API surface.
+
+---
+
+## Resolution (2026-08-04)
+
+| Item | Claim in report | Resolution | Commit | Release |
+| ---- | --------------- | ---------- | ------ | ------- |
+| f.1  | Update AGENTS.md data-flow diagram for `segment_count` | DONE: data-flow now shows `approx_disk_bytes += len; segment_count += 1` | docs-health pass | unreleased |
+| f.11 | Wire check-changelog-links.sh into verify-gate.sh | DONE: already wired before this report (TODO_LIST marked [x]) | `47b31cd` | unreleased |
+| f.12 | Run the docs-health skill to catch remaining drift | DONE: this is that pass — loom count (9→11), unit test count (95→102), read_from coverage, segment_count in data-flow, curl in devShell all corrected | docs-health pass | unreleased |
+
+**Still open:** f.2 (property test for arbitrary flush+delete_acked → segment_count matches disk), f.3 (loom test for segment_count consistency), f.4 (document segment_count underflow contract), f.5 (run verify-gate.sh), f.6 (check CI green), f.7 (segment_count assertion in append_all test), f.8–10 (release, DOMAIN_LANGUAGE, backpressure example), f.13–50 (medium-term and background backlog). g.1–3 (type decision, release timing, standalone accessor) are user decisions.

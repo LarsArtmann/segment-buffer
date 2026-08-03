@@ -215,11 +215,11 @@ deliverable — the test passing is just the check.
 
 ### Correctness (HIGH)
 
-1. **Update `tests/loom.rs` module doc** (lines 1–53) to reflect the new
+1. ~~**Update `tests/loom.rs` module doc** (lines 1–53) to reflect the new
    `read_from` coverage. The "What this does NOT cover" section is now
-   partially wrong.
-2. **Update AGENTS.md loom section** (line ~309): 9 → 11 tests, add
-   `read_from` scan-cache coverage description.
+   partially wrong.~~ done in docs-health pass (module doc now states `read_from` IS covered by the two scan-cache tests; only `flush` encode pipeline and `recover` remain uncovered)
+2. ~~**Update AGENTS.md loom section** (line ~309): 9 → 11 tests, add
+   `read_from` scan-cache coverage description.~~ done in docs-health pass (AGENTS.md now says "11 tests" and describes the scan-cache populate path coverage)
 3. **Investigate whether a pre-encoded MockStore** (storing pre-encoded
    CBOR+zstd bytes, skipping the encode pipeline) would reduce loom
    runtime without losing schedule fidelity. If the encode is the bottleneck,
@@ -342,3 +342,15 @@ the canonical script), the empty-message commit was ignored, nothing has
 been pushed to CI, and the loom tests prove a different invariant than the
 one the TOCTOU fix addresses. The work is real; the rigor around "done" is
 still short of the bar.
+
+---
+
+## Resolution (2026-08-04)
+
+| Item | Claim in report | Resolution | Commit | Release |
+| ---- | --------------- | ---------- | ------ | ------- |
+| f.1  | Update `tests/loom.rs` module doc — `read_from` coverage claim stale | DONE: module doc now states `read_from` IS covered | docs-health pass | unreleased |
+| f.2  | Update AGENTS.md loom section — 9→11 tests, add scan-cache coverage | DONE: AGENTS.md says \"11 tests\", describes scan-cache populate coverage | docs-health pass | unreleased |
+| f.17 | Update AGENTS.md \"read_from race windows\" Tests section to mention Barrier test + loom tests | DONE: section now mentions the deterministic Barrier test and the two loom scan-cache tests | docs-health pass | unreleased |
+
+**Still open:** f.3 (investigate pre-encoded MockStore for loom runtime), f.4 (loom test for scan_segments + recover interleaving), f.5 (mtime_supported == false gap — in TODO_LIST), f.6 (run verify-gate.sh end-to-end), f.7 (push commits — user decision), f.8 (empty-message commit b149bfa), f.9 (cargo clippy --features fuzz), f.10–16 (test quality improvements), f.18–20 (CHANGELOG/DOMAIN_LANGUAGE updates), f.21–33 (broader backlog).

@@ -11,34 +11,93 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ---
 
+## Gate & CI
+
+- `[ ]` **Add `check-changelog-links.sh` to `.github/workflows/ci.yml`.** The
+  script is wired into the local `scripts/verify-gate.sh` gate but CI does
+  not run it — a split brain where the local gate is stricter than CI. If a
+  CHANGELOG link breaks, CI stays green and the breakage ships. Effort:
+  ~15min (add a job step mirroring the local gate block). Source:
+  `docs/status/2026-08-04_00-07_changelog-links-gate-wiring-and-self-review.md`
+  item f.2.
+
+- `[ ]` **Add `set -euo pipefail` to `scripts/verify-gate.sh`.** The
+  orchestrator currently uses only `set -u`; the sub-scripts already use
+  `pipefail`. A silently failing pipeline in the orchestrator could mask
+  errors. Effort: ~5min (verify no intentional non-zero exits break under
+  `set -e`). Source: `docs/status/2026-08-04_00-07_*` item f.16.
+
+- `[ ]` **Audit all `scripts/*.sh` for the `MAPFILE` vs `mapfile` issue.**
+  `check-changelog-links.sh` had uppercase `MAPFILE` (not a builtin on this
+  bash build) — dead code that had never run. If one script had it, others
+  might too. Effort: ~10min. Source: `docs/status/2026-08-04_00-07_*` item
+  f.9.
+
+- `[ ]` **Make the `sed -n '2,NNp'` help-range in `verify-gate.sh`
+  self-maintaining.** The `--help` output hardcodes a line-number range
+  (`2,22p`) that drifts on every header edit. Compute the range dynamically
+  from the header delimiter instead. Effort: ~15min. Source:
+  `docs/status/2026-08-04_00-07_*` item f.10.
+
+---
+
 ## Testing
 
-- `[x]` **Deterministic Barrier-based regression test for the scan-cache
-  TOCTOU.** The scan-cache mtime-ordering fix (`dc7ea7a`) is validated 40×
-  in release but not via a deterministic `std::sync::Barrier` test that
-  forces the exact `scan → rename → scan-returns-stale` interleaving. A
-  deterministic test _proves_ the fix rather than _supporting_ it. Effort:
-  ~2h. Source: `docs/status/2026-08-02_15-50_scan-cache-toctou-fix-and-gate.md`
-  item b.1.
-  **Done (2026-08-03):** `scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename`
-  in `src/tests.rs` uses a `HookedStore` wrapping `RealStore` with two
-  `std::sync::Barrier` sync points to force the exact interleaving.
-  Verified by temporarily reverting the fix: the test fails (10 items
-  instead of 11), confirming it catches the regression.
+- `[ ]` **Property test: arbitrary `flush` + `delete_acked` sequences →
+  `stats().segment_count` always matches `count_disk_segments(dir)`.** The
+  extended `sync_disk_bytes_matches_actual_disk_usage` property test checks
+  reconciliation after sync, but no property test exercises the incremental
+  counter across arbitrary flush/delete interleavings. Effort: ~1h. Source:
+  `docs/status/2026-08-04_00-20_*` item f.2.
 
-- `[x]` **Loom coverage for `scan_segments`.** The 9 loom tests cover the
-  in-memory hot path and the `delete_acked` + `append` interleaving, but
-  none exercise the scan cache. The `MockStore` injected via
-  `open_with_store` could in principle stub `scan()` to return a controlled
-  segment list, making the cache populate/invalidate interleaving
-  exhaustively checkable. Effort: investigation + ~3h if tractable. Source:
-  `docs/status/2026-08-02_15-50_scan-cache-toctou-fix-and-gate.md` item b.1.
-  **Done (2026-08-03):** Two new loom tests in `tests/loom.rs`:
-  `read_from_concurrent_flush_scan_cache_no_corruption` and
-  `read_from_concurrent_delete_acked_scan_cache_no_corruption`.
-  These are the first loom tests to exercise `read_from` (the scan-cache
-  populate path) under concurrent mutation. Loom count is now 11 (was 9).
-  Tractable: ~220s total for the full loom suite.
+- `[ ]` **Loom test: `segment_count` consistency under concurrent `flush` +
+  `delete_acked`.** The atomic is `Relaxed`-ordered (correct for an
+  approximate metric), but a concurrent flush+delete could produce a
+  momentary `segment_count` that doesn't match disk. Prove it never
+  underflows past 0, or document that it can momentarily and
+  `sync_disk_bytes` recalibrates. Effort: ~2h. Source:
+  `docs/status/2026-08-04_00-20_*` item f.3.
+
+- `[ ]` **Document the `segment_count` underflow contract.** If
+  `delete_acked` is called when files have been externally removed (so
+  `deleted` > actual segment_count atomic value), `fetch_sub` wraps to a
+  huge `u64`. The code is self-healing via `sync_disk_bytes`, but the
+  underflow behavior should be documented in the field's doc comment.
+  Effort: ~15min. Source: `docs/status/2026-08-04_00-20_*` item f.4.
+
+- `[ ]` **`segment_count` assertion in the `append_all` auto-flush test.**
+  `append_all` calls `flush()` internally when the threshold is crossed, so
+  it goes through the same `fetch_add(1)` codepath — but no test explicitly
+  asserts `segment_count` after an `append_all`-triggered auto-flush.
+  Effort: ~10min. Source: `docs/status/2026-08-04_00-20_*` item f.7.
+
+- `[ ]` **Clean up the `read_from_concurrent_delete_acked` loom test
+  sentinel.** The final assertion uses `id: 99` as a cache-invalidation
+  sentinel but doesn't filter it from the assertion — the test data is
+  slightly messy. Filter it or use a non-item invalidation mechanism.
+  Effort: ~15min. Source: `docs/status/2026-08-04_00-13_*` item f.10.
+
+- `[ ]` **Investigate pre-encoded `MockStore` for loom runtime
+  optimization.** The loom suite doubled to ~220s after adding `read_from`
+  tests (CBOR+zstd decode per schedule step). A `MockStore` that stores
+  pre-encoded bytes and skips the encode pipeline might cut the cost to
+  ~120s without losing schedule fidelity. Effort: investigation + ~2h if
+  tractable. Source: `docs/status/2026-08-04_00-13_*` item f.3.
+
+- `[ ]` **Loom test for `scan_segments` + `recover` interleaving.** Recovery
+  seeds the cache directly; if a concurrent `read_from` sees the
+  pre-recovery cache state, it could serve stale data. Not yet covered.
+  Effort: ~2h. Source: `docs/status/2026-08-04_00-13_*` item f.4.
+
+- `[ ]` **Property test for `for_each_from` under concurrent `flush`.** The
+  lending iterator has the same Phase 1/Phase 2 gap as `read_from` but a
+  different code path. Effort: ~1h. Source: `docs/status/2026-08-04_00-13_*`
+  item f.14.
+
+- `[ ]` **Concurrent property test for `delete_acked + flush`
+  interleaving.** Both mutations racing the reader at once (currently only
+  single-mutation races are property-tested). Effort: ~1h. Source:
+  `docs/status/2026-08-04_00-13_*` item f.15.
 
 ---
 
@@ -51,22 +110,9 @@ Status legend: `[ ]` pending · `[~]` in progress.
   regressions. _Standing item._ Effort: ~15min. _(User action — requires a
   browser, not a code change.)_
 
-- `[x]` **Wire `check-changelog-links.sh` into `scripts/verify-gate.sh`.**
-  The script exists (`scripts/check-changelog-links.sh`) but is not part
-  of the automated gate. A check that isn't wired into the gate rots.
-  Effort: ~10min.
-
 ---
 
 ## Features
-
-- `[x]` **Live segment count in `BufferStats`.** ~~`RecoveryReport` has
-  `segment_count` (a one-time snapshot from the open-time scan, already stale
-  by the time the caller reads it); `BufferStats` (the live `stats()`
-  snapshot) does not.~~ **DONE (unreleased):** `BufferStats` now carries a
-  `segment_count: u64` field tracked alongside `approx_disk_bytes`
-  (increment on flush, decrement on `delete_acked`, recalibrate in `recover`
-  and `sync_disk_bytes`). Non-breaking (`#[non_exhaustive]`).
 
 - `[ ]` **Per-segment size distribution for tuning.** A size summary (e.g.
   p50/p90/max segment size) would help callers tune `FlushPolicy::Batch(N)`
@@ -115,6 +161,13 @@ Status legend: `[ ]` pending · `[~]` in progress.
   question:** invest in a second validation mechanism for that path, or
   formally accept the documented limitation? **Un-defer when:** a consumer
   reports operating on a filesystem where `mtime_supported == false`.
+
+- `[ ]` **`segment_count` type consistency: `u64` vs `usize`.**
+  `BufferStats::segment_count` is `u64` (matching `approx_disk_bytes`);
+  `RecoveryReport::segment_count` is `usize`. Both are correct for their
+  context, but the inconsistency should be noted and either documented or
+  reconciled. **Un-defer when:** the next release that touches either
+  struct. Source: `docs/status/2026-08-04_00-20_*` item g.1.
 
 ---
 
