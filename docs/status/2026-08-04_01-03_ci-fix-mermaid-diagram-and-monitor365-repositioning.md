@@ -23,16 +23,16 @@
 
 **Verification performed:**
 
-| Check | Command | Result |
-|-------|---------|--------|
-| Clippy (stable, default) | `cargo clippy --all-targets -- -D warnings` | PASS |
-| Clippy (stable, encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | PASS |
-| Clippy (MSRV 1.86, default) | `nix develop .#msrv -c cargo clippy --all-targets -- -D warnings` | PASS |
-| Clippy (MSRV 1.86, encryption) | `nix develop .#msrv -c cargo clippy --all-targets --features encryption -- -D warnings` | PASS |
-| Fmt | `cargo fmt --all -- --check` | PASS |
-| Tests | `cargo test --no-fail-fast --features encryption` | 39 doctests PASS |
-| Loom | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 12 tests PASS |
-| Doc build | `cargo doc --no-deps --features encryption` | PASS (1 warning: `private_intra_doc_links`) |
+| Check                          | Command                                                                                 | Result                                      |
+| ------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Clippy (stable, default)       | `cargo clippy --all-targets -- -D warnings`                                             | PASS                                        |
+| Clippy (stable, encryption)    | `cargo clippy --all-targets --features encryption -- -D warnings`                       | PASS                                        |
+| Clippy (MSRV 1.86, default)    | `nix develop .#msrv -c cargo clippy --all-targets -- -D warnings`                       | PASS                                        |
+| Clippy (MSRV 1.86, encryption) | `nix develop .#msrv -c cargo clippy --all-targets --features encryption -- -D warnings` | PASS                                        |
+| Fmt                            | `cargo fmt --all -- --check`                                                            | PASS                                        |
+| Tests                          | `cargo test --no-fail-fast --features encryption`                                       | 39 doctests PASS                            |
+| Loom                           | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`               | 12 tests PASS                               |
+| Doc build                      | `cargo doc --no-deps --features encryption`                                             | PASS (1 warning: `private_intra_doc_links`) |
 
 ### 2. "Extracted from monitor365" line repositioned
 
@@ -41,7 +41,7 @@ Removed from the prominent position directly under the tagline (line 12). Added 
 ```markdown
 ---
 
-*Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private), proven on 597M+ events.*
+_Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private), proven on 597M+ events._
 
 ## License
 ```

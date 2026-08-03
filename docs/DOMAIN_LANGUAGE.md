@@ -105,7 +105,8 @@ Always called from inside the lock-take boundary, but file I/O happens
 up to `limit` items starting at seq `start`, in ascending seq order, from
 on-disk segments + in-memory `unflushed`. Items are **cloned** out; this is
 the documented cost of the cloning iterator API. See also
-[`for_each_from`](#for_each_from) for the zero-copy lending alternative.
+[`for_each_from`](#for_each_from) for the callback-style alternative
+(avoid the returned `Vec<T>` allocation).
 
 ### `for_each_from`
 
@@ -242,8 +243,8 @@ inject an in-memory store.
 Owned-item iterator yielded by `SegmentBuffer::iter_from(start, limit)`.
 Returns `(seq, item)` pairs; works with standard `Iterator` combinators
 (`.take`, `.filter`, `.map`) and the `for` loop. Materialises up to `limit`
-items eagerly. The existing `for_each_from` lending iterator stays for the
-zero-copy in-memory tail path.
+items eagerly. The existing `for_each_from` callback iterator stays for
+callback-style consumption (marginally cheaper: no returned `Vec<T>` to drop).
 
 ## `IoSite` (since v0.5.0)
 
