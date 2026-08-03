@@ -2104,13 +2104,16 @@ fn for_each_from_allows_reentrant_mutation() {
     // effects). The snapshot taken before the callbacks is unaffected by the
     // re-entrant appends, so the visited count stays at the original 3.
     let tmp = TempDir::new().unwrap();
-    let buf = Arc::new(SegmentBuffer::open(
-        tmp.path(),
-        SegmentConfig {
-            flush_policy: FlushPolicy::Manual,
-            ..test_config(1024 * 1024)
-        },
-    ).unwrap());
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                ..test_config(1024 * 1024)
+            },
+        )
+        .unwrap(),
+    );
     for i in 0..3 {
         buf.append(test_item(i)).unwrap();
     }

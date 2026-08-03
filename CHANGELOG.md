@@ -108,6 +108,19 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
 
 ### Changed
 
+- **Panic-free public API: re-entrancy deadlock eliminated at the root**
+  (`src/lib.rs`): `for_each_from` no longer holds the buffer mutex across the
+  user callback — in-memory pending items are snapshotted under the lock, then
+  the lock is released before the callback runs. This removes the only panic
+  path in the library: the `assert_not_reentered` guard, the
+  `iteration_in_progress` flag, and the `IterationGuard` RAII type are deleted.
+  Re-entrant calls from inside a `for_each_from` callback (`append`, `stats`,
+  `delete_acked`, ...) are now safe instead of panicking. The public API is now
+  provably panic-free with no qualifications. No on-disk format change; no API
+  signature change. The Phase 2 clone is bounded by `limit`, not the whole
+  backlog. Three tests in `src/tests.rs` cover the new behaviour (re-entrant
+  reads, re-entrant mutation, buffer-usable-after-panicking-callback).
+
 - **Strict Clippy lint architecture** (`Cargo.toml`, `src/lib.rs`): a
   declarative `[lints.clippy]` section in `Cargo.toml` denies `pedantic` +
   `nursery` + restriction lints (`as_conversions`, `arithmetic_side_effects`,
@@ -118,8 +131,7 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   documentation of the library-only panic-prevention surface. Test, bench, and
   example modules carry `#![allow(...)]` overrides so assertions stay direct.
   Library code is fully clippy-clean under the entire strict set — provably
-  panic-free on every public API path (the only panic is the documented
-  `for_each_from` re-entrancy guard). Inspired by namtao's "Strict Lints"
+  panic-free on every public API path. Inspired by namtao's "Strict Lints"
   philosophy.
 
 - **`cargo-nextest` in the default Nix devShell** (`flake.nix`): faster and

@@ -111,10 +111,12 @@ the documented cost of the cloning iterator API. See also
 
 `fn for_each_from(&self, start: u64, limit: usize, F: FnMut(u64, &T))` —
 lending-iterator variant of [`read_from`](#read_from). Visits the same items
-in the same order, but borrows them from the buffer's internal storage
-instead of cloning. Holds the mutex across the callback `F`, so re-entering
-the buffer from inside `F` panics (the re-entrancy guard converts a silent
-deadlock into a loud failure).
+in the same order, borrowing on-disk items from a per-segment decode buffer
+and in-memory items from a snapshot taken under the lock. The buffer mutex is
+**never held across the callback `F`** — the in-memory window is snapshotted
+under the lock, then the lock is released before `F` runs — so re-entering the
+buffer from inside `F` (e.g. `append`, `stats`, `delete_acked`) is safe and
+cannot deadlock. This is what makes the public API panic-free.
 
 ### `delete_acked`
 

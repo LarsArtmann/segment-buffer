@@ -213,6 +213,18 @@ in-memory tail. `delete_acked(seq)` removes every segment whose `end <= seq` and
 advances `head_seq`. Crash recovery is just: delete `.tmp` debris, parse the
 remaining filenames. No WAL, no metadata database.
 
+## Guarantees
+
+- **Panic-free public API.** No public method calls `panic!`, `unwrap`, `expect`,
+  direct indexing, or string slicing — enforced in CI by `pedantic` + `nursery` +
+  restriction Clippy lints at `deny`. `for_each_from` never holds the mutex across
+  the user callback (pending items are snapshotted under the lock then released),
+  so re-entrant calls are safe and cannot deadlock.
+- **At-least-once delivery** — `delete_acked(seq)` is the commit point; the
+  server owns idempotency.
+- **Single-process per directory** — enforced by an exclusive `flock` at `open`.
+- **Crash recovery by filename** — no WAL, no metadata database.
+
 ## Crash behavior (configurable)
 
 > **Shipped in v0.5.0.** The default remains `Segment` (today's behavior) for one release for backward compatibility; cloud-sync deployments should switch to `Throughput` once the cloud endpoint holds the durable copy. Pick the policy at construction: `SegmentConfig::builder().durability(DurabilityPolicy::Throughput).build()`.
@@ -261,10 +273,13 @@ broader documentation. See [CHANGELOG.md](CHANGELOG.md) for full release history
 see [FEATURES.md](FEATURES.md) for the capability inventory and
 [ROADMAP.md](ROADMAP.md) for long-term direction and explicit non-goals.
 
-**Unreleased (master):** strict Clippy lint adoption — two-tier panic-prevention
-architecture making library code provably panic-free. No API or on-disk format
-change. See the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md) for
-details.
+**Unreleased (master):** the public API is now **panic-free**.
+`for_each_from` no longer holds the buffer mutex across the user callback
+(pending items are snapshotted under the lock then released), so re-entrant
+calls are safe, the old re-entrancy panic guard is gone, and no public method
+calls `panic!`/`unwrap`/`expect`/indexing (enforced by the strict Clippy lint
+stack). No on-disk format change. See the `[Unreleased]` section of
+[CHANGELOG.md](CHANGELOG.md) for details.
 
 **Performance highlight:** the `append/batch_1` benchmark is roughly **2×
 faster** than the prior baseline on single-run criterion medians. See

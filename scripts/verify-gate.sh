@@ -20,7 +20,7 @@
 # without global installs. check-changelog-links.sh uses curl, which is
 # included in the Nix devShell `buildInputs` (see flake.nix).
 
-set -u
+set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -64,7 +64,11 @@ run() {
     printf '\nverify-gate: stopping at first failure (use --all to run every gate).\n' >&2
     exit "$rc"
   fi
-  return "$rc"
+  # Always return 0 here: the failure is already recorded in FAIL /
+  # FAILED_STEPS, and the trailing summary exits non-zero if anything failed.
+  # Returning the real rc would trip `set -e` and abort --all mode after the
+  # first failure instead of running every gate.
+  return 0
 }
 
 run "fmt"            cargo fmt --all -- --check

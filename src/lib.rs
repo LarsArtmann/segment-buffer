@@ -1461,6 +1461,7 @@ where
                     .take(remaining)
                     .cloned()
                     .collect();
+                drop(inner);
                 (base, window)
             };
             for (offset, event) in window.iter().enumerate() {
