@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`read_from_concurrent_flush_scan_cache_no_corruption` and
   `read_from_concurrent_delete_acked_scan_cache_no_corruption`) — the first
   loom tests to exercise `read_from` (the scan-cache populate path) under
-  concurrent mutation. Loom count is now 11 (was 9). Proves no deadlocks, no
+  concurrent mutation. Loom suite is now 12 tests (was 9). Proves no deadlocks, no
   panics, data integrity, and eventual consistency across every interleaving
   of the scan-cache populate/invalidate surface.
 

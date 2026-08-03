@@ -86,6 +86,13 @@ for the full layout, migration path, and trigger conditions.
   duplicate what `FlushPolicy::Manual` + a user timer already achieves. See
   `docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md` §
   "Addendum" for the full rationale.
+- **No health-check primitive.** All three candidate designs (`health()`
+  wrapping `stats()`, sentinel-file write, statfs/GetDiskFreeSpace) are
+  Verschlimmbessern: redundant, disk-harmful on a near-full filesystem, or a
+  platform dependency for something `store_pressure()` already approximates.
+  The canonical health check is `stats()` for pressure plus a trial
+  `append()` + explicit `flush()` to probe writability. Revisit if a real
+  deployment reports this is insufficient.
 
 ---
 

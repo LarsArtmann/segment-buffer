@@ -15,8 +15,10 @@ truth; this file tracks reality, not aspirations.
 > Unreleased items (strict Clippy lint migration, Display impl, edge-case tests,
 > fuzz target, publish.yml idempotency, consistency-model property tests,
 > scan-cache TOCTOU fix + deterministic Barrier regression test, loom
-> scan-cache coverage, live `segment_count` in `BufferStats`) are on `master`
-> but not yet tagged.
+> scan-cache coverage, live `segment_count` in `BufferStats`,
+> `segment_size_stats()`, panic-free re-entrancy in `for_each_from`,
+> `changelog-links` CI job, `verify-gate.sh` `set -euo pipefail` + `run()` fix)
+> are on `master` but not yet tagged.
 
 ## Core queue
 
