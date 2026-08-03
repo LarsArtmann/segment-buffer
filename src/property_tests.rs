@@ -1203,6 +1203,34 @@ proptest! {
         }
     }
 
+    /// Proves the nearest-rank formula for **every** percentile `0..=100`,
+    /// not just the two values the API exposes (p50, p90). This future-proofs
+    /// for a `p99_bytes` field: if the formula is correct for all pct, adding a
+    /// new percentile is guaranteed correct by construction.
+    ///
+    /// The property: for a sorted slice of `n` distinct values, the `pct`-th
+    /// percentile is the element at 1-based rank `clamp(ceil(pct/100 · n), 1, n)`.
+    #[test]
+    fn percentile_of_sorted_matches_nearest_rank_for_all_pct(
+        n in 1u16..200,
+        pct in 0u32..=100,
+    ) {
+        // Distinct, ascending values so rank ↔ value is unambiguous.
+        let sorted: Vec<u64> = (0..u64::from(n)).collect();
+        let result = crate::SegmentBuffer::<PropItem>::percentile_of_sorted(&sorted, pct);
+
+        // Independent float implementation of the nearest-rank formula.
+        let ni = usize::from(n);
+        let rank = (f64::from(pct) / 100.0 * ni as f64).ceil() as usize;
+        let rank = rank.clamp(1, ni);
+        let expected = sorted[rank - 1];
+
+        prop_assert_eq!(result, expected);
+
+        // The result must always be an actual element of the slice.
+        prop_assert!(sorted.contains(&result));
+    }
+
     /// Exercises the **flush race window** through the `for_each_from` lending
     /// iterator — a different code path from `read_from`, but the same Phase 1
     /// scan / Phase 2 lock gap. The reader verifies the `seq → item` mapping,

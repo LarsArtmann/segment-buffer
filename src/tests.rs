@@ -3132,3 +3132,109 @@ fn segment_size_stats_count_and_mean_consistent_after_sync() {
         "truncation error must be less than count"
     );
 }
+
+// =========================================================================
+// percentile_of_sorted — direct edge-case tests for the private nearest-rank
+// helper. Until now it was only exercised indirectly through segment_size_stats.
+// These tests make the nearest-rank contract visible and pinned.
+// =========================================================================
+
+#[test]
+fn percentile_of_sorted_empty_returns_zero() {
+    let sorted: [u64; 0] = [];
+    assert_eq!(
+        SegmentBuffer::<TestItem>::percentile_of_sorted(&sorted, 50),
+        0,
+        "empty input must return 0"
+    );
+}
+
+#[test]
+fn percentile_of_sorted_pct_zero_returns_minimum() {
+    // pct=0: rank = ceil(0/100 . n) = 0, clamped to 1, so first element.
+    let sorted = [10u64, 20, 30, 40, 50];
+    assert_eq!(
+        SegmentBuffer::<TestItem>::percentile_of_sorted(&sorted, 0),
+        10,
+        "pct=0 must return the smallest element"
+    );
+}
+
+#[test]
+fn percentile_of_sorted_pct_hundred_returns_maximum() {
+    // pct=100: rank = ceil(100/100 . n) = n, so last element.
+    let sorted = [10u64, 20, 30, 40, 50];
+    assert_eq!(
+        SegmentBuffer::<TestItem>::percentile_of_sorted(&sorted, 100),
+        50,
+        "pct=100 must return the largest element"
+    );
+}
+
+#[test]
+fn percentile_of_sorted_single_element_returns_it_for_all_pct() {
+    let sorted = [42u64];
+    for pct in 0u32..=100 {
+        assert_eq!(
+            SegmentBuffer::<TestItem>::percentile_of_sorted(&sorted, pct),
+            42,
+            "single element must be returned for pct={pct}"
+        );
+    }
+}
+
+#[test]
+fn percentile_of_sorted_is_monotonically_nondecreasing_in_pct() {
+    let sorted = [5u64, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+    let mut prev = 0u64;
+    for pct in 0u32..=100 {
+        let val = SegmentBuffer::<TestItem>::percentile_of_sorted(&sorted, pct);
+        assert!(
+            val >= prev,
+            "result must be non-decreasing: pct={pct} gave {val} < {prev}"
+        );
+        prev = val;
+    }
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn segment_size_stats_works_with_encrypted_segments() {
+    let tmp = TempDir::new().unwrap();
+    let buf = encrypted_buffer(tmp.path(), [0u8; 32]);
+
+    // Three flushes with varying item counts so byte sizes differ.
+    for n in [3u64, 1, 5] {
+        for i in 0..n {
+            buf.append(test_item(i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+
+    let s = buf.segment_size_stats().unwrap();
+    assert_eq!(s.count, 3);
+    assert_eq!(s.count, count_disk_segments(tmp.path()));
+
+    // Cross-check every field against a brute-force directory scan.
+    let mut sizes: Vec<u64> = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+        .map(|e| e.metadata().map_or(0, |m| m.len()))
+        .collect();
+    sizes.sort();
+    assert_eq!(s.min_bytes, *sizes.first().unwrap());
+    assert_eq!(s.max_bytes, *sizes.last().unwrap());
+    let total: u64 = sizes.iter().sum();
+    assert_eq!(s.mean_bytes, total / sizes.len() as u64);
+    let n = sizes.len();
+    let rank = |pct: f64| -> usize {
+        let r = (pct / 100.0 * n as f64).ceil() as usize;
+        r.clamp(1, n) - 1
+    };
+    assert_eq!(s.p50_bytes, sizes[rank(50.0)]);
+    assert_eq!(s.p90_bytes, sizes[rank(90.0)]);
+    assert!(s.min_bytes <= s.p50_bytes);
+    assert!(s.p50_bytes <= s.p90_bytes);
+    assert!(s.p90_bytes <= s.max_bytes);
+}
