@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Barrier;
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -739,6 +740,239 @@ fn concurrent_read_and_flush_never_corrupts() {
     for (i, item) in all.iter().enumerate() {
         assert_eq!(item.id, i as u64, "item at position {i} has wrong id");
     }
+}
+
+// =========================================================================
+// Deterministic scan-cache TOCTOU regression test
+// =========================================================================
+//
+// The scan-cache mtime-ordering fix (commit dc7ea7a) ensures that the
+// directory mtime is captured BEFORE the readdir, not after. Without this
+// ordering, a segment rename landing mid-scan pairs a post-rename mtime
+// with a pre-rename (stale) segment list in the cache: the staleness guard
+// then sees "no change" and serves stale data indefinitely.
+//
+// The test below forces the EXACT interleaving deterministically using
+// `std::sync::Barrier` — no `thread::sleep`, no retry loop, no reliance on
+// scheduler timing. A `HookedStore` wrapping `RealStore` injects two
+// barrier wait-points into `scan()`:
+//
+//   1. After the readdir completes (stale snapshot captured)
+//   2. Before returning that snapshot to the caller
+//
+// Between those two points, the mutator thread does `append + flush`,
+// creating a new segment file whose rename changes the directory mtime.
+// The scan returns the stale list; `scan_segments` publishes it with a
+// pre-rename mtime. The NEXT `read_from` must detect the mtime change via
+// `dir_mtime_changed()` and force a re-scan, recovering the missing segment.
+//
+// If the fix is reverted (mtime captured after the scan), the cached mtime
+// would match the post-rename directory mtime, the guard would see "no
+// change," and the second read would serve stale data — the assertion on
+// `second.len() == 11` fails.
+
+/// A `RealStore` wrapper whose `scan()` method uses barriers to force a
+/// deterministic interleaving with a concurrent mutation. Used exclusively
+/// by the scan-cache TOCTOU regression test.
+///
+/// The `barrier_armed` flag is set by the test harness AFTER `open_internal`
+/// (whose `recover()` call does the first scan) and BEFORE the racing
+/// `read_from`. This ensures exactly one scan — the second ever — passes
+/// through the barrier dance. All other scans are pass-throughs to the
+/// inner `RealStore`.
+struct HookedStore {
+    inner: store::RealStore,
+    /// One-shot flag: the next `scan()` call blocks on the barriers.
+    /// Set by the test after open, consumed (swapped to false) by the
+    /// first scan that observes it.
+    barrier_armed: std::sync::atomic::AtomicBool,
+    /// Fired after `scan()` has completed its readdir (stale snapshot
+    /// captured). Signals the mutator: "the directory has been read;
+    /// you may now flush."
+    scan_done_barrier: Arc<Barrier>,
+    /// Fired after the mutator has completed its flush. Signals the
+    /// scanner: "the rename has landed; you may return the stale result."
+    mutation_done_barrier: Arc<Barrier>,
+}
+
+impl HookedStore {
+    fn new(
+        dir: PathBuf,
+        scan_done_barrier: Arc<Barrier>,
+        mutation_done_barrier: Arc<Barrier>,
+    ) -> Self {
+        Self {
+            inner: store::RealStore::new(dir),
+            barrier_armed: std::sync::atomic::AtomicBool::new(false),
+            scan_done_barrier,
+            mutation_done_barrier,
+        }
+    }
+}
+
+impl store::SegmentStore for HookedStore {
+    fn create_dir_all(&self) -> super::Result<()> {
+        self.inner.create_dir_all()
+    }
+
+    fn scan(&self) -> super::Result<Vec<super::segment::SegmentRange>> {
+        // Capture the readdir result IMMEDIATELY — before any barrier.
+        // This is the stale snapshot: the mutator has not yet flushed.
+        let result = self.inner.scan()?;
+        // Only the scan that finds the flag armed does the barrier dance.
+        // swap returns the previous value; if it was true, we proceed.
+        if self
+            .barrier_armed
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            // Signal the mutator: readdir is done, flush now.
+            self.scan_done_barrier.wait();
+            // Wait for the mutator: flush is complete, the rename has
+            // landed, the directory mtime has changed.
+            self.mutation_done_barrier.wait();
+        }
+        // Return the stale snapshot captured before the flush.
+        Ok(result)
+    }
+
+    fn clean_tmp(&self) -> super::Result<usize> {
+        self.inner.clean_tmp()
+    }
+
+    fn segment_size(&self, range: super::segment::SegmentRange) -> u64 {
+        self.inner.segment_size(range)
+    }
+
+    fn remove_segment(
+        &self,
+        range: super::segment::SegmentRange,
+    ) -> super::Result<bool> {
+        self.inner.remove_segment(range)
+    }
+
+    fn write_atomic(
+        &self,
+        range: super::segment::SegmentRange,
+        payload: &[u8],
+        policy: DurabilityPolicy,
+    ) -> super::Result<u64> {
+        self.inner.write_atomic(range, payload, policy)
+    }
+
+    fn read_bytes(&self, range: super::segment::SegmentRange) -> super::Result<Vec<u8>> {
+        self.inner.read_bytes(range)
+    }
+}
+
+/// Deterministic regression test for the scan-cache TOCTOU fix.
+///
+/// Forces the exact `scan → rename → scan-returns-stale → cache-populate`
+/// interleaving via barriers, then verifies the mtime guard detects the
+/// change and forces a re-scan on the next call.
+///
+/// **Without the fix** (mtime captured after scan): the second read serves
+/// stale cached data (10 items instead of 11) and the assertion fails.
+///
+/// **With the fix** (mtime captured before scan): the second read detects
+/// the mtime change, re-scans, and returns all 11 items.
+#[test]
+fn scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename() {
+    use std::sync::Barrier;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().to_path_buf();
+
+    let scan_done = Arc::new(Barrier::new(2));
+    let mutation_done = Arc::new(Barrier::new(2));
+
+    let hooked = Arc::new(HookedStore::new(
+        dir.clone(),
+        scan_done.clone(),
+        mutation_done.clone(),
+    ));
+    let store_handle = hooked.clone();
+    let store: Arc<dyn store::SegmentStore + Send + Sync> = hooked;
+
+    let config = SegmentConfig {
+        flush_policy: FlushPolicy::Manual,
+        max_size_bytes: 100 * 1024 * 1024,
+        compression_level: 1, // minimise CPU to keep the race window tight
+        durability: DurabilityPolicy::Throughput,
+        cipher: None,
+    };
+
+    // open_internal calls recover() which does the first scan (pass-through;
+    // barrier_armed is false at this point). Lock file is None — we are the
+    // sole owner, but we skip the flock to match the HookedStore pattern.
+    let (buf, _report) = SegmentBuffer::<TestItem>::open_internal(dir, config, store, None)
+        .expect("open_internal must succeed");
+
+    // The mtime guard is the mechanism under test. If the filesystem does
+    // not support mtime (rare: coarse-granularity FUSE / network FS), the
+    // guard is disabled and this test cannot exercise it.
+    assert!(
+        buf.mtime_supported,
+        "this test requires filesystem mtime support; \
+         the open-time capability probe reported mtime as unsupported"
+    );
+
+    // Pre-populate: 10 items flushed as one segment [0..=9].
+    for i in 0..10u64 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    // flush() invalidates the cache → the next read_from triggers a scan.
+
+    // Arm the barrier: the NEXT scan (the one inside the racing read_from)
+    // will block on the barriers.
+    store_handle
+        .barrier_armed
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let buf = Arc::new(buf);
+
+    let (first_count, second_count) = thread::scope(|s| {
+        // Thread A: read_from triggers scan_segments → HookedStore.scan().
+        // The HookedStore captures the stale readdir, barriers with Thread B,
+        // and returns the stale list. The first read sees only [0..=9].
+        // The second read must see [0..=10] via the mtime guard.
+        let buf_reader = Arc::clone(&buf);
+        let reader = s.spawn(move || {
+            let first = buf_reader.read_from(0, 100).unwrap();
+            let second = buf_reader.read_from(0, 100).unwrap();
+            (first.len(), second.len())
+        });
+
+        // Thread B: append + flush during Thread A's scan.
+        let buf_mutator = Arc::clone(&buf);
+        s.spawn(move || {
+            // Wait for Thread A's scan to complete its readdir.
+            scan_done.wait();
+            // Flush a new segment [10..=10]. The rename changes the dir mtime.
+            buf_mutator.append(test_item(10)).unwrap();
+            buf_mutator.flush().unwrap();
+            // Signal Thread A: the mutation is complete.
+            mutation_done.wait();
+        });
+
+        reader.join().unwrap()
+    });
+
+    // First read returned only the pre-flush segment: 10 items.
+    // The scan captured the stale readdir before the flush.
+    assert_eq!(
+        first_count, 10,
+        "first read should see only the pre-flush segments (stale scan)"
+    );
+
+    // Second read MUST see all 11 items: the mtime guard detected the
+    // directory change (pre-scan mtime ≠ post-flush mtime) and forced a
+    // re-scan. If the fix is reverted, this assertion fails with 10 items.
+    assert_eq!(
+        second_count, 11,
+        "second read must recover the flushed segment via the mtime guard \
+         (pre-scan mtime was stale, forcing a re-scan)"
+    );
 }
 
 // =========================================================================

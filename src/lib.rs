@@ -1642,10 +1642,21 @@ where
         }
     }
 
-    /// Total items waiting in the buffer (on-disk + in-memory pending).
+    /// Total items waiting in the buffer: on-disk segments **plus** in-memory
+    /// items not yet flushed to a segment file.
+    ///
+    /// "Pending" means **not yet acknowledged**
+    /// ([`delete_acked`](Self::delete_acked)), not "not yet flushed." A
+    /// [`flush`](Self::flush) therefore leaves this count unchanged — items
+    /// merely move from the in-memory tail into on-disk segment files, where
+    /// they stay pending until acknowledged. The count decreases only when
+    /// `delete_acked` removes acknowledged segments.
+    ///
+    /// The split between the on-disk and in-memory portions is internal and
+    /// not exposed separately by the public API.
     ///
     /// Equivalent to `latest_sequence() - head_seq + 1` when non-empty, 0 when
-    /// empty. Decreases as [`delete_acked`](Self::delete_acked) removes files.
+    /// empty.
     ///
     /// # Example
     ///
@@ -2277,12 +2288,12 @@ where
         // only helps on filesystems where mtime is meaningful (see
         // `mtime_supported`); on others the explicit `invalidate_scan_cache`
         // called by every on-disk mutation is the sole defence.
-        let pre_scan_mtime = std::fs::metadata(&self.dir).and_then(|m| m.modified()).ok();
         let segments = self
             .store
             .scan()
             .map_err(error::SegmentError::with_dir)
             .map_err(|e| e.with_path(&self.dir))?;
+        let pre_scan_mtime = std::fs::metadata(&self.dir).and_then(|m| m.modified()).ok();
         let mut cache = self.scan_cache.lock();
         *cache = Some(segments.clone());
         drop(cache);
