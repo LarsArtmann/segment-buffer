@@ -830,15 +830,6 @@ pub struct SegmentBuffer<T> {
     /// way — operators who manipulate the directory behind the buffer's back
     /// get the directory scan cost back.
     scan_cache: Mutex<Option<Vec<segment::SegmentRange>>>,
-    /// Re-entrancy guard for [`SegmentBuffer::for_each_from`]. Set to `true`
-    /// for the duration of a `for_each_from` call (including across the user
-    /// callback `F`); every other `&self` method that takes `inner.lock()`
-    /// asserts this is `false` and panics with a clear message otherwise.
-    ///
-    /// This converts the silent deadlock of re-entering the buffer from inside
-    /// a `for_each_from` callback into an immediate, diagnosable panic. The
-    /// atomic load costs ~1 ns per locking op — negligible next to the mutex.
-    iteration_in_progress: std::sync::atomic::AtomicBool,
     /// Pooled zstd compression context, allocated once at [`SegmentBuffer::open`]
     /// and reused for every subsequent [`SegmentBuffer::flush`]. The flamegraph
     /// captured on 2026-07-20 (see `docs/perf/2026-07-20_hot-path-flamegraph.md`)
@@ -1121,7 +1112,6 @@ where
             approx_disk_bytes: std::sync::atomic::AtomicU64::new(0),
             segment_count: std::sync::atomic::AtomicU64::new(0),
             scan_cache: Mutex::new(None),
-            iteration_in_progress: std::sync::atomic::AtomicBool::new(false),
             compressor: Mutex::new(compressor),
             decompressor: Mutex::new(decompressor),
             store,
@@ -1160,21 +1150,13 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns an error only when the auto-flush triggered by this append
     /// fails to write its segment file ([`SegmentError::Io`],
     /// [`SegmentError::Cbor`], or [`SegmentError::Cipher`]). Appends that do
     /// not cross the flush threshold never fail.
-    #[track_caller]
     pub fn append(&self, event: T) -> Result<u64> {
-        self.assert_not_reentered("append");
         let (should_flush, seq) = {
             let mut inner = self.inner.lock();
             inner.unflushed.push(event);
@@ -1220,20 +1202,12 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`], [`SegmentError::Cbor`], or
     /// [`SegmentError::Cipher`] if encoding or writing the segment file fails.
     /// A no-op flush (nothing buffered) always succeeds.
-    #[track_caller]
     pub fn flush(&self) -> Result<()> {
-        self.assert_not_reentered("flush");
         let (events, start_seq, end_seq) = {
             let mut inner = self.inner.lock();
             inner.last_flush = Instant::now();
@@ -1304,12 +1278,6 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the segment directory cannot be scanned,
@@ -1317,7 +1285,6 @@ where
     /// [`SegmentError::Integrity`] if a segment file cannot be decoded.
     #[track_caller]
     pub fn read_from(&self, start_seq: u64, limit: usize) -> Result<Vec<T>> {
-        self.assert_not_reentered("read_from");
         if limit == 0 {
             return Ok(Vec::new());
         }
@@ -1396,24 +1363,14 @@ where
     /// both paths pay the same CBOR+zstd+cipher decode cost per segment — the
     /// clone saving only applies to the in-memory tail.
     ///
-    /// # Re-entrancy contract
+    /// # Re-entrancy
     ///
-    /// The buffer mutex is held across `f` while iterating the in-memory
-    /// pending items. Calling **any** other `&self` method on `SegmentBuffer`
-    /// from inside `f` would deadlock (`parking_lot::Mutex` is not reentrant).
-    /// To make this footgun impossible to hit silently, every other method
-    /// asserts it is not being re-entered from inside a `for_each_from`
-    /// callback and **panics with a clear message** if it is. The callback
-    /// receives only `(seq, &T)`, which gives no way to reach the buffer, but
-    /// a closure that captures a clone of the `Arc<SegmentBuffer<T>>` can
-    /// still attempt re-entry — and will now get an immediate, diagnosable
-    /// panic instead of a silent hang.
-    ///
-    /// # Panics
-    ///
-    /// Panics if called from inside another `for_each_from` callback on the
-    /// same buffer (re-entrancy guard converts a silent deadlock into a loud
-    /// failure).
+    /// The buffer mutex is **never held across `f`**. On-disk items are decoded
+    /// before the callback, and in-memory pending items are snapshotted under
+    /// the lock then handed to `f` after the lock is released. Re-entrant calls
+    /// (e.g. `append`, `stats`, `delete_acked` from a closure that captured an
+    /// `Arc<SegmentBuffer<T>>`) are therefore safe and cannot deadlock — the
+    /// public API is panic-free.
     ///
     /// # Errors
     ///
@@ -1449,15 +1406,6 @@ where
             return Ok(0);
         }
 
-        // Mark iteration in progress for the entire call. Every other locking
-        // method asserts the flag is false and panics with a clear message,
-        // converting the silent deadlock (parking_lot::Mutex is not reentrant)
-        // into an immediate, diagnosable failure. The guard clears the flag on
-        // scope exit, including during panic unwinding from `f`.
-        self.iteration_in_progress
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        let _guard = IterationGuard(&self.iteration_in_progress);
-
         let mut visited = 0usize;
 
         // Phase 1: on-disk segments. Items are still deserialized into a per-
@@ -1491,21 +1439,33 @@ where
             }
         }
 
-        // Phase 2: in-memory pending items. Here the lending pattern wins:
-        // the items are borrowed in place under the lock, with zero clones.
+        // Phase 2: in-memory pending items. Snapshot the relevant window under
+        // the lock, then RELEASE the lock before invoking the callback. This
+        // guarantees the mutex is never held across a user callback, so
+        // re-entrant calls (append, stats, delete_acked, ...) cannot deadlock
+        // and the public API is panic-free by construction. The clone is
+        // bounded by `remaining` items, never the whole backlog.
         if visited < limit {
-            let inner = self.inner.lock();
-            let pending_start = inner
-                .next_seq
-                .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
-            for (i, event) in inner.unflushed.iter().enumerate() {
-                if visited >= limit {
-                    break;
-                }
-                let seq = pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
-                if seq < start_seq {
-                    continue;
-                }
+            let (base_seq, window): (u64, Vec<T>) = {
+                let inner = self.inner.lock();
+                let pending_start = inner
+                    .next_seq
+                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+                let skip =
+                    usize::try_from(start_seq.saturating_sub(pending_start)).unwrap_or(usize::MAX);
+                let remaining = limit.saturating_sub(visited);
+                let base = pending_start.saturating_add(u64::try_from(skip).unwrap_or(u64::MAX));
+                let window = inner
+                    .unflushed
+                    .iter()
+                    .skip(skip)
+                    .take(remaining)
+                    .cloned()
+                    .collect();
+                (base, window)
+            };
+            for (offset, event) in window.iter().enumerate() {
+                let seq = base_seq.saturating_add(u64::try_from(offset).unwrap_or(u64::MAX));
                 f(seq, event);
                 visited = visited.saturating_add(1);
             }
@@ -1550,19 +1510,11 @@ where
     /// so it never advances past the pending window, keeping the backlog count
     /// honest.
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory scan or a segment-file
     /// removal fails.
-    #[track_caller]
     pub fn delete_acked(&self, acked_seq: u64) -> Result<usize> {
-        self.assert_not_reentered("delete_acked");
         let segments = self.scan_segments()?;
         let mut deleted: usize = 0;
         let mut freed_bytes: u64 = 0;
@@ -1649,15 +1601,8 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
     #[must_use = "the sequence number is meaningless if discarded"]
-    #[track_caller]
     pub fn latest_sequence(&self) -> u64 {
-        self.assert_not_reentered("latest_sequence");
         let inner = self.inner.lock();
         if inner.next_seq == 0 {
             0
@@ -1703,15 +1648,8 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
     #[must_use = "the backlog size is meaningless if discarded"]
-    #[track_caller]
     pub fn pending_count(&self) -> u64 {
-        self.assert_not_reentered("pending_count");
         let inner = self.inner.lock();
         inner.next_seq.saturating_sub(inner.head_seq)
     }
@@ -1863,13 +1801,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
     #[must_use = "the snapshot is meaningless if discarded"]
-    #[track_caller]
     #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
     pub fn stats(&self) -> BufferStats {
         self.assert_not_reentered("stats");
@@ -1990,12 +1922,6 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be read.
@@ -2050,12 +1976,6 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if a flush triggered by the batch fails.
@@ -2064,7 +1984,6 @@ where
     where
         I: IntoIterator<Item = T>,
     {
-        self.assert_not_reentered("append_all");
         let (should_flush, last_seq, count) = {
             let mut inner = self.inner.lock();
             let mut count = 0u64;
@@ -2142,19 +2061,11 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
-    /// # Panics
-    ///
-    /// Panics if called from inside a [`for_each_from`](Self::for_each_from)
-    /// callback — the buffer mutex is held across the callback, so re-entry
-    /// would deadlock.
-    ///
     /// # Errors
     ///
     /// Returns [`SegmentError`] if the directory scan or any segment decode
     /// fails.
-    #[track_caller]
     pub fn iter_from(&self, start_seq: u64, limit: usize) -> Result<SegmentIter<'_, T>> {
-        self.assert_not_reentered("iter_from");
         if limit == 0 {
             return Ok(SegmentIter {
                 inner: Vec::new().into_iter(),
@@ -2186,29 +2097,6 @@ where
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
-
-    /// Panic with a clear message if a `for_each_from` callback is currently
-    /// re-entering the buffer. The alternative is a silent deadlock
-    /// (`parking_lot::Mutex` is not reentrant), so an explicit panic is
-    /// strictly better for diagnosability.
-    #[track_caller]
-    // Intentional panic: the caller violated the API contract by re-entering
-    // the buffer from within a `for_each_from` callback. The buffer mutex is
-    // held during iteration; re-entry would deadlock. This is a programming
-    // error, not a recoverable condition — failing silently would hide a
-    // guaranteed hang.
-    #[allow(clippy::panic)]
-    fn assert_not_reentered(&self, method: &'static str) {
-        if self
-            .iteration_in_progress
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            panic!(
-                "{method}: cannot call from within a for_each_from callback \
-                 (the buffer mutex is held; re-entry would deadlock)"
-            );
-        }
-    }
 
     fn recover(&self) -> Result<RecoveryReport> {
         let removed_tmp_files = self.store.clean_tmp()?;
@@ -2362,17 +2250,6 @@ where
     }
 }
 
-/// RAII guard that clears [`SegmentBuffer::iteration_in_progress`] on drop,
-/// including during panic unwinding. Without this, a panicking `for_each_from`
-/// callback would leave the flag set and permanently brick the buffer.
-struct IterationGuard<'a>(&'a std::sync::atomic::AtomicBool);
-
-impl Drop for IterationGuard<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
 /// Owned-item iterator over buffer contents, yielding `(seq, item)` pairs.
 ///
 /// Returned by [`SegmentBuffer::iter_from`]. Materialises up to `limit`
@@ -2380,9 +2257,9 @@ impl Drop for IterationGuard<'_> {
 /// passes in-memory items by reference without cloning, use
 /// [`SegmentBuffer::for_each_from`].
 ///
-/// The iterator borrows the buffer for `'a`. Drop it before calling any
-/// other `&self` method on the same buffer — the re-entrancy contract is
-/// the same as [`SegmentBuffer::for_each_from`].
+/// The iterator borrows the buffer for `'a`. Like
+/// [`SegmentBuffer::for_each_from`] it is re-entrancy-safe: items are
+/// materialised eagerly (no buffer mutex held across `next` calls).
 ///
 /// # Example
 ///

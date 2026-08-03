@@ -22,7 +22,7 @@
 //! Note: `read_from` IS now covered — the two scan-cache tests below exercise
 //! the cache-populate path (the `scan_segments` method) racing with
 //! `flush`/`delete_acked`. These go through the full `read_from` pipeline
-//! (scan → read_bytes → CBOR decode → zstd decompress → read_segment) on
+//! (scan → `read_bytes` → CBOR decode → zstd decompress → `read_segment`) on
 //! the `MockStore`, which stores pre-encoded bytes so the pipeline exercises
 //! real decode logic.
 //!
