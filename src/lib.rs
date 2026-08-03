@@ -2118,6 +2118,11 @@ where
             });
         }
         let items = self.read_from(start_seq, limit)?;
+        // The collect is required: SegmentIter.inner is typed as
+        // std::vec::IntoIter<(u64, T)>, so we need a concrete Vec to
+        // produce that type. The chained iterator alone would be
+        // Map<Enumerate<IntoIter<T>>>, which doesn't match.
+        #[allow(clippy::needless_collect)]
         let indexed: Vec<(u64, T)> = items
             .into_iter()
             .enumerate()
