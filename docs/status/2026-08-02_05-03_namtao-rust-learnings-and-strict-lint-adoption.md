@@ -264,3 +264,23 @@ The three open questions (Q1–Q3: version bump for lints, `pedantic` at
 `warn` level, panic-free as public guarantee) remain design decisions
 for the user. The lint changes are non-breaking (no API or on-disk
 format change) and will ride along with the next release.
+
+---
+
+## Resolution (2026-08-03) — full strict migration
+
+The initial two-tier adoption described above (`78b8174`) was subsequently
+**superseded by the full strict lint migration** (commits `9106af1`..
+`4b7a240`): `pedantic` + `nursery` + all restriction lints (`as_conversions`,
+`arithmetic_side_effects`, `unwrap_used`, `expect_used`, `indexing_slicing`,
+`string_slice`, `panic_in_result_fn`, `panic`, `exit`, `todo`,
+`unimplemented`, `unchecked_time_subtraction`, `unreachable`) are now at
+`deny` in `Cargo.toml [lints.clippy]`. Library code is fully clippy-clean
+under the entire strict set.
+
+The "Q2: `pedantic` at `warn` level?" open question is **RESOLVED** —
+`pedantic` is now at `deny`, not `warn`. The incremental-migration plan
+described in ROADMAP.md's "Lint evolution" section is obsolete.
+
+Q1 (version bump) and Q3 (panic-free as public guarantee) remain open design
+decisions for the user.

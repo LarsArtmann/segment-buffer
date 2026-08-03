@@ -407,3 +407,18 @@ added there (the plan is a snapshot; `TODO_LIST.md` is the living source).
 Cross-checked: all actionable items in this plan are already in `TODO_LIST.md`
 or were added during the docs-health audit session. No new TODO_LIST items
 surfaced during planning.
+
+---
+
+## Resolution (2026-08-03)
+
+**This plan was executed in full** by the session documented in
+`docs/status/2026-08-02_06-15_post-v0-5-4-backlog-execution.md`. All 24
+medium-granularity tasks (M01–M24) were completed; the 2 deferred items
+(D01 health-check, D02 panic-free guarantee) remain deferred and are tracked
+in `TODO_LIST.md`.
+
+Subsequently, M09 ("pedantic at `warn`") was **superseded** by the full strict
+lint migration (commits `9106af1`..`4b7a240`): `pedantic` + `nursery` + all
+restriction lints are now at `deny`. The incremental-migration plan described
+in this document is obsolete — the work is done.
