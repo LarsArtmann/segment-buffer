@@ -843,10 +843,7 @@ impl store::SegmentStore for HookedStore {
         self.inner.segment_size(range)
     }
 
-    fn remove_segment(
-        &self,
-        range: super::segment::SegmentRange,
-    ) -> super::Result<bool> {
+    fn remove_segment(&self, range: super::segment::SegmentRange) -> super::Result<bool> {
         self.inner.remove_segment(range)
     }
 
