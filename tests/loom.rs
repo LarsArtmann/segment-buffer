@@ -792,12 +792,23 @@ fn read_from_concurrent_delete_acked_scan_cache_no_corruption() {
             }
         }
 
-        // After settling, the surviving segment [2..=3] must be readable.
+        // After settling: invalidate the cache via a flush so the next
+        // read_from does a fresh scan (the scan-cache publication race may
+        // have left a stale entry referencing the deleted segment, which
+        // would cause read_from to return Err(NotFound) — the documented
+        // concurrent-delete race). After invalidation, all surviving items
+        // must be visible and deleted items must not reappear.
+        buf.append(Item { id: 99 }).unwrap();
+        buf.flush().unwrap();
         let all = buf.read_from(0, 100).unwrap();
         let ids: Vec<u64> = all.iter().map(|i| i.id).collect();
         assert!(
-            ids == [2, 3] || ids == [0, 1, 2, 3],
-            "surviving items after delete_acked must be correct, got {ids:?}"
+            ids.contains(&2) && ids.contains(&3),
+            "surviving items 2,3 must be visible after settling, got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&0) && !ids.contains(&1),
+            "deleted items 0,1 must not reappear after settling, got {ids:?}"
         );
     });
 }
