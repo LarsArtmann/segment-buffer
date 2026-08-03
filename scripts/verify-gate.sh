@@ -17,8 +17,8 @@
 # Tool availability: cargo fmt/clippy/test/doc come with the toolchain.
 # cargo-deny, cargo-audit, lychee, and actionlint are invoked via
 # `nix run nixpkgs#...` so the script works on a plain `nix develop` shell
-# without global installs. check-changelog-links.sh and check-html-root-url.sh
-# use curl (coreutils-grade, available in the devShell and any standard OS).
+# without global installs. check-changelog-links.sh uses curl, which is
+# included in the Nix devShell `buildInputs` (see flake.nix).
 
 set -u
 

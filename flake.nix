@@ -110,6 +110,7 @@
                 pkg-config
                 cargo-nextest
                 bacon
+                curl
               ];
             };
 

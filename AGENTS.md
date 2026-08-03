@@ -154,7 +154,7 @@ append(item) ─► unflushed: Vec<T>  (in-memory, inside Mutex)
             store.write_atomic(range, bytes)  ─►  tmp → sync_all → rename to seg_*.zst   (src/store.rs)
                    │
                    ▼  (lock re-acquired)
-            approx_disk_bytes += len
+            approx_disk_bytes += len; segment_count += 1
 ```
 
 `read_from(start, limit)` scans on-disk segments first (sorted by `start`), then drains the in-memory pending tail. `delete_acked(seq)` removes every segment whose `end <= seq` and advances `head_seq`. Read path calls `store.read_bytes` then `segment::decode_segment`, which strips the envelope (auto-detecting legacy v1 files) before decryption.
@@ -306,7 +306,7 @@ The crate uses a **two-tier lint strategy** inspired by [namtao's "Strict Lints"
 - **MSRV consistency guard:** `scripts/check-msrv.sh` asserts that `Cargo.toml rust-version`, `ci.yml` matrix + msrv job, `flake.nix` msrv shell pin, and `docs/MSRV.md` headline all agree. Run by the CI `msrv-consistency` job to prevent drift.
 - macOS needs `brew install zstd` (CI does this automatically). Under the Nix devShell (`nix develop`), zstd is provided hermetically so no manual install is needed.
 - **`Cargo.lock` is committed** (not gitignored) so Nix flake builds are reproducible. This intentionally overrides the global gitignore; use `git add -f Cargo.lock` if it gets dropped.
-- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. 9 tests covering BOTH the in-memory hot path (`append`/`append_all`/`stats` snapshot) AND, since v0.5.0, the `delete_acked` + `append` interleaving (4 tests that exhaustively enumerate every two-thread schedule via a loom-aware `MockStore`). `flush`/`recover`/`read_from` still touch byte-level I/O that loom does not model, so they stay covered _statistically_ by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs`. Use `--release` — loom's schedule enumeration is slow in debug.
+- **Loom concurrency testing** (`tests/loom.rs`): run with `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`. 11 tests covering the in-memory hot path (`append`/`append_all`/`stats` snapshot), the `delete_acked` + `append` interleaving (4 tests that exhaustively enumerate every two-thread schedule via a loom-aware `MockStore`), AND, since 2026-08-03, the scan-cache populate path under `read_from` (2 tests exercising `flush` and `delete_acked` racing the cache-populate interleaving). `flush` (the byte-level encode pipeline) and `recover` still touch byte-level I/O that loom has no interest in enumerating, so they stay covered _statistically_ by the stress test `concurrency_4_writers_1_reader_10k_events` in `src/tests.rs`. Use `--release` — loom's schedule enumeration is slow in debug.
 
 ## Releases
 
@@ -333,7 +333,7 @@ Two surfaces, two responsibilities:
 
 ## Documentation health cadence
 
-Living docs (`README.md`, `AGENTS.md`, `FEATURES.md`, `TODO_LIST.md`, `ROADMAP.md`, `CHANGELOG.md`, `docs/DOMAIN_LANGUAGE.md`) drift against code every release. The `scripts/verify-gate.sh` gate now includes `lychee` (markdown link check) and `scripts/check-html-root-url.sh` (catches the `html_root_url` rot vector). Run `scripts/verify-gate.sh` **before every release tag** and re-run the docs-health skill after any release that adds/renames/removes a public item, a feature, or a dependency — the three classes of change that most reliably produce doc drift. Historical docs under `docs/{status,planning,perf}/` are point-in-time snapshots and are brought current by the `update-old-docs` skill (non-destructive annotation), never rewritten in place.
+Living docs (`README.md`, `AGENTS.md`, `FEATURES.md`, `TODO_LIST.md`, `ROADMAP.md`, `CHANGELOG.md`, `docs/DOMAIN_LANGUAGE.md`) drift against code every release. The `scripts/verify-gate.sh` gate now includes `lychee` (markdown link check), `scripts/check-html-root-url.sh` (catches the `html_root_url` rot vector), and `scripts/check-changelog-links.sh` (validates that every GitHub tag URL in CHANGELOG.md points to a real tag). Run `scripts/verify-gate.sh` **before every release tag** and re-run the docs-health skill after any release that adds/renames/removes a public item, a feature, or a dependency — the three classes of change that most reliably produce doc drift. Historical docs under `docs/{status,planning,perf}/` are point-in-time snapshots and are brought current by the `update-old-docs` skill (non-destructive annotation), never rewritten in place.
 
 ## Verification discipline (hard rules)
 
