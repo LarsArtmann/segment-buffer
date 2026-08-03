@@ -14,45 +14,45 @@
 
 **What was implemented (every site wired):**
 
-| Site | Change | File |
-|------|--------|------|
-| `BufferStats` struct | New `segment_count: u64` public field | `src/lib.rs` |
-| `SegmentBuffer` struct | New `segment_count: AtomicU64` field | `src/lib.rs` |
-| `open_internal` | Initialize `segment_count: AtomicU64::new(0)` | `src/lib.rs` |
-| `flush` | `fetch_add(1)` after `write_segment` succeeds | `src/lib.rs` |
-| `delete_acked` | `fetch_sub(deleted)` after segment removals | `src/lib.rs` |
-| `recover` | `store(segment_count)` from scan result | `src/lib.rs` |
-| `sync_disk_bytes` | `store(segments.len())` recalibrating from scan | `src/lib.rs` |
-| `stats` | Load + publish in the snapshot | `src/lib.rs` |
-| `Debug` impl | Mirror the field alongside `approx_disk_bytes` | `src/lib.rs` |
-| `stats()` doc comment | Updated "7-field" → "8-field", added `segment_count` assertion to the doc example | `src/lib.rs` |
-| Structural-sanity test | Added `"segment_count"` to the field-name list | `src/tests.rs` |
-| `bench_stats.rs` | Added `snapshot.segment_count` to the black-box tuple | `benches/bench_stats.rs` |
-| `README.md` data-flow diagram | Updated `approx_disk_bytes += len` → `approx_disk_bytes += len; segment_count += 1` | `README.md` |
+| Site                          | Change                                                                              | File                     |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------------ |
+| `BufferStats` struct          | New `segment_count: u64` public field                                               | `src/lib.rs`             |
+| `SegmentBuffer` struct        | New `segment_count: AtomicU64` field                                                | `src/lib.rs`             |
+| `open_internal`               | Initialize `segment_count: AtomicU64::new(0)`                                       | `src/lib.rs`             |
+| `flush`                       | `fetch_add(1)` after `write_segment` succeeds                                       | `src/lib.rs`             |
+| `delete_acked`                | `fetch_sub(deleted)` after segment removals                                         | `src/lib.rs`             |
+| `recover`                     | `store(segment_count)` from scan result                                             | `src/lib.rs`             |
+| `sync_disk_bytes`             | `store(segments.len())` recalibrating from scan                                     | `src/lib.rs`             |
+| `stats`                       | Load + publish in the snapshot                                                      | `src/lib.rs`             |
+| `Debug` impl                  | Mirror the field alongside `approx_disk_bytes`                                      | `src/lib.rs`             |
+| `stats()` doc comment         | Updated "7-field" → "8-field", added `segment_count` assertion to the doc example   | `src/lib.rs`             |
+| Structural-sanity test        | Added `"segment_count"` to the field-name list                                      | `src/tests.rs`           |
+| `bench_stats.rs`              | Added `snapshot.segment_count` to the black-box tuple                               | `benches/bench_stats.rs` |
+| `README.md` data-flow diagram | Updated `approx_disk_bytes += len` → `approx_disk_bytes += len; segment_count += 1` | `README.md`              |
 
 **Tests added/extended:**
 
-| Test | Type | What it proves |
-|------|------|----------------|
-| `segment_count_zero_on_fresh_buffer` | Unit | Fresh buffer reports 0 |
-| `segment_count_increments_on_flush` | Unit | One flush → exactly +1, matches disk |
-| `segment_count_tracks_multiple_flushes` | Unit | 5 sequential flushes → count == 5, matches disk each step |
-| `segment_count_decrements_on_delete_acked` | Unit | Ack removes segments → count decrements correctly |
-| `segment_count_recalibrated_by_sync_disk_bytes` | Unit | External file removal → `sync_disk_bytes` corrects the count |
-| `segment_count_recovered_on_reopen` | Unit | Crash recovery restores the live count from the scan |
-| `sync_disk_bytes_matches_actual_disk_usage` | Property (extended) | Now also asserts `segment_count` matches actual file count across arbitrary flush counts |
+| Test                                            | Type                | What it proves                                                                           |
+| ----------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------- |
+| `segment_count_zero_on_fresh_buffer`            | Unit                | Fresh buffer reports 0                                                                   |
+| `segment_count_increments_on_flush`             | Unit                | One flush → exactly +1, matches disk                                                     |
+| `segment_count_tracks_multiple_flushes`         | Unit                | 5 sequential flushes → count == 5, matches disk each step                                |
+| `segment_count_decrements_on_delete_acked`      | Unit                | Ack removes segments → count decrements correctly                                        |
+| `segment_count_recalibrated_by_sync_disk_bytes` | Unit                | External file removal → `sync_disk_bytes` corrects the count                             |
+| `segment_count_recovered_on_reopen`             | Unit                | Crash recovery restores the live count from the scan                                     |
+| `sync_disk_bytes_matches_actual_disk_usage`     | Property (extended) | Now also asserts `segment_count` matches actual file count across arbitrary flush counts |
 
 **Verification gate (all green at time of writing):**
 
-| Gate | Command | Result |
-|------|---------|--------|
-| Format | `cargo fmt --all -- --check` | clean |
-| Clippy (default) | `cargo clippy --all-targets -- -D warnings` | 0 warnings |
-| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | 0 warnings |
-| Tests (default) | `cargo test --no-fail-fast` | 104 + 33 doctests pass |
-| Tests (encryption) | `cargo test --no-fail-fast --features encryption` | 123 + 38 doctests pass |
-| Docs | `cargo doc --no-deps --features encryption` | clean |
-| Loom (11 tests) | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | all pass (~218s) |
+| Gate                | Command                                                                   | Result                 |
+| ------------------- | ------------------------------------------------------------------------- | ---------------------- |
+| Format              | `cargo fmt --all -- --check`                                              | clean                  |
+| Clippy (default)    | `cargo clippy --all-targets -- -D warnings`                               | 0 warnings             |
+| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings`         | 0 warnings             |
+| Tests (default)     | `cargo test --no-fail-fast`                                               | 104 + 33 doctests pass |
+| Tests (encryption)  | `cargo test --no-fail-fast --features encryption`                         | 123 + 38 doctests pass |
+| Docs                | `cargo doc --no-deps --features encryption`                               | clean                  |
+| Loom (11 tests)     | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | all pass (~218s)       |
 
 **Docs updated:**
 
@@ -72,7 +72,7 @@ Nothing. The `segment_count` feature is complete end-to-end.
 
 ### Per-segment size distribution for tuning
 
-The second pasted feature remains **deferred** in `TODO_LIST.md` as designed. The TODO item explicitly says: *"Un-defer when: a consumer (monitor365) reports needing segment-size distribution for batch tuning."* No consumer has reported this need. The design question (running summary in mutex vs on-demand scan method) is unresolved and should not be resolved speculatively.
+The second pasted feature remains **deferred** in `TODO_LIST.md` as designed. The TODO item explicitly says: _"Un-defer when: a consumer (monitor365) reports needing segment-size distribution for batch tuning."_ No consumer has reported this need. The design question (running summary in mutex vs on-demand scan method) is unresolved and should not be resolved speculatively.
 
 ---
 
@@ -152,7 +152,7 @@ Nothing catastrophically broken. But the self-review found real gaps (see below)
 19. Add `cargo-nextest` to CI (currently CI uses `cargo test`; nextest is in the Nix devShell but not CI).
 20. Add a `bench_segment_count` micro-benchmark to verify the atomic load doesn't regress `stats()` latency.
 21. Consider `#[must_use]` on `BufferStats` (it's already `#[non_exhaustive]` but `#[must_use]` would warn callers who compute a snapshot and discard it).
-22. Audit all `Relaxed`-ordered atomic operations for consistency — `approx_disk_bytes` and `segment_count` both use `Relaxed`, which is correct for approximate metrics, but a formal audit documenting *why* `Relaxed` is safe for each would strengthen the safety argument.
+22. Audit all `Relaxed`-ordered atomic operations for consistency — `approx_disk_bytes` and `segment_count` both use `Relaxed`, which is correct for approximate metrics, but a formal audit documenting _why_ `Relaxed` is safe for each would strengthen the safety argument.
 23. Add a `SegmentStats` struct (segment count, total bytes, min/max/avg segment size) returned by a new `segment_stats()` method — the on-demand scan version of the deferred size-distribution feature.
 24. Add fuzz target for `segment_count` consistency under random `flush`/`delete_acked` sequences.
 25. Consider exposing `segment_count` as a standalone `pub fn segment_count(&self) -> u64` accessor (like `pending_count`, `latest_sequence`, `store_pressure`) for callers who only need that one value.
@@ -199,10 +199,10 @@ Nothing catastrophically broken. But the self-review found real gaps (see below)
 
 ## Resolution (2026-08-04)
 
-| Item | Claim in report | Resolution | Commit | Release |
-| ---- | --------------- | ---------- | ------ | ------- |
-| f.1  | Update AGENTS.md data-flow diagram for `segment_count` | DONE: data-flow now shows `approx_disk_bytes += len; segment_count += 1` | docs-health pass | unreleased |
-| f.11 | Wire check-changelog-links.sh into verify-gate.sh | DONE: already wired before this report (TODO_LIST marked [x]) | `47b31cd` | unreleased |
-| f.12 | Run the docs-health skill to catch remaining drift | DONE: this is that pass — loom count (9→11), unit test count (95→102), read_from coverage, segment_count in data-flow, curl in devShell all corrected | docs-health pass | unreleased |
+| Item | Claim in report                                        | Resolution                                                                                                                                            | Commit           | Release    |
+| ---- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ---------- |
+| f.1  | Update AGENTS.md data-flow diagram for `segment_count` | DONE: data-flow now shows `approx_disk_bytes += len; segment_count += 1`                                                                              | docs-health pass | unreleased |
+| f.11 | Wire check-changelog-links.sh into verify-gate.sh      | DONE: already wired before this report (TODO_LIST marked [x])                                                                                         | `47b31cd`        | unreleased |
+| f.12 | Run the docs-health skill to catch remaining drift     | DONE: this is that pass — loom count (9→11), unit test count (95→102), read_from coverage, segment_count in data-flow, curl in devShell all corrected | docs-health pass | unreleased |
 
 **Still open:** f.2 (property test for arbitrary flush+delete_acked → segment_count matches disk), f.3 (loom test for segment_count consistency), f.4 (document segment_count underflow contract), f.5 (run verify-gate.sh), f.6 (check CI green), f.7 (segment_count assertion in append_all test), f.8–10 (release, DOMAIN_LANGUAGE, backpressure example), f.13–50 (medium-term and background backlog). g.1–3 (type decision, release timing, standalone accessor) are user decisions.

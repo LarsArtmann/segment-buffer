@@ -1202,4 +1202,271 @@ proptest! {
             prop_assert!(s.p90_bytes <= s.max_bytes);
         }
     }
+
+    /// Exercises the **flush race window** through the `for_each_from` lending
+    /// iterator — a different code path from `read_from`, but the same Phase 1
+    /// scan / Phase 2 lock gap. The reader verifies the `seq → item` mapping,
+    /// strict ascent, and payload inside the callback; it tolerates transient
+    /// gaps (items flushed between scan and lock) by retrying. After the
+    /// flusher settles, all items must be visible and ordered.
+    #[test]
+    fn for_each_from_invariant_under_concurrent_flush(
+        on_disk_count in 50u16..400,
+        in_memory_count in 50u16..400,
+        read_batch_size in 10u16..200,
+    ) {
+        let on_disk = u64::from(on_disk_count);
+        let in_memory = u64::from(in_memory_count);
+        let total = on_disk + in_memory;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                crate::SegmentConfig {
+                    flush_policy: crate::FlushPolicy::Manual,
+                    max_size_bytes: 100 * 1024 * 1024,
+                    compression_level: 1,
+                    durability: crate::DurabilityPolicy::Throughput,
+                    cipher: None,
+                },
+            )
+            .unwrap(),
+        );
+
+        for i in 0..on_disk {
+            buf.append(PropItem {
+                id: i,
+                payload: format!("payload-{i}"),
+            })
+            .unwrap();
+        }
+        buf.flush().unwrap();
+        for i in 0..in_memory {
+            let seq = on_disk + i;
+            buf.append(PropItem {
+                id: seq,
+                payload: format!("payload-{seq}"),
+            })
+            .unwrap();
+        }
+
+        let corruption = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            // Reader: scans forward via for_each_from. The callback verifies
+            // seq==item.id, payload, and strict ascent. Tolerates transient
+            // gaps (flush race) by retrying the same start.
+            let buf_r = std::sync::Arc::clone(&buf);
+            let corrupt_r = std::sync::Arc::clone(&corruption);
+            s.spawn(move || {
+                let mut pos = 0u64;
+                let mut prev_id: Option<u64> = None;
+                let mut empty_retries = 0u32;
+                while pos < total {
+                    let mut last_visited = pos;
+                    let mut prev = prev_id;
+                    let mut bad = false;
+                    let n = buf_r
+                        .for_each_from(pos, read_batch_size as usize, |seq, item| {
+                            if seq != item.id
+                                || item.id >= total
+                                || item.payload != format!("payload-{}", item.id)
+                                || prev.is_some_and(|p| item.id <= p)
+                            {
+                                bad = true;
+                            }
+                            prev = Some(item.id);
+                            last_visited = item.id.saturating_add(1);
+                        })
+                        .unwrap_or(0);
+                    if bad {
+                        corrupt_r
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                    if n == 0 {
+                        empty_retries += 1;
+                        if empty_retries > 200 {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_micros(20));
+                    } else {
+                        empty_retries = 0;
+                        prev_id = prev;
+                        pos = last_visited;
+                    }
+                }
+            });
+
+            // Flusher: drains `unflushed` to disk, racing with reads.
+            let buf_f = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                for _ in 0..20 {
+                    let _ = buf_f.flush();
+                    std::thread::sleep(std::time::Duration::from_micros(50));
+                }
+            });
+        });
+
+        prop_assert!(
+            !corruption.load(std::sync::atomic::Ordering::SeqCst),
+            "for_each_from returned wrong data under concurrent flush \
+             (on_disk={}, in_memory={}, read_batch_size={})",
+            on_disk,
+            in_memory,
+            read_batch_size
+        );
+
+        // After the flusher settles, all items must be visible and ordered.
+        let _ = buf.flush();
+        let mut settled: Vec<u64> = Vec::new();
+        let _ = buf.for_each_from(0, total.max(1) as usize, |_seq, item| {
+            settled.push(item.id);
+        });
+        prop_assert_eq!(
+            settled.len() as u64,
+            total,
+            "after flush settles, for_each_from did not see all {} items (got {})",
+            total,
+            settled.len()
+        );
+        for (i, &id) in settled.iter().enumerate() {
+            prop_assert_eq!(id, i as u64, "wrong id at {} after settle", i);
+        }
+    }
+
+    /// Both mutations at once: a deleter removing front segments AND a flusher
+    /// draining the in-memory tail, racing a single reader. This is the union
+    /// of the two race windows — until now only single-mutation races were
+    /// property-tested. The reader tolerates spurious `Io` (segment deleted
+    /// between scan and read) and transient gaps (items flushed between scan
+    /// and lock); it fails on any wrong, out-of-order, or payload-mismatched
+    /// item.
+    #[test]
+    fn read_from_invariant_under_concurrent_delete_acked_and_flush(
+        on_disk_segments in 3u8..12,
+        items_per_segment in 5u8..20,
+        in_memory_count in 20u16..200,
+        read_batch_size in 10u16..200,
+    ) {
+        let items_per_segment = u64::from(items_per_segment);
+        let on_disk = u64::from(on_disk_segments) * items_per_segment;
+        let in_memory = u64::from(in_memory_count);
+        let total = on_disk + in_memory;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                crate::SegmentConfig {
+                    flush_policy: crate::FlushPolicy::Manual,
+                    max_size_bytes: 100 * 1024 * 1024,
+                    compression_level: 1,
+                    durability: crate::DurabilityPolicy::Throughput,
+                    cipher: None,
+                },
+            )
+            .unwrap(),
+        );
+
+        for seg in 0..u64::from(on_disk_segments) {
+            for i in 0..items_per_segment {
+                let seq = seg * items_per_segment + i;
+                buf.append(PropItem {
+                    id: seq,
+                    payload: format!("payload-{seq}"),
+                })
+                .unwrap();
+            }
+            buf.flush().unwrap();
+        }
+        for i in 0..in_memory {
+            let seq = on_disk + i;
+            buf.append(PropItem {
+                id: seq,
+                payload: format!("payload-{seq}"),
+            })
+            .unwrap();
+        }
+
+        let corruption = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            // Reader: scans forward. Tolerates Io (delete race) by skipping
+            // forward a segment, and transient empty gaps (flush race) by
+            // retrying, then skipping a segment if stuck.
+            let buf_r = std::sync::Arc::clone(&buf);
+            let corrupt_r = std::sync::Arc::clone(&corruption);
+            s.spawn(move || {
+                let mut pos = 0u64;
+                let mut prev_id: Option<u64> = None;
+                let mut empty_retries = 0u32;
+                while pos < total {
+                    match buf_r.read_from(pos, read_batch_size as usize) {
+                        Ok(batch) if !batch.is_empty() => {
+                            empty_retries = 0;
+                            for item in &batch {
+                                if item.id >= total
+                                    || item.payload != format!("payload-{}", item.id)
+                                    || prev_id.is_some_and(|p| item.id <= p)
+                                {
+                                    corrupt_r
+                                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                                    return;
+                                }
+                                prev_id = Some(item.id);
+                                pos = item.id.saturating_add(1);
+                            }
+                        }
+                        Ok(_) => {
+                            empty_retries += 1;
+                            if empty_retries > 5 {
+                                pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                                empty_retries = 0;
+                            } else {
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                            }
+                        }
+                        Err(_) => {
+                            // Io: segment deleted between scan and read.
+                            pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                        }
+                    }
+                }
+            });
+
+            // Deleter: removes on-disk segments from the front, racing reads.
+            let buf_d = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                if items_per_segment > 0 {
+                    for acked in (items_per_segment..on_disk)
+                        .step_by(items_per_segment as usize)
+                    {
+                        let _ = buf_d.delete_acked(acked);
+                        std::thread::sleep(std::time::Duration::from_micros(10));
+                    }
+                }
+            });
+
+            // Flusher: drains the in-memory tail to disk, racing reads.
+            let buf_f = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                for _ in 0..20 {
+                    let _ = buf_f.flush();
+                    std::thread::sleep(std::time::Duration::from_micros(50));
+                }
+            });
+        });
+
+        prop_assert!(
+            !corruption.load(std::sync::atomic::Ordering::SeqCst),
+            "read_from returned wrong data under concurrent delete_acked + flush \
+             (on_disk_segments={}, items_per_segment={}, in_memory={}, read_batch_size={})",
+            on_disk_segments,
+            items_per_segment,
+            in_memory,
+            read_batch_size
+        );
+    }
 }

@@ -1,10 +1,11 @@
 # Status Report — 2026-08-04 01:01
 
-**Session scope:** Implement the deferred TODO_LIST feature *"Per-segment size
-distribution for tuning"* — a size summary (p50/p90/max/etc.) to help callers
+**Session scope:** Implement the deferred TODO_LIST feature _"Per-segment size
+distribution for tuning"_ — a size summary (p50/p90/max/etc.) to help callers
 tune `FlushPolicy::Batch(N)`.
 
 **Working-tree state at report time** (`git status` run this session):
+
 ```
  M AGENTS.md
  M FEATURES.md
@@ -13,6 +14,7 @@ tune `FlushPolicy::Batch(N)`.
  M src/lib.rs
  M tests/loom.rs   ← NOT mine (prior-session reentrancy-guard refactor)
 ```
+
 The auto-git daemon committed most of the work mid-session (`980cad6`,
 `ca76996`, `009e9fb`). The remaining modified files are my latest doc edits.
 `tests/loom.rs` was modified before I started; I did not touch it.
@@ -64,7 +66,7 @@ The auto-git daemon committed most of the work mid-session (`980cad6`,
   - `cargo clippy --all-targets -- -D warnings` ✅
   - `cargo clippy --all-targets --features encryption -- -D warnings` ✅
   - `cargo test --no-fail-fast --features encryption` → **131 unit/property
-    + 39 doctests, 0 failures** ✅
+    - 39 doctests, 0 failures** ✅
   - `cargo doc --no-deps --features encryption` ✅
   - `RUSTFLAGS="--cfg loom" cargo check --features loom --test loom`
     (compile only — see §b) ✅
@@ -108,7 +110,7 @@ The auto-git daemon committed most of the work mid-session (`980cad6`,
 - **No example.** There is no `examples/segment_tuning.rs` (or similar) showing
   a caller how to use `segment_size_stats()` to actually adjust `Batch(N)`.
   The crate has 13 examples for other use cases; the tuning use case — the
-  *entire purpose* of this feature — has no runnable demonstration. This is a
+  _entire purpose_ of this feature — has no runnable demonstration. This is a
   real gap: a feature whose docs say "this is the tuning primitive for
   FlushPolicy::Batch" should show tuning.
 
@@ -119,7 +121,7 @@ The auto-git daemon committed most of the work mid-session (`980cad6`,
 
 - **No loom test for `segment_size_stats` itself.** Justified omission
   (it adds no mutex concurrency surface — it's a pure query reusing the
-  already-covered `scan_segments` path), but I didn't *document* that
+  already-covered `scan_segments` path), but I didn't _document_ that
   justification anywhere (e.g. a comment in `tests/loom.rs` or a note in
   AGENTS.md explaining why `segment_size_stats` is absent from the loom
   suite).
@@ -133,7 +135,7 @@ The auto-git daemon committed most of the work mid-session (`980cad6`,
 
 - **Percentile property test only covers p50 and p90.** The nearest-rank
   formula is proven for exactly two percentile values. A parametrized
-  property test over `pct in 0u32..=100` would prove the formula for *all*
+  property test over `pct in 0u32..=100` would prove the formula for _all_
   percentiles, not just the two the API happens to expose. This would also
   future-proof the test if `p99_bytes` is ever added.
 
@@ -147,7 +149,7 @@ The auto-git daemon committed most of the work mid-session (`980cad6`,
 
 ## d) TOTALLY FUCKED UP
 
-Nothing is *totally* fucked up — the shipped code is correct, tested, and all
+Nothing is _totally_ fucked up — the shipped code is correct, tested, and all
 gates pass. But two carelessness mistakes cost round-trips I should not have
 needed:
 
@@ -171,7 +173,7 @@ needed:
 
 Neither bug shipped. Both were caught by the verification loop (compile +
 test) before any commit. But they would not have existed if I had read the
-existing test helpers and patterns more carefully *before* writing the first
+existing test helpers and patterns more carefully _before_ writing the first
 line of test code.
 
 ---
@@ -184,7 +186,7 @@ line of test code.
   `#![cfg(loom)]` files are invisible to `cargo test` by default. My
   `cargo check --test loom` proves compilation but proves nothing about
   schedules. This session, the loom suite is unaffected by my change (I added
-  no mutex concurrency surface), so the risk is low — but the *discipline*
+  no mutex concurrency surface), so the risk is low — but the _discipline_
   is to run it, not to reason about whether it's necessary.
 
 - **Run `scripts/verify-gate.sh` instead of assembling the gate by hand.**
@@ -244,7 +246,7 @@ line of test code.
 3. **Check `gh run list --limit 4`.** Rule 10 — confirm CI green on master. ~30 sec.
 4. **Add `examples/segment_tuning.rs`** — a runnable demo showing `segment_size_stats()` used to adjust `FlushPolicy::Batch(N)` based on observed p50/max. The feature's stated purpose has no example. ~30 min.
 5. **Parametrize the percentile property test over `pct in 0u32..=100`** — prove nearest-rank for all percentiles, not just p50/p90. Future-proofs for p99. ~20 min.
-6. **Add a direct unit test of `percentile_of_sorted` edge cases** (empty, pct=0, pct=100, n=1). Currently only tested indirectly. ~10 min. *(Note: the fn is private, so the test goes in `src/tests.rs` via `use super::*`.)*
+6. **Add a direct unit test of `percentile_of_sorted` edge cases** (empty, pct=0, pct=100, n=1). Currently only tested indirectly. ~10 min. _(Note: the fn is private, so the test goes in `src/tests.rs` via `use super::*`.)_
 7. **Add an encrypted-segment `segment_size_stats` test** — belt-and-braces proving the code path is identical under encryption. ~10 min.
 8. **Document in AGENTS.md or a loom-test comment why `segment_size_stats` is absent from the loom suite** (pure query, no mutex surface, reuses covered `scan_segments` path). ~5 min.
 
@@ -257,24 +259,24 @@ line of test code.
 
 ### Existing TODO_LIST items (unchanged by this session)
 
-13. Add `check-changelog-links.sh` to `.github/workflows/ci.yml`. *(Gate & CI)*
-14. Add `set -euo pipefail` to `scripts/verify-gate.sh`. *(Gate & CI)*
-15. Audit all `scripts/*.sh` for the `MAPFILE` vs `mapfile` issue. *(Gate & CI)*
-16. Make the `sed -n '2,NNp'` help-range in `verify-gate.sh` self-maintaining. *(Gate & CI)*
-17. Property test: arbitrary `flush` + `delete_acked` → `stats().segment_count` matches `count_disk_segments(dir)`. *(Testing)*
-18. Loom test: `segment_count` consistency under concurrent `flush` + `delete_acked`. *(Testing)*
-19. Document the `segment_count` underflow contract in the field's doc comment. *(Testing)*
-20. `segment_count` assertion in the `append_all` auto-flush test. *(Testing)*
-21. Clean up the `read_from_concurrent_delete_acked` loom test sentinel. *(Testing)*
-22. Investigate pre-encoded `MockStore` for loom runtime optimization (~220s → ~120s). *(Testing)*
-23. Loom test for `scan_segments` + `recover` interleaving. *(Testing)*
-24. Property test for `for_each_from` under concurrent `flush`. *(Testing)*
-25. Concurrent property test for `delete_acked + flush` interleaving. *(Testing)*
-26. Visually verify README rendering on GitHub, docs.rs, mobile. *(Documentation — user action)*
-27. Health-check primitive — needs a design decision before any code. *(Design deferred)*
-28. Document panic-free guarantee as a public API contract? *(Design deferred)*
-29. `mtime_supported == false` scan-cache gap — fix or formally accept. *(Design deferred)*
-30. `segment_count` type consistency: `u64` vs `usize`. *(Design deferred)*
+13. Add `check-changelog-links.sh` to `.github/workflows/ci.yml`. _(Gate & CI)_
+14. Add `set -euo pipefail` to `scripts/verify-gate.sh`. _(Gate & CI)_
+15. Audit all `scripts/*.sh` for the `MAPFILE` vs `mapfile` issue. _(Gate & CI)_
+16. Make the `sed -n '2,NNp'` help-range in `verify-gate.sh` self-maintaining. _(Gate & CI)_
+17. Property test: arbitrary `flush` + `delete_acked` → `stats().segment_count` matches `count_disk_segments(dir)`. _(Testing)_
+18. Loom test: `segment_count` consistency under concurrent `flush` + `delete_acked`. _(Testing)_
+19. Document the `segment_count` underflow contract in the field's doc comment. _(Testing)_
+20. `segment_count` assertion in the `append_all` auto-flush test. _(Testing)_
+21. Clean up the `read_from_concurrent_delete_acked` loom test sentinel. _(Testing)_
+22. Investigate pre-encoded `MockStore` for loom runtime optimization (~220s → ~120s). _(Testing)_
+23. Loom test for `scan_segments` + `recover` interleaving. _(Testing)_
+24. Property test for `for_each_from` under concurrent `flush`. _(Testing)_
+25. Concurrent property test for `delete_acked + flush` interleaving. _(Testing)_
+26. Visually verify README rendering on GitHub, docs.rs, mobile. _(Documentation — user action)_
+27. Health-check primitive — needs a design decision before any code. _(Design deferred)_
+28. Document panic-free guarantee as a public API contract? _(Design deferred)_
+29. `mtime_supported == false` scan-cache gap — fix or formally accept. _(Design deferred)_
+30. `segment_count` type consistency: `u64` vs `usize`. _(Design deferred)_
 
 ### Broader / from ROADMAP (long-term, not this session's scope)
 
@@ -293,8 +295,8 @@ line of test code.
     `009e9fb`) with empty/auto messages. The commit messages do not describe
     the feature. If this ships in a release, the CHANGELOG is the source of
     truth (good), but `git log` is now less readable. Consider whether the
-    daemon's commit-message policy needs attention. *(Not actionable by me
-    without user direction on the daemon's config.)*
+    daemon's commit-message policy needs attention. _(Not actionable by me
+    without user direction on the daemon's config.)_
 40. The prior-session uncommitted `src/lib.rs` refactor (removing the
     `assert_not_reentered` reentrancy guard) is still partially uncommitted
     in the working tree and produced stale LSP errors all session. This is
@@ -304,8 +306,8 @@ line of test code.
     checker alone (the `SegmentIter` PhantomData lifetime was updated, which
     is the compile-time half).
 
-*(Items 41–50: nothing further that isn't covered above. The list is honest,
-not padded.)*
+_(Items 41–50: nothing further that isn't covered above. The list is honest,
+not padded.)_
 
 ---
 
@@ -314,7 +316,7 @@ not padded.)*
 1. **Should `mean_bytes` be `u64` (truncated) or `f64` (precise)?** I chose
    `u64` for consistency with the rest of the struct and the crate's all-`u64`
    byte fields, and because `SegmentSizeStats` derives `Eq` (which `f64`
-   cannot). But the feature's stated purpose is *tuning*, and a truncated mean
+   cannot). But the feature's stated purpose is _tuning_, and a truncated mean
    of [100,100,100,100,101] → 100 hides information. Is integer precision
    acceptable, or should the mean be the one `f64` field (breaking `Eq` but
    more useful)? This is a genuine API-taste decision with a real tradeoff.
@@ -341,8 +343,8 @@ not padded.)*
 
 - This report cites: `git status` (run this session), `git log --oneline -3`
   (run this session), `grep -c '#[test]' src/tests.rs` = 109, `grep -c
-  '#[test]' src/property_tests.rs` = 22, full `cargo test --features
-  encryption` = 131 unit/property + 39 doctests all passing.
+'#[test]' src/property_tests.rs` = 22, full `cargo test --features
+encryption` = 131 unit/property + 39 doctests all passing.
 - No "was X / now Y" baseline claims without citation: the test-count changes
   (102→109, 21→22) cite the literal `grep -c` outputs from this session.
 - No line-number citations (rule 3): all references use section names or

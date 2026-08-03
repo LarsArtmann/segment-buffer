@@ -37,12 +37,12 @@ Added a `### Documentation` subsection under `[Unreleased]` with the entry.
 
 ### Verification gate (run on my changes before daemon commits)
 
-| Gate | Command | Result |
-|------|---------|--------|
-| fmt | `cargo fmt --all -- --check` | PASS (my file clean; `src/tests.rs` had a pre-existing fmt diff from concurrent work, not mine) |
-| clippy | `cargo clippy --all-targets --features encryption -- -D warnings` | PASS |
-| doc | `cargo doc --no-deps --features encryption` | PASS |
-| tests | `cargo test --no-fail-fast --features encryption` | PASS (117 lib + 38 doctests, 0 failed) |
+| Gate   | Command                                                           | Result                                                                                          |
+| ------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| fmt    | `cargo fmt --all -- --check`                                      | PASS (my file clean; `src/tests.rs` had a pre-existing fmt diff from concurrent work, not mine) |
+| clippy | `cargo clippy --all-targets --features encryption -- -D warnings` | PASS                                                                                            |
+| doc    | `cargo doc --no-deps --features encryption`                       | PASS                                                                                            |
+| tests  | `cargo test --no-fail-fast --features encryption`                 | PASS (117 lib + 38 doctests, 0 failed)                                                          |
 
 ---
 

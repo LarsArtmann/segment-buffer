@@ -179,19 +179,20 @@ The auto-git daemon committed `9106af1` (the Cargo.toml lint tightening) BEFORE 
 The fix commits (`1f63b02`..`4b7a240`) were pushed to `origin/master`. CI went
 green. The full strict lint posture shipped: `pedantic` + `nursery` +
 `as_conversions` + `arithmetic_side_effects` + `unwrap_used` + `expect_used`
-+ `indexing_slicing` + `string_slice` + `panic_in_result_fn` + `panic` +
-`exit` + `todo` + `unimplemented` + `unchecked_time_subtraction` +
-`unreachable` — all at `deny` in `Cargo.toml [lints.clippy]`.
 
-| Item | Status | Notes |
-| ---- | ------ | ----- |
-| f.1 Push fix commits | ~~Push the fix commits~~ done — commits on master | CI green on `4b7a240` and later |
-| f.2 Verify CI green | done | `04a28b7` (flake.lock bump) confirms CI healthy |
-| f.3 Update CHANGELOG `[Unreleased]` | **Still open** — the living docs still describe "pedantic at warn"; CHANGELOG needs the full strict migration entry | Tracked in docs-health pass |
-| f.4 Fuzz targets clippy | Partially — fuzz targets are nightly-only; lint posture not verified under `+nightly clippy` | Low priority |
-| f.5 Benchmark `bench_append` | Not done — `saturating_add` perf impact unmeasured | Low priority (compiler likely optimizes) |
-| f.6 Run `scripts/verify-gate.sh` | done — later sessions ran the full 14-gate script | |
-| f.7–f.25 | Open considerations | Brainstorm items; no action required |
+- `indexing_slicing` + `string_slice` + `panic_in_result_fn` + `panic` +
+  `exit` + `todo` + `unimplemented` + `unchecked_time_subtraction` +
+  `unreachable` — all at `deny` in `Cargo.toml [lints.clippy]`.
+
+| Item                                | Status                                                                                                              | Notes                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| f.1 Push fix commits                | ~~Push the fix commits~~ done — commits on master                                                                   | CI green on `4b7a240` and later                 |
+| f.2 Verify CI green                 | done                                                                                                                | `04a28b7` (flake.lock bump) confirms CI healthy |
+| f.3 Update CHANGELOG `[Unreleased]` | **Still open** — the living docs still describe "pedantic at warn"; CHANGELOG needs the full strict migration entry | Tracked in docs-health pass                     |
+| f.4 Fuzz targets clippy             | Partially — fuzz targets are nightly-only; lint posture not verified under `+nightly clippy`                        | Low priority                                    |
+| f.5 Benchmark `bench_append`        | Not done — `saturating_add` perf impact unmeasured                                                                  | Low priority (compiler likely optimizes)        |
+| f.6 Run `scripts/verify-gate.sh`    | done — later sessions ran the full 14-gate script                                                                   |                                                 |
+| f.7–f.25                            | Open considerations                                                                                                 | Brainstorm items; no action required            |
 
 **Q1 (push):** Resolved — commits pushed, CI green.
 **Q2 (fuzz lint config):** Open — `fuzz/Cargo.toml` carries the lint config; fuzz targets have not been verified under nightly clippy. Low priority.

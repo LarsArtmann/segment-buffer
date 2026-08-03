@@ -41,7 +41,7 @@
 > `nursery` + all restriction lints (`as_conversions`,
 > `arithmetic_side_effects`, `unwrap_used`, etc.) are now at `deny`. Library
 > code is fully clippy-clean. The "~51 warnings visible" and `-A
-> clippy::pedantic` CI workaround are obsolete. Section b) ("Incremental
+clippy::pedantic` CI workaround are obsolete. Section b) ("Incremental
 > pedantic migration — 51 warnings remain") is fully resolved. Section c)
 > ("Property tests not started") is resolved (21 property tests shipped).
 > See [Resolution](#resolution-2026-08-03) below.
@@ -335,16 +335,16 @@ Since this report was written, the full strict lint migration shipped
 (commits `9106af1`..`4b7a240`), the scan-cache TOCTOU fix landed
 (`dc7ea7a`), and the consistency-model property tests shipped (21 total).
 
-| Item | Status | Notes |
-| ---- | ------ | ----- |
+| Item                                            | Status                          | Notes                                                                             |
+| ----------------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------- |
 | b) Incremental pedantic migration (51 warnings) | ~~PARTIALLY DONE~~ **RESOLVED** | All library code clean under `pedantic` + `nursery` + restriction lints at `deny` |
-| b) CHANGELOG link-validation script not wired | **Still open** | Script exists but not in `verify-gate.sh` |
-| c) Property tests for consistency model | ~~NOT STARTED~~ **RESOLVED** | 21 property tests (5 new for race windows); scan-cache TOCTOU found and fixed |
-| f.2–5 Pedantic migration items | ~~Open~~ **RESOLVED** | Full strict set at `deny` |
-| f.6 Ship v0.5.5 | **Still open** | Awaiting release decision |
-| f.7 Document `pending_count()` vs `unflushed` | **Still open** | Q3 below; option (c) is the leading candidate |
-| f.9 Property tests | **RESOLVED** | 21 total |
-| f.31 Pedantic-warning-count regression check | **SUPERSEDED** | Warnings are now hard errors (`deny`); a count check is moot |
-| Q1 (`store_pressure` f32 vs f64) | **RESOLVED** | `as_conversions` at `deny`; targeted `#[allow]` on lossy casts |
-| Q2 (ship v0.5.5) | **Still open** | Same as f.6 |
-| Q3 (`pending_count` naming) | **Still open** | Design decision for the user |
+| b) CHANGELOG link-validation script not wired   | **Still open**                  | Script exists but not in `verify-gate.sh`                                         |
+| c) Property tests for consistency model         | ~~NOT STARTED~~ **RESOLVED**    | 21 property tests (5 new for race windows); scan-cache TOCTOU found and fixed     |
+| f.2–5 Pedantic migration items                  | ~~Open~~ **RESOLVED**           | Full strict set at `deny`                                                         |
+| f.6 Ship v0.5.5                                 | **Still open**                  | Awaiting release decision                                                         |
+| f.7 Document `pending_count()` vs `unflushed`   | **Still open**                  | Q3 below; option (c) is the leading candidate                                     |
+| f.9 Property tests                              | **RESOLVED**                    | 21 total                                                                          |
+| f.31 Pedantic-warning-count regression check    | **SUPERSEDED**                  | Warnings are now hard errors (`deny`); a count check is moot                      |
+| Q1 (`store_pressure` f32 vs f64)                | **RESOLVED**                    | `as_conversions` at `deny`; targeted `#[allow]` on lossy casts                    |
+| Q2 (ship v0.5.5)                                | **Still open**                  | Same as f.6                                                                       |
+| Q3 (`pending_count` naming)                     | **Still open**                  | Design decision for the user                                                      |

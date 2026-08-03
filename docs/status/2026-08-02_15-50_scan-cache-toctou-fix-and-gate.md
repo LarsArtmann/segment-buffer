@@ -362,15 +362,15 @@ this crate's rules set.
 
 The fix and all associated tests/docs are now on `master` and CI is green.
 
-| Item | Status | Notes |
-| ---- | ------ | ----- |
-| Push to origin | ~~7 commits unpushed~~ done — on master (`dc7ea7a` + subsequent) | CI green |
-| f.1 Deterministic Barrier-based regression test | **Still open** — the fix is validated 40× empirically, not via a deterministic Barrier test | Tracked in TODO_LIST |
-| f.2 Loom-modeling `scan_segments` | **Still open** — `MockStore.scan()` could in principle be stubbed | Low priority |
-| f.3 `mtime_supported == false` gap | **Still open** — documented honestly in DOMAIN_LANGUAGE.md, not code-fixed | Tracked in TODO_LIST |
-| f.4 Invariant proof in AGENTS.md | done — the "read_from race windows" section in AGENTS.md now describes the scan-cache TOCTOU fix | |
-| f.5 Run concurrent flush test 100× | Partially — 40× done, not 100× | Low priority |
-| f.6–f.30 | Mix of done and open — see individual items | Brainstorm items not separately actioned |
+| Item                                            | Status                                                                                           | Notes                                    |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| Push to origin                                  | ~~7 commits unpushed~~ done — on master (`dc7ea7a` + subsequent)                                 | CI green                                 |
+| f.1 Deterministic Barrier-based regression test | **Still open** — the fix is validated 40× empirically, not via a deterministic Barrier test      | Tracked in TODO_LIST                     |
+| f.2 Loom-modeling `scan_segments`               | **Still open** — `MockStore.scan()` could in principle be stubbed                                | Low priority                             |
+| f.3 `mtime_supported == false` gap              | **Still open** — documented honestly in DOMAIN_LANGUAGE.md, not code-fixed                       | Tracked in TODO_LIST                     |
+| f.4 Invariant proof in AGENTS.md                | done — the "read_from race windows" section in AGENTS.md now describes the scan-cache TOCTOU fix |                                          |
+| f.5 Run concurrent flush test 100×              | Partially — 40× done, not 100×                                                                   | Low priority                             |
+| f.6–f.30                                        | Mix of done and open — see individual items                                                      | Brainstorm items not separately actioned |
 
 **g.1 (push):** Resolved — commits pushed, CI green.
 **g.2 (Barrier test before shippable):** Shipped without the Barrier test; the empirical validation was accepted.

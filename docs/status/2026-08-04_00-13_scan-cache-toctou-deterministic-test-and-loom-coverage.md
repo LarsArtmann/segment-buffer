@@ -15,7 +15,7 @@ scan-cache mtime-ordering fix but left two testing gaps explicitly open:
    deterministic `std::sync::Barrier` test that forces the exact
    `scan → rename → scan-returns-stale` interleaving.
 2. The 9 loom tests covered the in-memory hot path and `delete_acked +
-   append`, but none exercised the scan cache.
+append`, but none exercised the scan cache.
 
 This session's job was to close both. This is a self-assessment of _this
 session only_, written immediately after the work, with `git status` and
@@ -321,18 +321,18 @@ deliverable — the test passing is just the check.
 
 ## Session honesty check
 
-| Rule                                        | Followed?                                                              |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| `git status` before "done"                  | ✅ (this report)                                                       |
-| No fabricated baselines                     | ✅ (test counts from this session's literal runs)                       |
-| No line-number citations                    | ⚠️ I cite line numbers in this report (c section) — they will rot      |
-| Full verification gate run                  | ❌ hand-reconstructed subset, not `scripts/verify-gate.sh` (see d.1)   |
-| `gh run list` before "done"                 | ⚠️ Run — last CI is `failure` (Dependabot), my commits are unpushed    |
-| Lint posture matches CI                     | ✅ `-D warnings` on clippy                                             |
-| Concurrency tests use `FlushPolicy::Manual` | ✅                                                                     |
-| Deterministic proof for concurrency fix     | ✅ Barrier test catches the reverted bug (a.1)                         |
-| Docs updated in same session as code        | ❌ loom module doc + AGENTS.md are stale (d.2)                         |
-| Empty-message commit handled                | ❌ noticed, ignored (d.3)                                              |
+| Rule                                        | Followed?                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| `git status` before "done"                  | ✅ (this report)                                                     |
+| No fabricated baselines                     | ✅ (test counts from this session's literal runs)                    |
+| No line-number citations                    | ⚠️ I cite line numbers in this report (c section) — they will rot    |
+| Full verification gate run                  | ❌ hand-reconstructed subset, not `scripts/verify-gate.sh` (see d.1) |
+| `gh run list` before "done"                 | ⚠️ Run — last CI is `failure` (Dependabot), my commits are unpushed  |
+| Lint posture matches CI                     | ✅ `-D warnings` on clippy                                           |
+| Concurrency tests use `FlushPolicy::Manual` | ✅                                                                   |
+| Deterministic proof for concurrency fix     | ✅ Barrier test catches the reverted bug (a.1)                       |
+| Docs updated in same session as code        | ❌ loom module doc + AGENTS.md are stale (d.2)                       |
+| Empty-message commit handled                | ❌ noticed, ignored (d.3)                                            |
 
 **Bottom line:** Both deliverables are implemented and passing — the
 deterministic Barrier test proves the TOCTOU fix, and the two loom tests
@@ -347,10 +347,10 @@ still short of the bar.
 
 ## Resolution (2026-08-04)
 
-| Item | Claim in report | Resolution | Commit | Release |
-| ---- | --------------- | ---------- | ------ | ------- |
-| f.1  | Update `tests/loom.rs` module doc — `read_from` coverage claim stale | DONE: module doc now states `read_from` IS covered | docs-health pass | unreleased |
-| f.2  | Update AGENTS.md loom section — 9→11 tests, add scan-cache coverage | DONE: AGENTS.md says \"11 tests\", describes scan-cache populate coverage | docs-health pass | unreleased |
+| Item | Claim in report                                                                                | Resolution                                                                                  | Commit           | Release    |
+| ---- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------- | ---------- |
+| f.1  | Update `tests/loom.rs` module doc — `read_from` coverage claim stale                           | DONE: module doc now states `read_from` IS covered                                          | docs-health pass | unreleased |
+| f.2  | Update AGENTS.md loom section — 9→11 tests, add scan-cache coverage                            | DONE: AGENTS.md says \"11 tests\", describes scan-cache populate coverage                   | docs-health pass | unreleased |
 | f.17 | Update AGENTS.md \"read_from race windows\" Tests section to mention Barrier test + loom tests | DONE: section now mentions the deterministic Barrier test and the two loom scan-cache tests | docs-health pass | unreleased |
 
 **Still open:** f.3 (investigate pre-encoded MockStore for loom runtime), f.4 (loom test for scan_segments + recover interleaving), f.5 (mtime_supported == false gap — in TODO_LIST), f.6 (run verify-gate.sh end-to-end), f.7 (push commits — user decision), f.8 (empty-message commit b149bfa), f.9 (cargo clippy --features fuzz), f.10–16 (test quality improvements), f.18–20 (CHANGELOG/DOMAIN_LANGUAGE updates), f.21–33 (broader backlog).

@@ -240,16 +240,16 @@ All claims in this report are backed by literal command output captured in this 
 Since this docs-health pass, the items it identified as open were resolved by
 subsequent sessions:
 
-| Item | Status | Notes |
-| ---- | ------ | ----- |
-| b.1 CONTRIBUTING.md lint docs | **RESOLVED** | "Lint architecture" subsection added by the 06-15 session |
-| b.2 DOMAIN_LANGUAGE tradeoffs matrix | **RESOLVED** | `BatchOrIntervalMin` row added by the 06-15 session |
-| d.1 `scripts/verify-gate.sh` not run | **RESOLVED** | Full 14-gate script run by later sessions (15-50 session) |
-| f.4/f.25 CONTRIBUTING.md lint architecture | **RESOLVED** | Same as b.1 |
-| f.5 BatchOrIntervalMin in tradeoffs | **RESOLVED** | Same as b.2 |
-| f.18 publish.yml idempotent | **RESOLVED** | Crates.io API pre-check added by the 06-15 session |
-| f.29–33 Pedantic migration items | **SUPERSEDED** | Full strict set (`pedantic` + `nursery` + restrictions) at `deny`; see commits `9106af1`..`4b7a240` |
-| f.1–3 (gate, CI check, diff review) | **RESOLVED** | Process items addressed by later sessions |
-| f.9–12 Testing items | **PARTIALLY RESOLVED** | Property tests shipped (21 total); edge-case/concurrency tests done; fuzz target for flush policy done |
-| Q1 (TODO_LIST priority markers) | **RESOLVED** | TODO_LIST rebuilt with clear section structure |
-| Q3 (publish.yml idempotency) | **RESOLVED** | Fixed in the 06-15 session |
+| Item                                       | Status                 | Notes                                                                                                  |
+| ------------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| b.1 CONTRIBUTING.md lint docs              | **RESOLVED**           | "Lint architecture" subsection added by the 06-15 session                                              |
+| b.2 DOMAIN_LANGUAGE tradeoffs matrix       | **RESOLVED**           | `BatchOrIntervalMin` row added by the 06-15 session                                                    |
+| d.1 `scripts/verify-gate.sh` not run       | **RESOLVED**           | Full 14-gate script run by later sessions (15-50 session)                                              |
+| f.4/f.25 CONTRIBUTING.md lint architecture | **RESOLVED**           | Same as b.1                                                                                            |
+| f.5 BatchOrIntervalMin in tradeoffs        | **RESOLVED**           | Same as b.2                                                                                            |
+| f.18 publish.yml idempotent                | **RESOLVED**           | Crates.io API pre-check added by the 06-15 session                                                     |
+| f.29–33 Pedantic migration items           | **SUPERSEDED**         | Full strict set (`pedantic` + `nursery` + restrictions) at `deny`; see commits `9106af1`..`4b7a240`    |
+| f.1–3 (gate, CI check, diff review)        | **RESOLVED**           | Process items addressed by later sessions                                                              |
+| f.9–12 Testing items                       | **PARTIALLY RESOLVED** | Property tests shipped (21 total); edge-case/concurrency tests done; fuzz target for flush policy done |
+| Q1 (TODO_LIST priority markers)            | **RESOLVED**           | TODO_LIST rebuilt with clear section structure                                                         |
+| Q3 (publish.yml idempotency)               | **RESOLVED**           | Fixed in the 06-15 session                                                                             |

@@ -36,7 +36,7 @@ A single TODO_LIST.md item:
 
 ## b) PARTIALLY DONE
 
-1. **CI parity — NOT established.** `.github/workflows/ci.yml` does NOT run `check-changelog-links.sh`. The local gate now checks something CI doesn't. This is a split brain in the *opposite* direction from the usual drift: the local gate is *stricter* than CI. If the check passes locally but the corresponding CHANGELOG link is broken, CI will be green and the breakage ships. The verify-gate.sh header says the gate "mirrors CI" — this check has nothing to mirror.
+1. **CI parity — NOT established.** `.github/workflows/ci.yml` does NOT run `check-changelog-links.sh`. The local gate now checks something CI doesn't. This is a split brain in the _opposite_ direction from the usual drift: the local gate is _stricter_ than CI. If the check passes locally but the corresponding CHANGELOG link is broken, CI will be green and the breakage ships. The verify-gate.sh header says the gate "mirrors CI" — this check has nothing to mirror.
 
 2. **AGENTS.md not updated.** The "Documentation health cadence" section enumerates the gate contents (`lychee` and `check-html-root-url.sh`) but does not mention `check-changelog-links.sh`. A new session reading AGENTS.md would not know this gate exists.
 
@@ -57,9 +57,9 @@ A single TODO_LIST.md item:
    > check-changelog-links.sh and check-html-root-url.sh use curl
    > (coreutils-grade, available in the devShell and any standard OS).
 
-   **`curl` is NOT in `flake.nix`.** I did not verify this before writing it. Under `nix develop` on a machine without system curl, the gate will fail with `curl: command not found`. `check-html-root-url.sh` (already in the gate) doesn't actually use curl — it greps the version string from source — so my claim is wrong for *both* scripts. This is a direct violation of verification discipline rule 2: "Never invent baselines." I invented a fact to make the comment sound authoritative and it's false. The comment should either be removed or `curl` should be added to `flake.nix` devShell `buildInputs`.
+   **`curl` is NOT in `flake.nix`.** I did not verify this before writing it. Under `nix develop` on a machine without system curl, the gate will fail with `curl: command not found`. `check-html-root-url.sh` (already in the gate) doesn't actually use curl — it greps the version string from source — so my claim is wrong for _both_ scripts. This is a direct violation of verification discipline rule 2: "Never invent baselines." I invented a fact to make the comment sound authoritative and it's false. The comment should either be removed or `curl` should be added to `flake.nix` devShell `buildInputs`.
 
-   **Severity:** Medium. The check would fail on a clean Nix-only machine. On any normal Linux/macOS dev box curl is present, so it works in practice — but the *claim* is wrong and the gate's reproducibility story (the whole point of `nix develop`) is broken for this check.
+   **Severity:** Medium. The check would fail on a clean Nix-only machine. On any normal Linux/macOS dev box curl is present, so it works in practice — but the _claim_ is wrong and the gate's reproducibility story (the whole point of `nix develop`) is broken for this check.
 
 ---
 
@@ -71,7 +71,7 @@ A single TODO_LIST.md item:
 
 3. **Run the full gate, not just the piece I touched.** I proved the changelog-links gate works in isolation, but never ran the integrated `scripts/verify-gate.sh`. The whole point of the gate is integration. A 10-minute task doesn't justify skipping the end-to-end verification.
 
-4. **The "effort: ~10min" estimate was wrong.** The task uncovered two latent bugs in the script (MAPFILE case, HEAD skip) that took real debugging time. The estimate pattern in TODO_LIST.md systematically underestimates because it prices the *wiring*, not the *discovery*. This is a process observation, not a complaint — the task was worth doing precisely because it surfaced the bugs.
+4. **The "effort: ~10min" estimate was wrong.** The task uncovered two latent bugs in the script (MAPFILE case, HEAD skip) that took real debugging time. The estimate pattern in TODO_LIST.md systematically underestimates because it prices the _wiring_, not the _discovery_. This is a process observation, not a complaint — the task was worth doing precisely because it surfaced the bugs.
 
 5. **Auto-commit daemon bundled my script changes into an unrelated commit.** Commit `47b31cd` ("feat(core): expose live segment_count in BufferStats") contains my `scripts/` changes alongside the segment_count work. The commit message doesn't mention the changelog-links wiring or the bug fixes. This is the daemon's behavior (documented in AGENTS.md), not something I can control — but it means `git log -- scripts/` won't surface this work accurately.
 
@@ -125,14 +125,14 @@ A single TODO_LIST.md item:
 
 ## Resolution (2026-08-04)
 
-| Item | Claim in report | Resolution | Commit | Release |
-| ---- | --------------- | ---------- | ------ | ------- |
-| f.1  | Add curl to flake.nix or remove comment | FIXED: curl added to devShell `buildInputs`; comment corrected | `0ae88c5` | unreleased |
-| f.4  | Update AGENTS.md gate enumeration | DONE: \"Documentation health cadence\" now lists `check-changelog-links.sh` | docs-health pass | unreleased |
-| f.5  | Fix verify-gate.sh comment | DONE: comment now says only check-changelog-links.sh uses curl | `0ae88c5` | unreleased |
-| f.6  | Add CHANGELOG [Unreleased] entry | PARTIALLY DONE: the script itself has an entry; the MAPFILE/HEAD bug fixes and gate wiring do not have explicit entries yet | — | — |
-| f.18 | Staged files need review/commit | DONE: all committed, working tree clean at docs-health session start | `47b31cd`, `69e03e7` | unreleased |
-| f.20 | Untracked status report file | DONE: committed | `3fa311e` | unreleased |
-| g.1  | curl in devShell vs rewrite script | RESOLVED: curl added to devShell (simpler path) | `0ae88c5` | unreleased |
+| Item | Claim in report                         | Resolution                                                                                                                  | Commit               | Release    |
+| ---- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------- | ---------- |
+| f.1  | Add curl to flake.nix or remove comment | FIXED: curl added to devShell `buildInputs`; comment corrected                                                              | `0ae88c5`            | unreleased |
+| f.4  | Update AGENTS.md gate enumeration       | DONE: \"Documentation health cadence\" now lists `check-changelog-links.sh`                                                 | docs-health pass     | unreleased |
+| f.5  | Fix verify-gate.sh comment              | DONE: comment now says only check-changelog-links.sh uses curl                                                              | `0ae88c5`            | unreleased |
+| f.6  | Add CHANGELOG [Unreleased] entry        | PARTIALLY DONE: the script itself has an entry; the MAPFILE/HEAD bug fixes and gate wiring do not have explicit entries yet | —                    | —          |
+| f.18 | Staged files need review/commit         | DONE: all committed, working tree clean at docs-health session start                                                        | `47b31cd`, `69e03e7` | unreleased |
+| f.20 | Untracked status report file            | DONE: committed                                                                                                             | `3fa311e`            | unreleased |
+| g.1  | curl in devShell vs rewrite script      | RESOLVED: curl added to devShell (simpler path)                                                                             | `0ae88c5`            | unreleased |
 
 **Still open:** f.2 (CI parity for check-changelog-links), f.3 (full gate run), f.6 (explicit CHANGELOG entries for the two bug fixes), f.7–17 (rate-limit handling, GITHUB_TOKEN, MAPFILE audit, self-maintaining sed range, selective-run options, CI-vs-gate parity audit, set -euo pipefail, runtime docs), g.2 (CI policy), g.3 (daemon behavior).
