@@ -115,6 +115,30 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   windows with generated parameters, including a completeness assertion that
   the transient gap closes once the flusher settles.
 
+- **`changelog-links` CI job** (`.github/workflows/ci.yml`): CI now runs
+  `scripts/check-changelog-links.sh`, closing the split brain where the local
+  `verify-gate.sh` gate validated CHANGELOG tag-links but CI did not — a broken
+  link could ship while CI stayed green.
+
+- **`segment_count` coverage** (`src/tests.rs`, `src/property_tests.rs`,
+  `tests/loom.rs`): three new tests close gaps in the live segment-count
+  atomic. A property test (`segment_count_matches_disk_across_flush_delete_ops`)
+  asserts the incrementally-maintained counter equals the real on-disk file
+  count after every `append`/`flush`/`delete_acked` op; a loom test
+  (`segment_count_self_heals_after_concurrent_flush_and_delete`) proves the
+  counter never panics and is recalibrated by `sync_disk_bytes` after a
+  concurrent flush+delete (which can momentarily wrap it past zero); and
+  `append_all_auto_flush_increments_segment_count` asserts the counter after an
+  `append_all`-triggered auto-flush.
+
+- **`for_each_from` + dual-mutation concurrency property tests**
+  (`src/property_tests.rs`): a property test exercises the `for_each_from`
+  lending iterator under concurrent `flush` (the same Phase 1/Phase 2 gap as
+  `read_from`, different code path), and
+  `read_from_invariant_under_concurrent_delete_acked_and_flush` races a reader
+  against a deleter AND a flusher at once (previously only single-mutation
+  races were property-tested).
+
 ### Changed
 
 - **Panic-free public API: re-entrancy deadlock eliminated at the root**
@@ -192,6 +216,27 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   now skips `HEAD` refs, preventing a false failure on every run with
   unreleased changes.
 
+- **`verify-gate.sh` stop-on-first exited 0 on failure** (`scripts/verify-gate.sh`):
+  `run()` captured the command's status with `local rc=$?` after an
+  `if "$@"; then ...; fi` with no `else`. By POSIX such an `if` returns 0 on a
+  false condition, so `rc` was always 0 — the default (stop-on-first) mode
+  printed `FAIL (rc=0)` and exited 0 even when a gate failed. Fixed by capturing
+  the real status via `"$@" || rc=$?`. The orchestrator also now runs under
+  `set -euo pipefail` (was `set -u` only); `run()` returns 0 in `--all` mode so
+  `set -e` does not abort after the first failure (the summary still exits
+  non-zero).
+
+- **`verify-gate.sh --help` range was hardcoded**: `sed -n '2,22p'` drifted on
+  every header edit. Replaced with an `awk` filter that prints the comment
+  block dynamically (skips the shebang, prints `#` lines, stops at the first
+  non-comment line) — self-maintaining.
+
+- **Loom test sentinel polluted the assertion** (`tests/loom.rs`):
+  `read_from_concurrent_delete_acked_scan_cache_no_corruption` appended `id: 99`
+  to invalidate the scan cache but did not filter it from the final assertion.
+  The sentinel is now a named constant (`SENTINEL_ID`) and is filtered out so
+  the asserted set contains only the real items under test.
+
 ### Documentation
 
 - **Clarified `pending_count()` vs `unflushed` distinction** (`src/lib.rs`): the
@@ -200,6 +245,25 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   flushed." It notes that `flush()` leaves the count unchanged and that the
   on-disk / in-memory split is not exposed separately by the public API. No API
   change (option (c) from the 2026-08-02 report's Q3).
+
+- **`segment_count` underflow / wrap contract** (`src/lib.rs`): the field's
+  rustdoc now documents the two benign wrap scenarios (external file removal;
+  concurrent flush+delete where `fetch_sub` lands before `fetch_add`) and that
+  `sync_disk_bytes`/`recover` recalibrate to the authoritative directory scan.
+
+- **`recover` is open-time only** (`src/lib.rs`): the private `recover` method
+  now documents that it runs exactly once inside `open`/`open_with_store`/
+  `open_with_report` before the buffer is shared, so it cannot race
+  `read_from`/`flush`/`delete_acked` — there is no scan-cache/recovery
+  interleaving window to test. Resolves the open "loom test for scan_segments +
+  recover" item: the race is impossible by construction.
+
+- **Pre-encoded `MockStore` investigation** (`tests/loom.rs`): the loom module
+  doc now records why a decode-skipping mock is not tractable without
+  compromising fidelity — encode is already skipped (the store receives
+  pre-encoded bytes), and decode is the read path loom exists to exercise;
+  bypassing it would need a production test-hook this crate rejects. Resolves
+  the open "investigate pre-encoded MockStore" item.
 
 ## [0.5.4] - 2026-08-02
 
