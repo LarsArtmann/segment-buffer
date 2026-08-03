@@ -217,7 +217,7 @@ is exhaustively proven correct across every schedule of two threads by the loom 
 
 ## Backpressure / overload policy
 
-The crate **ships no admission policy**. `store_pressure()` returns `approx_disk_bytes / max_size_bytes ∈ [0.0, 1.0]`; `is_overloaded()` is just `> 0.9`. Callers define their own priority thresholds — see `examples/backpressure.rs` for the canonical pattern. For tuning `FlushPolicy::Batch(N)` against the resulting segment file sizes, `segment_size_stats()` returns an on-demand `count` / `min` / `max` / `mean` / `p50` / `p90` byte-size distribution — an `O(n_segments)` scan outside the mutex (like `sync_disk_bytes`), nearest-rank percentiles, pure query (no cached-counter mutation).
+The crate **ships no admission policy**. `store_pressure()` returns `approx_disk_bytes / max_size_bytes ∈ [0.0, 1.0]`; `is_overloaded()` is just `> 0.9`. Callers define their own priority thresholds — see `examples/backpressure.rs` for the canonical pattern. For tuning `FlushPolicy::Batch(N)` against the resulting segment file sizes, `segment_size_stats()` returns an on-demand `count` / `min` / `max` / `mean` / `p50` / `p90` byte-size distribution — an `O(n_segments)` scan outside the mutex (like `sync_disk_bytes`), nearest-rank percentiles, pure query (no cached-counter mutation). See `examples/segment_tuning.rs` for the canonical batch-size tuning loop.
 
 ## Flush offloading (pattern, not feature)
 
@@ -262,9 +262,9 @@ src/
   store.rs         SegmentStore trait + RealStore impl: the I/O boundary. create_dir_all / scan / clean_tmp / segment_size / remove_segment / write_atomic / read_bytes
   cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher + XChaCha20Poly1305Cipher (both feature-gated, impls in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
-  tests.rs         `mod tests` — unit tests (109 tests; `grep -c '#[test]' src/tests.rs`)
-  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / segment_size_stats / FlushPolicy / consistency-model race-window invariants (25 properties; `grep -c '#[test]' src/property_tests.rs`)
-examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput), batch_or_interval_min (tiny-segment suppression demo)
+  tests.rs         `mod tests` — unit tests (115 tests; `grep -c '#[test]' src/tests.rs`)
+  property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / segment_size_stats / FlushPolicy / consistency-model race-window invariants (26 properties; `grep -c '#[test]' src/property_tests.rs`)
+examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput), batch_or_interval_min (tiny-segment suppression demo), segment_tuning (segment_size_stats batch-size tuning loop)
 benches/           8 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy) + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery, fuzz_parse_filename, fuzz_envelope, fuzz_append_all); requires nightly
 FEATURES.md        Honest capability inventory by status

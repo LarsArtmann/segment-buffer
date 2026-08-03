@@ -139,6 +139,18 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   against a deleter AND a flusher at once (previously only single-mutation
   races were property-tested).
 
+- **Standalone `segment_tuning` example** (`examples/`): demonstrates the
+  full `segment_size_stats()` tuning loop — measure a small-batch baseline,
+  sweep candidate batch sizes against a target segment-size window, and pick
+  the first whose p50 lands inside it. The crate's stated tuning use case now
+  has a runnable demonstration.
+
+- **Loom absence justification for `segment_size_stats`** (`tests/loom.rs`):
+  documents in the module-level "What this does NOT cover" section why
+  `segment_size_stats` has no loom test (pure query, reuses the
+  already-covered `scan_segments` path, acquires no lock the hot path does
+  not already acquire).
+
 ### Changed
 
 - **Panic-free public API: re-entrancy deadlock eliminated at the root**

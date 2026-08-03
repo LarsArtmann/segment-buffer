@@ -3201,7 +3201,17 @@ fn percentile_of_sorted_is_monotonically_nondecreasing_in_pct() {
 #[test]
 fn segment_size_stats_works_with_encrypted_segments() {
     let tmp = TempDir::new().unwrap();
-    let buf = encrypted_buffer(tmp.path(), [0u8; 32]);
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: Some(Arc::new(AesGcmCipher::new(&[0u8; 32]))),
+        },
+    )
+    .unwrap();
 
     // Three flushes with varying item counts so byte sizes differ.
     for n in [3u64, 1, 5] {

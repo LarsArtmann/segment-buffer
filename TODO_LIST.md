@@ -13,24 +13,28 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## Testing
 
-- `[ ]` **Parametrize the percentile property test over `pct in 0u32..=100`.**
+- `[x]` **Parametrize the percentile property test over `pct in 0u32..=100`.**
   The nearest-rank formula is currently proven for exactly p50 and p90 — the
   two values the API happens to expose. A parametrized test would prove it for
   _all_ percentiles and future-proof for `p99_bytes`. Effort: ~20 min. Source:
-  `docs/status/2026-08-04_01-01_*` item f.5.
+  `docs/status/2026-08-04_01-01_*` item f.5. **Done** (2026-08-04):
+  `percentile_of_sorted_matches_nearest_rank_for_all_pct` in
+  `src/property_tests.rs`.
 
-- `[ ]` **Direct unit test of `percentile_of_sorted` edge cases** (empty input,
+- `[x]` **Direct unit test of `percentile_of_sorted` edge cases** (empty input,
   `pct=0`, `pct=100`, `n=1`). The private helper is currently only tested
   indirectly via `segment_size_stats`. A direct test makes the nearest-rank
   contract visible. Effort: ~10 min. Source: `docs/status/2026-08-04_01-01_*`
-  item f.6.
+  item f.6. **Done** (2026-08-04): five tests in `src/tests.rs` covering
+  empty, pct=0, pct=100, n=1, and monotonicity.
 
-- `[ ]` **Encrypted-segment `segment_size_stats` test.** The code path is
+- `[x]` **Encrypted-segment `segment_size_stats` test.** The code path is
   identical regardless of encryption (`segment_size` reads
   `metadata().len()`), so this is belt-and-braces rather than a correctness
   gap. The crate has encrypted variants of other tests; this one is missing
   for consistency. Effort: ~10 min. Source: `docs/status/2026-08-04_01-01_*`
-  item f.7.
+  item f.7. **Done** (2026-08-04):
+  `segment_size_stats_works_with_encrypted_segments` in `src/tests.rs`.
 
 ---
 
@@ -42,18 +46,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
   all need a human eye — lychee catches link and anchor drift, not rendering
   regressions. _Standing item._ Effort: ~15 min. _(User action — requires a
   browser, not a code change.)_
-
-- `[ ]` **`examples/segment_tuning.rs`** — a runnable demo showing
-  `segment_size_stats()` used to adjust `FlushPolicy::Batch(N)` based on
-  observed p50/max. The feature's stated purpose (tuning) has no example;
-  the crate has 13 examples for other use cases. Effort: ~30 min. Source:
-  `docs/status/2026-08-04_01-01_*` item f.4.
-
-- `[ ]` **Document why `segment_size_stats` is absent from the loom suite.**
-  It adds no mutex concurrency surface (pure query reusing the
-  already-covered `scan_segments` path), but the justification should be
-  noted in a comment in `tests/loom.rs` or in AGENTS.md. Effort: ~5 min.
-  Source: `docs/status/2026-08-04_01-01_*` item f.8.
 
 ---
 

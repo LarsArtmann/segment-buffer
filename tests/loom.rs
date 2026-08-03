@@ -19,6 +19,16 @@
 //! encode/decode that loom has no interest in enumerating. Their concurrency
 //! contracts are exercised by the stress test in `src/tests.rs`.
 //!
+//! `segment_size_stats` is also absent — by design, not oversight. It is a
+//! **pure query** that reuses `scan_segments` (the cache-populate path
+//! already covered by the two `read_from` scan-cache tests below) and then
+//! calls `store.segment_size` per segment, all **outside the buffer mutex**.
+//! It acquires no lock the hot path does not already acquire and adds no
+//! concurrency surface beyond what `scan_segments` already exposes. A loom
+//! test for it would enumerate schedules over a code path that is already
+//! proven; the honest coverage is the `scan_segments` tests below plus the
+//! statistical stress test in `src/tests.rs`.
+//!
 //! Note: `read_from` IS now covered — the two scan-cache tests below exercise
 //! the cache-populate path (the `scan_segments` method) racing with
 //! `flush`/`delete_acked`. These go through the full `read_from` pipeline
