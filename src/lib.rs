@@ -1283,7 +1283,6 @@ where
     /// Returns [`SegmentError::Io`] if the segment directory cannot be scanned,
     /// or [`SegmentError::Cbor`] / [`SegmentError::Cipher`] /
     /// [`SegmentError::Integrity`] if a segment file cannot be decoded.
-    #[track_caller]
     pub fn read_from(&self, start_seq: u64, limit: usize) -> Result<Vec<T>> {
         if limit == 0 {
             return Ok(Vec::new());
@@ -1804,7 +1803,6 @@ where
     #[must_use = "the snapshot is meaningless if discarded"]
     #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
     pub fn stats(&self) -> BufferStats {
-        self.assert_not_reentered("stats");
         let inner = self.inner.lock();
         let pending_count = inner.next_seq.saturating_sub(inner.head_seq);
         let latest_sequence = if inner.next_seq == 0 {
@@ -1925,9 +1923,7 @@ where
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if the directory cannot be read.
-    #[track_caller]
     pub fn sync_disk_bytes(&self) -> Result<u64> {
-        self.assert_not_reentered("sync_disk_bytes");
         let segments = self.scan_segments()?;
         let total: u64 = segments.iter().map(|s| self.store.segment_size(*s)).sum();
         self.approx_disk_bytes
@@ -1979,7 +1975,6 @@ where
     /// # Errors
     ///
     /// Returns [`SegmentError::Io`] if a flush triggered by the batch fails.
-    #[track_caller]
     pub fn append_all<I>(&self, items: I) -> Result<u64>
     where
         I: IntoIterator<Item = T>,
@@ -2283,10 +2278,10 @@ where
 pub struct SegmentIter<'a, T> {
     inner: std::vec::IntoIter<(u64, T)>,
     // Tie the iterator's lifetime to the buffer borrow so callers can't
-    // outlive the buffer or sneak in a `flush`/`append`/`delete_acked`
-    // call while the iterator is live (those methods would panic via
-    // assert_not_reentered anyway, but the borrow makes it a compile-time
-    // guarantee for &self methods that don't take the inner lock).
+    // outlive the buffer. The buffer mutex is never held across `next` calls
+    // (items are materialised eagerly), so re-entrant `&self` calls are safe
+    // while the iterator is live; the lifetime tie is purely about borrow
+    // validity.
     _phantom: std::marker::PhantomData<&'a SegmentBuffer<T>>,
 }
 

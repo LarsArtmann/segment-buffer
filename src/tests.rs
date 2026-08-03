@@ -2063,62 +2063,87 @@ fn cipher_error_with_source_display_format() {
 }
 
 // =========================================================================
-// for_each_from re-entrancy guard
+// for_each_from re-entrancy safety (panic-free, no deadlock)
 // =========================================================================
 
 #[test]
-fn for_each_from_reentry_panics_with_clear_message() {
+fn for_each_from_allows_reentry_without_deadlock() {
+    // The buffer mutex is never held across a for_each_from callback: on-disk
+    // items are decoded before the callback and in-memory items are snapshotted
+    // under the lock then released. Re-entrant read calls must therefore
+    // succeed instead of panicking or deadlocking.
     let tmp = TempDir::new().unwrap();
     let buf = Arc::new(test_buffer(tmp.path()));
     for i in 0..3 {
         buf.append(test_item(i)).unwrap();
     }
 
-    // Re-enter pending_count from inside the callback. The buffer's mutex is
-    // held during Phase 2 (in-memory iteration); without the guard this would
-    // deadlock silently. With the guard it must panic with a message naming
-    // both the offending method and for_each_from.
     let buf_clone = Arc::clone(&buf);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = buf.for_each_from(0, 100, |_seq, _item| {
-            let _ = buf_clone.pending_count();
-        });
-    }));
+    let mut counts_during_iteration = Vec::new();
+    let visited = buf
+        .for_each_from(0, 100, |_seq, _item| {
+            counts_during_iteration.push(buf_clone.pending_count());
+            let _ = buf_clone.latest_sequence();
+            let _ = buf_clone.stats();
+        })
+        .unwrap();
 
-    let err = result.expect_err("re-entry must panic, not deadlock");
-    let msg = err
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| err.downcast_ref::<&'static str>().copied())
-        .expect("panic payload should be a string");
+    assert_eq!(visited, 3);
+    // pending_count stays 3 throughout (no concurrent mutation).
     assert!(
-        msg.contains("for_each_from"),
-        "panic should name for_each_from, got: {msg}"
-    );
-    assert!(
-        msg.contains("pending_count"),
-        "panic should name the re-entered method, got: {msg}"
+        counts_during_iteration.iter().all(|&c| c == 3),
+        "re-entrant reads must succeed and stay consistent: {counts_during_iteration:?}"
     );
 }
 
 #[test]
-fn for_each_from_reentry_guard_clears_after_panic() {
-    // After a panicking callback, the buffer must NOT be permanently bricked
-    // — the IterationGuard must clear the flag during unwinding.
+fn for_each_from_allows_reentrant_mutation() {
+    // Mutating re-entrant calls (append) must also be safe: they acquire the
+    // mutex normally because for_each_from released it before the callback.
+    // Manual flush keeps the assertions deterministic (no auto-flush side
+    // effects). The snapshot taken before the callbacks is unaffected by the
+    // re-entrant appends, so the visited count stays at the original 3.
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        },
+    ).unwrap());
+    for i in 0..3 {
+        buf.append(test_item(i)).unwrap();
+    }
+
+    let buf_clone = Arc::clone(&buf);
+    let visited = buf
+        .for_each_from(0, 3, |_seq, _item| {
+            let _ = buf_clone.append(test_item(99));
+        })
+        .unwrap();
+
+    assert_eq!(visited, 3, "snapshot taken before callbacks is unaffected");
+    // Three re-entrant appends landed in the in-memory tail (Manual = no flush).
+    assert_eq!(buf.pending_count(), 6);
+    assert_eq!(buf.latest_sequence(), 5);
+}
+
+#[test]
+fn for_each_from_usable_after_panicking_callback() {
+    // A panicking callback must not brick the buffer. The mutex is never held
+    // across the callback, so unwinding leaves the buffer consistent.
     let tmp = TempDir::new().unwrap();
     let buf = Arc::new(test_buffer(tmp.path()));
     for i in 0..3 {
         buf.append(test_item(i)).unwrap();
     }
 
-    let buf_clone = Arc::clone(&buf);
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = buf.for_each_from(0, 100, |_seq, _item| {
-            let _ = buf_clone.stats();
+            panic!("boom inside callback");
         });
     }));
 
-    // The buffer must be usable again.
     assert_eq!(buf.pending_count(), 3, "buffer must be usable after panic");
     assert_eq!(buf.latest_sequence(), 2);
 }
