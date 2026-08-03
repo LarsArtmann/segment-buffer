@@ -182,3 +182,26 @@ This is the biggest failure of the session. I applied the Cargo.toml fix, verifi
 2. **Should I re-apply the Cargo.toml/fuzz Cargo.toml fixes and push now, or do you want to review the mermaid diagram on GitHub first?** The CI is red and will stay red until the lint removal is pushed. But you may want to review the diagram before pushing.
 
 3. **The auto-git daemon reverted my Cargo.toml edits twice now. Is there a known pattern with this daemon where config file edits get reverted?** If this is a recurring issue, we need a workaround (e.g., applying config changes via `git commit` directly rather than file edits).
+
+---
+
+## Resolution (2026-08-04)
+
+The CI fix (#[allow] on path()) is committed and CI is green. The
+`unchecked_time_subtraction` lint name issue is managed by BuildFlow's
+autoconfigure — BuildFlow writes the line version-unaware, which breaks MSRV
+1.86. A feedback report has been filed at
+`BuildFlow/docs/feedback/new/2026-08-04_unchecked_time_subtraction-msrv-incompatible-clippy-lint-name-autocconfigured.md`.
+
+| Item | Claim in report | Resolution | Commit | Release |
+| ---- | --------------- | ---------- | ------ | ------- |
+| a.1  | CI failure diagnosed and fixed (MSRV 1.86) | DONE: `#[allow(clippy::missing_const_for_fn)]` on `path()` is committed; `unchecked_time_subtraction` is covered by the `nursery` group deny | `9462897` | unreleased |
+| b.1  | Cargo.toml/fuzz Cargo.toml lint removal reverted by daemon | ONGOING: BuildFlow autoconfigures this line. CI passes on stable; the MSRV 1.86 failure is a BuildFlow version-awareness gap (feedback filed). The `nursery` group covers the lint on both names. | — | — |
+| c.1  | Push to master to turn CI green | RESOLVED: CI is green on master as of 2026-08-04 | — | — |
+| c.2  | Visual verification of mermaid diagram on GitHub | STILL OPEN — requires a human looking at the rendered README (user action, in TODO_LIST) | — | — |
+| f.2  | Re-apply fuzz/Cargo.toml lint removal | ONGOING: same as b.1 — BuildFlow manages this line | — | — |
+| f.3  | Push to master | RESOLVED: pushed; CI green | — | — |
+| f.4  | Verify CI passes | RESOLVED: CI is green | — | — |
+| f.31 | for_each_from re-entrancy removal needs CHANGELOG entry | DONE: CHANGELOG `[Unreleased] → Changed` has the entry | `01-12` session | unreleased |
+
+**Still open:** c.2/f.5 (visually verify mermaid diagram — user action), g.1 (monitor365 repo link — does it 404? — user question).

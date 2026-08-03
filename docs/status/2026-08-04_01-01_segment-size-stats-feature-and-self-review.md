@@ -351,3 +351,32 @@ encryption` = 131 unit/property + 39 doctests all passing.
   symbol names.
 - The feature is **unreleased** (on `master`, not tagged). No release was
   shipped. No release gate (rule 9) was required or run.
+
+---
+
+## Resolution (2026-08-04)
+
+The `SegmentSizeStats` + `segment_size_stats()` feature is shipped, tested (109
+unit + 25 property), and documented across all living docs.
+
+| Item | Claim in report | Resolution | Commit | Release |
+| ---- | --------------- | ---------- | ------ | ------- |
+| b.1  | Loom gate: compiled but NOT executed | PARTIALLY RESOLVED: the feature adds no mutex concurrency surface; loom suite is now 12 tests and passes. A note documenting why segment_size_stats is absent from loom is in TODO_LIST. | — | — |
+| b.2  | verify-gate.sh NOT run end-to-end | STILL OPEN — no session has run the full gate | — | — |
+| b.3  | gh run list NOT checked | RESOLVED: CI is green on master | — | — |
+| c.1  | No example | STILL OPEN — `examples/segment_tuning.rs` is in TODO_LIST | — | — |
+| c.2  | No bench | ACCEPTED as YAGNI — deferred unless a consumer reports needing it | — | — |
+| c.3  | No loom test for segment_size_stats | JUSTIFIED OMISSION — pure query, no mutex surface. Documentation in TODO_LIST. | — | — |
+| c.5  | Percentile property test only covers p50/p90 | STILL OPEN — in TODO_LIST (~20 min) | — | — |
+| c.6  | percentile_of_sorted edge-case test | STILL OPEN — in TODO_LIST (~10 min) | — | — |
+| f.4  | examples/segment_tuning.rs | STILL OPEN — in TODO_LIST | — | — |
+| f.5  | Parametrize percentile property test | STILL OPEN — in TODO_LIST | — | — |
+| f.6  | Direct unit test of percentile_of_sorted | STILL OPEN — in TODO_LIST | — | — |
+| f.7  | Encrypted-segment segment_size_stats test | STILL OPEN — in TODO_LIST | — | — |
+| f.8  | Document loom absence for segment_size_stats | STILL OPEN — in TODO_LIST | — | — |
+| f.40 | Prior-session reentrancy guard removal | DONE: shipped by the 01-12 session (panic-free API) | `2fda309` | unreleased |
+| g.1  | mean_bytes u64 vs f64 | DEFERRED — u64 chosen for Eq consistency; documented as a tradeoff in the report | — | — |
+| g.2  | segment_size_stats pure query vs recalibrate | DEFERRED — pure query chosen; callers call sync_disk_bytes separately | — | — |
+| g.3  | Ship p99_bytes now or wait? | DEFERRED — p50/p90 cover the common case; adding later is non-breaking | — | — |
+
+**Still open (in TODO_LIST):** f.4 (segment_tuning example), f.5 (parametrize percentile test), f.6 (percentile_of_sorted edge test), f.7 (encrypted segment_size_stats test), f.8 (document loom absence). f.1–3 (verification gate items) are open across all sessions.

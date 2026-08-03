@@ -128,6 +128,7 @@ A single TODO_LIST.md item:
 | Item | Claim in report                         | Resolution                                                                                                                  | Commit               | Release    |
 | ---- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------- | ---------- |
 | f.1  | Add curl to flake.nix or remove comment | FIXED: curl added to devShell `buildInputs`; comment corrected                                                              | `0ae88c5`            | unreleased |
+| f.2  | Add check-changelog-links.sh to ci.yml  | DONE: `changelog-links` CI job added to `.github/workflows/ci.yml`                                                          | `01-14` session      | unreleased |
 | f.4  | Update AGENTS.md gate enumeration       | DONE: \"Documentation health cadence\" now lists `check-changelog-links.sh`                                                 | docs-health pass     | unreleased |
 | f.5  | Fix verify-gate.sh comment              | DONE: comment now says only check-changelog-links.sh uses curl                                                              | `0ae88c5`            | unreleased |
 | f.6  | Add CHANGELOG [Unreleased] entry        | DONE: entries exist for the MAPFILE bug, HEAD-tag skip, curl in devShell, and gate wiring                                   | multiple             | unreleased |
