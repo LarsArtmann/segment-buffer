@@ -254,6 +254,10 @@ deployments the typical policy is: when `store_pressure()` exceeds your
 threshold, apply backpressure to the producer (slow down, sample, drop); the
 buffer is holding the backlog until the cloud endpoint recovers.
 
+For tuning `FlushPolicy::Batch(N)`, `segment_size_stats()` returns an on-demand
+`count` / `min` / `max` / `mean` / `p50` / `p90` byte-size distribution of the
+on-disk segment files (an `O(n_segments)` scan, like `sync_disk_bytes`).
+
 ## Comparison
 
 _Comparison tables rot. This one was written against the versions current as of
@@ -296,7 +300,7 @@ per-flush fsync and opens a further large gain on cloud-sync workloads.
 
 ---
 
-*Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private), proven on 597M+ events.*
+_Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private), proven on 597M+ events._
 
 ## License
 

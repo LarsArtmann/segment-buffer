@@ -808,6 +808,59 @@ proptest! {
             );
         }
     }
+
+    /// Across an arbitrary sequence of `append` / `flush` / `delete_acked`
+    /// ops, the live `stats().segment_count` (an incrementally-maintained
+    /// atomic) must always equal the real on-disk segment file count. This
+    /// machine-checks the incremental counter: every `fetch_add(1)` on
+    /// `flush` and every `fetch_sub(deleted)` on `delete_acked` must stay in
+    /// lock-step with the directory. (Drift is only possible via external
+    /// removal or concurrency — covered by the `segment_count` field's
+    /// underflow contract and the loom self-healing test.)
+    #[test]
+    fn segment_count_matches_disk_across_flush_delete_ops(
+        // (kind, append_count, ack_seq): kind 0=append, 1=flush, 2=delete_acked
+        ops in proptest::collection::vec((0u8..3u8, 1u16..12u16, 0u32..1000u32), 0..50),
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+
+        let mut next_id = 0u64;
+        for (kind, n, ack_seq) in &ops {
+            if *kind == 0 {
+                for _ in 0..*n {
+                    buf.append(PropItem {
+                        id: next_id,
+                        payload: format!("payload-{next_id}"),
+                    })
+                    .expect("append must succeed");
+                    next_id = next_id.saturating_add(1);
+                }
+            } else if *kind == 1 {
+                buf.flush().expect("flush must succeed");
+            } else {
+                let _ = buf.delete_acked(u64::from(*ack_seq));
+            }
+
+            // After EVERY op the live counter must equal the directory truth.
+            let on_disk = std::fs::read_dir(tmp.path())
+                .expect("read_dir must succeed")
+                .filter_map(std::result::Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().starts_with("seg_"))
+                .count() as u64;
+            let live = buf.stats().segment_count;
+            prop_assert_eq!(
+                live, on_disk,
+                "after op (kind={}, n={}, ack_seq={}): segment_count {} != on-disk {}",
+                kind, n, ack_seq, live, on_disk,
+            );
+        }
+    }
 }
 
 // =========================================================================

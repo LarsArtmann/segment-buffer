@@ -26,6 +26,29 @@
 //! the `MockStore`, which stores pre-encoded bytes so the pipeline exercises
 //! real decode logic.
 //!
+//! ### Why the decode cost is inherent (pre-encoded `MockStore` investigation)
+//!
+//! Adding the `read_from` tests roughly doubled the suite's runtime because
+//! each schedule step now pays for a CBOR + zstd **decode**. An obvious
+//! optimisation is a `MockStore` that skips the encode/decode pipeline. It is
+//! **not tractable without compromising fidelity**, for two reasons:
+//!
+//! - **Encode is already skipped.** `write_atomic` receives bytes that
+//!   `segment::encode_segment` already ran CBOR + zstd over; the mock stores
+//!   them verbatim. There is no encode left to remove on the write side.
+//! - **Decode is the read path loom is meant to exercise.** `read_from`
+//!   unconditionally calls `segment::decode_segment` on the bytes the store
+//!   returns. Bypassing it would need a test-only branch inside `read_segment`
+//!   — a production test-hook this crate rejects (it would let loom enumerate
+//!   schedules over a code path that production never runs, making the proof
+//!   vacuous for exactly the bytes-on-disk logic the proof exists to cover).
+//!
+//! Mitigations that do NOT compromise fidelity: run in `--release` (already
+//! the convention), keep per-step payloads tiny (`Item { id: u64 }` is about
+//! as small as CBOR gets — the dominant cost is zstd context init per call,
+//! not payload size), and rely on CI parallelism. Accepting the cost is the
+//! honest trade; the alternative is a faster test of the wrong code.
+//!
 //! ## The `MockStore` fidelity contract
 //!
 //! The mock models exactly the filesystem semantics the

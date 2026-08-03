@@ -196,6 +196,22 @@ clamped to `[0.0, 1.0]`. `is_overloaded()` returns `true` when this ratio
 exceeds `0.9`. The crate ships **metrics, not policy**: callers decide what
 to do with the number (drop, shed load, alert, etc.).
 
+## Segment size distribution (`segment_size_stats`)
+
+`segment_size_stats() -> Result<SegmentSizeStats>` scans the segment directory
+and returns the `count` / `min` / `max` / `mean` / `p50` / `p90` byte sizes of
+the on-disk segment files. Like `sync_disk_bytes`, it is an `O(n_segments)`
+scan performed outside the buffer mutex, and it is a pure query — it does not
+mutate the cached counters. Its purpose is **batch-size tuning**: it answers
+"are my `FlushPolicy::Batch(N)` segments the size I expect, or is N producing
+too many tiny / too few huge files?"
+
+Percentiles use the **nearest-rank** method: for `n` segments sorted
+ascending, the `p`-th percentile is the element at 1-based rank
+`clamp(ceil(p/100 · n), 1, n)`. The value returned is always an actual segment
+file size, never an interpolation. With one segment, `min == p50 == p90 ==
+max`. With no segments, every field is `0`.
+
 ## `DurabilityPolicy` (since v0.5.0)
 
 Selects per-flush fsync behaviour. Three variants:

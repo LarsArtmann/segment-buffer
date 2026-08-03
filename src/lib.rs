@@ -2282,6 +2282,21 @@ where
     // Internal helpers
     // -----------------------------------------------------------------------
 
+    /// Rebuild in-memory state (`head_seq`, `next_seq`, `approx_disk_bytes`,
+    /// `segment_count`, and the `scan_cache`) from the on-disk segment files.
+    ///
+    /// # Concurrency: open-time only
+    ///
+    /// This is **private and called exactly once, inside [`open`](Self::open)/
+    /// [`open_with_store`](Self::open_with_store)/[`open_with_report`](Self::open_with_report),
+    /// before the buffer is returned to the caller.** Because the buffer is
+    /// not shared across threads until after construction completes, `recover`
+    /// can never run concurrently with `read_from`, `flush`, or `delete_acked`
+    /// — there is no scan-cache/recovery interleaving window to test or guard.
+    /// The scan-cache races that DO exist (a `read_from`'s `scan_segments`
+    /// racing a concurrent `flush`/`delete_acked`) are covered by the loom
+    /// scan-cache tests in `tests/loom.rs` and the `HookedStore` TOCTOU test
+    /// in `src/tests.rs`.
     fn recover(&self) -> Result<RecoveryReport> {
         let removed_tmp_files = self.store.clean_tmp()?;
 
