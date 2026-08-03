@@ -129,6 +129,15 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   filesystems where `mtime` advances; the `mtime_supported == false` path still
   relies solely on explicit invalidation.)
 
+### Documentation
+
+- **Clarified `pending_count()` vs `unflushed` distinction** (`src/lib.rs`): the
+  rustdoc now states explicitly that "pending" means _not yet acknowledged_
+  (the total backlog of on-disk segments plus in-memory items), not "not yet
+  flushed." It notes that `flush()` leaves the count unchanged and that the
+  on-disk / in-memory split is not exposed separately by the public API. No API
+  change (option (c) from the 2026-08-02 report's Q3).
+
 ## [0.5.4] - 2026-08-02
 
 Non-breaking batch: a new `FlushPolicy` variant for tiny-segment suppression,

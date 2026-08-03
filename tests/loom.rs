@@ -613,3 +613,191 @@ fn delete_acked_idempotent_under_concurrent_append() {
         );
     });
 }
+
+// ===========================================================================
+// scan_segments cache populate/invalidate interleaving — scan-cache coverage
+// ===========================================================================
+//
+// These tests exercise `scan_segments` (the scan-cache populate path) under
+// concurrent mutation. They are the first loom tests to exercise the read
+// path (`read_from`) at all — the original 9 tests cover only the in-memory
+// hot path (`append`/`stats`) and the `delete_acked` + `append` clamp.
+//
+// What is under proof:
+//
+// 1. **No deadlocks or panics** across every interleaving of `read_from`
+//    (which calls `scan_segments` → `store.scan()` → cache publish) with
+//    `flush` (which calls `store.write_atomic` → `invalidate_scan_cache`).
+//
+// 2. **Data integrity**: items returned by `read_from` are always a valid
+//    subset of the true state — no phantom items, no duplicates, strictly
+//    ascending.
+//
+// 3. **Eventual consistency**: after both threads settle, a subsequent
+//    mutation (which invalidates the cache) followed by a `read_from`
+//    returns the complete correct state.
+//
+// What is NOT under proof (and intentionally not asserted):
+//
+// The scan-cache **publication-overwrites-invalidation** race. If
+// `scan_segments` publishes a stale segment list in the window between
+// `flush`'s `write_atomic` and `invalidate_scan_cache`, the cache can
+// serve stale data until the next mutation. This is the documented
+// "transient gap" behavior — on real filesystems the mtime guard catches
+// it; under the `MockStore` (which does not touch the real directory),
+// `mtime_supported` is determined by the real tempdir and the guard may
+// or may not fire. The test does not assert completeness during the race,
+// only after settling.
+//
+// Tractability note: `read_from` goes through CBOR decode + zstd
+// decompress (the MockStore faithfully stores and returns the encoded
+// bytes from `write_atomic`). This adds computation per schedule but no
+// extra loom sync points — the decode is pure computation. The sync
+// surface is: `scan_cache` lock (×2), `MockStore` lock (scan + read_bytes),
+// `decompressor` lock, `last_dir_mtime` lock, `inner` lock — ~8 per
+// `read_from`, ~5 per `flush`. Total ~13 concurrent sync points across
+// two threads, well within loom's practical enumeration range.
+
+/// `read_from` under concurrent `flush` must never return corrupted,
+/// duplicated, or out-of-order data. After the flusher settles, all
+/// items must be visible.
+///
+/// Setup: flush segment [0..=3]. Thread A: `read_from(0, 100)`.
+/// Thread B: `append(item4)` + `flush()`. Loom explores every
+/// interleaving of the scan-cache populate (inside `read_from`'s
+/// `scan_segments`) and the cache invalidation (inside `flush`).
+///
+/// After both threads join, append one more item and flush to
+/// invalidate the cache, then verify all 6 items are visible —
+/// proving the cache is eventually consistent regardless of the
+/// race outcome.
+#[test]
+fn read_from_concurrent_flush_scan_cache_no_corruption() {
+    loom::model(|| {
+        let buf = open_with_mock(loom_config());
+
+        // Pre-populate: flush segment [0..=3].
+        for i in 0..4u64 {
+            buf.append(Item { id: i }).unwrap();
+        }
+        buf.flush().unwrap();
+
+        // Thread A: read_from — exercises scan_segments + read_segment.
+        let b1 = buf.clone();
+        let h1 = thread::spawn(move || b1.read_from(0, 100).unwrap());
+
+        // Thread B: append + flush — exercises write_atomic + invalidate.
+        let b2 = buf.clone();
+        let h2 = thread::spawn(move || {
+            b2.append(Item { id: 4 }).unwrap();
+            b2.flush().unwrap();
+        });
+
+        let batch = h1.join().unwrap();
+        h2.join().unwrap();
+
+        // Invariant: every item in the batch is valid, strictly ascending,
+        // and has no duplicates. The batch may be incomplete (transient gap
+        // from the scan-cache publication race) but must never be wrong.
+        let mut prev: Option<u64> = None;
+        for item in &batch {
+            assert!(
+                item.id < 5,
+                "phantom item in read_from result: id={} (valid range 0..=4)",
+                item.id
+            );
+            if let Some(p) = prev {
+                assert!(
+                    item.id > p,
+                    "out-of-order or duplicate item: {} after {}",
+                    item.id,
+                    p
+                );
+            }
+            prev = Some(item.id);
+        }
+
+        // Eventual consistency: after settling, invalidate the cache (via
+        // another flush) and verify all items are visible.
+        buf.append(Item { id: 5 }).unwrap();
+        buf.flush().unwrap();
+        let all = buf.read_from(0, 100).unwrap();
+        assert_eq!(
+            all.len(),
+            6,
+            "all items must be visible after cache invalidation + re-scan"
+        );
+        for (i, item) in all.iter().enumerate() {
+            assert_eq!(item.id, i as u64, "item at position {i} has wrong id");
+        }
+    });
+}
+
+/// `read_from` under concurrent `delete_acked` must never panic and
+/// must never return corrupted data. The `delete_acked` path calls
+/// `scan_segments` then `invalidate_scan_cache`, racing the reader's
+/// own `scan_segments` + `read_segment`.
+///
+/// If `delete_acked` removes a segment between the reader's scan and
+/// its `read_bytes`, the read returns `Err(NotFound)` — the documented
+/// concurrent-delete race. The test treats `Err` as a valid outcome
+/// (not data corruption) and only asserts integrity of successful reads.
+#[test]
+fn read_from_concurrent_delete_acked_scan_cache_no_corruption() {
+    loom::model(|| {
+        let buf = open_with_mock(loom_config());
+
+        // Pre-populate: two segments [0..=1] and [2..=3].
+        for i in 0..2u64 {
+            buf.append(Item { id: i }).unwrap();
+        }
+        buf.flush().unwrap();
+        for i in 2..4u64 {
+            buf.append(Item { id: i }).unwrap();
+        }
+        buf.flush().unwrap();
+
+        // Thread A: read_from — may see 0, 2, or 4 items depending on
+        // whether delete_acked has run. Must never see wrong data.
+        let b1 = buf.clone();
+        let h1 = thread::spawn(move || b1.read_from(0, 100));
+
+        // Thread B: delete_acked(1) — removes segment [0..=1].
+        let b2 = buf.clone();
+        let h2 = thread::spawn(move || b2.delete_acked(1).unwrap());
+
+        let batch_result = h1.join().unwrap();
+        h2.join().unwrap();
+
+        // If read_from succeeded, every item must be valid and ordered.
+        // An Err(NotFound) is the documented concurrent-delete race —
+        // not corruption, so we accept it.
+        if let Ok(batch) = batch_result {
+            let mut prev: Option<u64> = None;
+            for item in &batch {
+                assert!(
+                    item.id < 4,
+                    "phantom item: id={} (valid range 0..=3)",
+                    item.id
+                );
+                if let Some(p) = prev {
+                    assert!(
+                        item.id > p,
+                        "out-of-order or duplicate: {} after {}",
+                        item.id,
+                        p
+                    );
+                }
+                prev = Some(item.id);
+            }
+        }
+
+        // After settling, the surviving segment [2..=3] must be readable.
+        let all = buf.read_from(0, 100).unwrap();
+        let ids: Vec<u64> = all.iter().map(|i| i.id).collect();
+        assert!(
+            ids == [2, 3] || ids == [0, 1, 2, 3],
+            "surviving items after delete_acked must be correct, got {ids:?}"
+        );
+    });
+}

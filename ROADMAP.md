@@ -49,25 +49,6 @@ A `cargo-fuzz` scaffold, CI integration, and proptest analogues all shipped
 (e.g. Blake3) for detecting bit-rot distinct from cipher authentication
 failures. This is a format change and is tracked under envelope v2.
 
-### Observability — richer metrics
-
-`stats()` (single-lock snapshot), `RecoveryReport`, `sync_disk_bytes`, and the
-pooled zstd contexts all shipped (see FEATURES.md). Future: richer
-per-segment metrics (segment count, per-segment size histogram).
-
-### Lint posture — fully strict (shipped unreleased)
-
-The full strict Clippy lint architecture shipped on master (unreleased):
-`pedantic` + `nursery` + all restriction lints (`as_conversions`,
-`arithmetic_side_effects`, `unwrap_used`, `expect_used`, `indexing_slicing`,
-`string_slice`, `panic_in_result_fn`, `panic`, `exit`, `todo`,
-`unimplemented`, `unchecked_time_subtraction`, `unreachable`) are at `deny`
-in `Cargo.toml [lints.clippy]`. Library code is fully clippy-clean under
-the entire strict set. Test/bench/example modules carry `#![allow(...)]`
-overrides. The consumer crate (monitor365) already uses the full strict
-set; this crate now matches it. The incremental-migration plan that
-previously lived here is obsolete — the work is done.
-
 ### Envelope v2 / format change
 
 Long-term format change. The v2 design ships a 20-byte header (cipher id,

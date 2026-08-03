@@ -45,11 +45,29 @@ Status legend: `[ ]` pending · `[~]` in progress.
   of the automated gate. A check that isn't wired into the gate rots.
   Effort: ~10min.
 
-- `[ ]` **Document `pending_count()` vs `unflushed` distinction** in
-  rustdoc. `pending_count()` returns the total backlog (disk + memory);
-  the internal `unflushed: Vec<T>` is in-memory only. The distinction is
-  not obvious from the method name. Adding a doc note (option (c) from the
-  06-15 report's Q3) is the safest fix — no API change. Effort: ~15min.
+---
+
+## Features
+
+- `[ ]` **Live segment count in `BufferStats`.** `RecoveryReport` has
+  `segment_count` (a one-time snapshot from the open-time scan, already stale
+  by the time the caller reads it); `BufferStats` (the live `stats()`
+  snapshot) does not. Adding a `segment_count: u64` field tracked alongside
+  `approx_disk_bytes` (increment on flush, decrement on `delete_acked`) gives
+  callers a live count without a directory scan. `BufferStats` is already
+  `#[non_exhaustive]`, so the field addition is a non-breaking change. Effort:
+  ~1h. Source: moved from ROADMAP.md (not blocked on format change or missing
+  consumer).
+
+- `[ ]` **Per-segment size distribution for tuning.** A size summary (e.g.
+  p50/p90/max segment size) would help callers tune `FlushPolicy::Batch(N)`
+  against their throughput-vs-segment-count tradeoff. **Design question:**
+  maintain a running summary in the mutex (O(1) read, but adds invariant
+  surface area that must stay synced across flush + delete), or add a separate
+  `segment_size_stats()` method that scans on demand (like `sync_disk_bytes` —
+  simpler, but O(n\_segments) per call)? **Un-defer when:** a consumer
+  (monitor365) reports needing segment-size distribution for batch tuning.
+  Source: moved from ROADMAP.md.
 
 ---
 

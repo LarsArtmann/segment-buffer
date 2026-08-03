@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 794493b15a3a9b53fc9657d956ebd001b4de0bf3a39035c14b87b6129ddc0485 # shrinks to on_disk_count = 109, in_memory_count = 383, read_batch_size = 155
 cc 39c37104cd3d97551002f429258b96b881280b344753f6805b7130d4e32b26dd # shrinks to on_disk_count = 278, in_memory_count = 377, read_batch_size = 73
+cc 6e19f787203583c30bfb3a96e69600ceb84c97198201484fd59e7de244a3fe15 # shrinks to on_disk_count = 174, in_memory_count = 370, read_batch_size = 121
