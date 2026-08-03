@@ -690,6 +690,62 @@ pub struct BufferStats {
     pub store_pressure: f32,
 }
 
+/// Size distribution of the on-disk segment files at a point in time.
+///
+/// Returned by [`SegmentBuffer::segment_size_stats`]. Unlike
+/// [`BufferStats`] (which derives [`BufferStats::segment_count`] and
+/// [`BufferStats::approx_disk_bytes`] from cheap atomic counters maintained
+/// on the flush/delete hot path), this struct is computed by a fresh
+/// directory scan: every field reflects the segment files as they actually
+/// are at call time. It is the tuning primitive for [`FlushPolicy::Batch`]:
+/// it answers "are my segments the size I expect, or is the batch size
+/// producing too many tiny files / too few huge ones?"
+///
+/// All byte values are the **on-disk (compressed, post-envelope) file
+/// lengths**, not item counts. Two segments holding the same number of
+/// items can differ in bytes because of compression and payload shape, so
+/// byte-size distribution is the honest signal for disk-footprint tuning.
+///
+/// # Percentile definition
+///
+/// [`p50_bytes`](Self::p50_bytes) and [`p90_bytes`](Self::p90_bytes) use
+/// the **nearest-rank** method: the value returned is always an actual
+/// segment file size, never an interpolation between two. For `n` segments
+/// sorted ascending, the `p`-th percentile is the element at 1-based rank
+/// `clamp(ceil(p / 100 · n), 1, n)`. Consequences:
+///
+/// - With one segment, `min`, `p50`, `p90`, and `max` are all equal.
+/// - `p50` is the lower median (the `ceil(n / 2)`-th smallest element).
+/// - `p90` is the size at or below which ~90% of segments fall.
+///
+/// When the buffer has no on-disk segments (nothing flushed yet, or
+/// everything acked), every field is `0`.
+///
+/// This struct is `#[non_exhaustive]`: new fields (e.g. `p99_bytes`) may be
+/// added in any release without breaking semver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SegmentSizeStats {
+    /// Number of segment files on disk at scan time. Equals
+    /// [`BufferStats::segment_count`] immediately after a
+    /// [`sync_disk_bytes`](SegmentBuffer::sync_disk_bytes), but may differ
+    /// from the live atomic counter between recalibrations.
+    pub count: u64,
+    /// Smallest segment file size in bytes. `0` when there are no segments.
+    pub min_bytes: u64,
+    /// Largest segment file size in bytes. `0` when there are no segments.
+    pub max_bytes: u64,
+    /// Arithmetic mean segment size (`total_bytes / count`), truncated to
+    /// the integer. `0` when there are no segments.
+    pub mean_bytes: u64,
+    /// Median (50th percentile) segment size, nearest-rank. `0` when there
+    /// are no segments.
+    pub p50_bytes: u64,
+    /// 90th percentile segment size, nearest-rank. `0` when there are no
+    /// segments.
+    pub p90_bytes: u64,
+}
+
 /// Summary of the recovery scan performed by [`SegmentBuffer::open`].
 ///
 /// Returned by [`SegmentBuffer::open_with_report`] for programmatic
@@ -822,6 +878,31 @@ pub struct SegmentBuffer<T> {
     /// [`sync_disk_bytes`](Self::sync_disk_bytes). Uses `Relaxed` ordering —
     /// it is an approximate metric like `approx_disk_bytes`, so a torn read
     /// relative to other operations is acceptable.
+    ///
+    /// # Underflow / wrap contract
+    ///
+    /// Because the increment (on `flush`) and decrement (on `delete_acked`)
+    /// are independent atomic ops, the value can momentarily wrap to a very
+    /// large `u64` in two situations, both benign and self-healing:
+    ///
+    /// 1. **External removal.** If segment files are deleted behind the
+    ///    buffer's back, a subsequent `delete_acked` still counts them as
+    ///    removed (its `deleted` total reflects the segments it observed at
+    ///    scan time), so `fetch_sub` may subtract more than the current
+    ///    atomic value, wrapping it past zero.
+    /// 2. **Concurrent flush + delete.** `delete_acked` can observe and
+    ///    remove a segment whose `flush` has written the file but not yet
+    ///    executed its `fetch_add(1)`; the `fetch_sub` then lands before the
+    ///    `fetch_add` in the atomic modification order, momentarily wrapping.
+    ///
+    /// In both cases the wrapped value is never observed as "correct" for
+    /// long: the next [`sync_disk_bytes`](Self::sync_disk_bytes),
+    /// [`recover`](Self::recover) (on reopen), or any `stats()` snapshot read
+    /// after a `sync_disk_bytes` overwrites it with the authoritative
+    /// directory-scan count. Callers that need an exact, non-wrapped value
+    /// should call `sync_disk_bytes()` first. The field is intentionally an
+    /// approximate metric for backpressure signalling, not a source of
+    /// truth — the directory is the source of truth.
     segment_count: std::sync::atomic::AtomicU64,
     /// Cache of `scan_segments()`. `None` means stale (must re-scan); `Some`
     /// means a flush/`delete_acked` has not touched the directory since the
@@ -1934,6 +2015,112 @@ where
             std::sync::atomic::Ordering::Relaxed,
         );
         Ok(total)
+    }
+
+    /// On-demand size distribution of the on-disk segment files.
+    ///
+    /// Scans the segment directory, stats every segment file, and returns
+    /// the min / max / mean / p50 / p90 byte-size distribution as a
+    /// [`SegmentSizeStats`]. This is the tuning primitive for
+    /// [`FlushPolicy::Batch`]: it answers "are my segments the size I expect,
+    /// or is the batch size producing too many tiny files / too few huge
+    /// ones?"
+    ///
+    /// Like [`sync_disk_bytes`](Self::sync_disk_bytes), this is an
+    /// `O(n_segments)` directory scan performed outside the buffer mutex.
+    /// It is an observability query: call it from a metrics path or an
+    /// on-demand tuning check, not the append hot path. The scan reuses the
+    /// same [`scan_segments`](Self::scan_segments) cache (with `mtime`
+    /// invalidation) as every other directory-derived read, so a burst of
+    /// [`stats`](Self::stats) / [`sync_disk_bytes`](Self::sync_disk_bytes) /
+    /// [`segment_size_stats`](Self::segment_size_stats) calls shares one
+    /// physical directory read.
+    ///
+    /// This method is a **pure query**: it does not mutate the buffer's
+    /// cached counters. To recalibrate [`BufferStats::approx_disk_bytes`]
+    /// and [`BufferStats::segment_count`] against the real directory, call
+    /// [`sync_disk_bytes`](Self::sync_disk_bytes) separately.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use segment_buffer::{SegmentBuffer, SegmentConfig, FlushPolicy};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir()?;
+    /// let config = SegmentConfig::builder()
+    ///     .flush_policy(FlushPolicy::Manual)
+    ///     .build();
+    /// let buf: SegmentBuffer<u64> = SegmentBuffer::open(dir.path(), config)?;
+    /// for i in 0..100u64 { buf.append(i)?; }
+    /// buf.flush()?;
+    ///
+    /// let sizes = buf.segment_size_stats()?;
+    /// assert_eq!(sizes.count, 1);
+    /// assert!(sizes.max_bytes > 0);
+    /// assert_eq!(sizes.min_bytes, sizes.max_bytes); // single segment
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SegmentError::Io`] if the segment directory cannot be
+    /// scanned.
+    #[must_use = "the size distribution is meaningless if discarded"]
+    pub fn segment_size_stats(&self) -> Result<SegmentSizeStats> {
+        let segments = self.scan_segments()?;
+        let mut sizes: Vec<u64> =
+            segments.iter().map(|s| self.store.segment_size(*s)).collect();
+        if sizes.is_empty() {
+            return Ok(SegmentSizeStats {
+                count: 0,
+                min_bytes: 0,
+                max_bytes: 0,
+                mean_bytes: 0,
+                p50_bytes: 0,
+                p90_bytes: 0,
+            });
+        }
+        sizes.sort_unstable();
+        let count = u64::try_from(sizes.len()).unwrap_or(u64::MAX);
+        let total: u64 = sizes.iter().copied().fold(0u64, u64::saturating_add);
+        let mean_bytes = total.checked_div(count).unwrap_or(0);
+        Ok(SegmentSizeStats {
+            count,
+            min_bytes: sizes.first().copied().unwrap_or(0),
+            max_bytes: sizes.last().copied().unwrap_or(0),
+            mean_bytes,
+            p50_bytes: Self::percentile_of_sorted(&sizes, 50),
+            p90_bytes: Self::percentile_of_sorted(&sizes, 90),
+        })
+    }
+
+    /// Nearest-rank percentile of a non-empty, ascending-sorted slice.
+    ///
+    /// `pct` is in `0..=100`. The value returned is always one of the actual
+    /// elements of `sorted`, never an interpolation: the 1-based rank is
+    /// `clamp(ceil(pct / 100 · n), 1, n)`. Empty input returns `0`. Used by
+    /// [`segment_size_stats`](Self::segment_size_stats); kept as a private
+    /// associated fn so the nearest-rank contract lives next to its only
+    /// caller and is cross-checked by the property test via an independent
+    /// float implementation.
+    fn percentile_of_sorted(sorted: &[u64], pct: u32) -> u64 {
+        let n = sorted.len();
+        if n == 0 {
+            return 0;
+        }
+        let n_u64 = u64::try_from(n).unwrap_or(u64::MAX);
+        let pct = u64::from(pct);
+        // rank = ceil(pct/100 · n), computed as ceil(a / 100) = (a + 99) / 100.
+        // `checked_div` keeps the strict `arithmetic_side_effects` lint happy.
+        let scaled = pct.saturating_mul(n_u64);
+        let rank = scaled
+            .saturating_add(99)
+            .checked_div(100)
+            .unwrap_or(n_u64);
+        let rank = rank.clamp(1, n_u64);
+        let idx = usize::try_from(rank.saturating_sub(1)).unwrap_or(0);
+        sorted.get(idx).copied().unwrap_or(0)
     }
 
     /// Append a batch of items under a single lock acquisition.

@@ -84,6 +84,20 @@ jobs:
         # scripts/verify-gate.sh (the "html_root_url" step).
         run: bash scripts/check-html-root-url.sh
 
+  changelog-links:
+    name: CHANGELOG tag-link check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate CHANGELOG version links resolve to real tags
+        # Catches the drift where a CHANGELOG entry references a tag that was
+        # never pushed (or was renamed). Mirrors the scripts/verify-gate.sh
+        # "changelog-links" step so the local gate is not stricter than CI.
+        # `curl` is preinstalled on ubuntu-latest runners. The script hits the
+        # GitHub tags API (unauthenticated, ~16 requests — well under the
+        # 60/hr-per-IP budget, same class of live-network check as lychee).
+        run: bash scripts/check-changelog-links.sh
+
   supply-chain:
     name: cargo audit + cargo deny
     runs-on: ubuntu-latest

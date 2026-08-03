@@ -2927,3 +2927,171 @@ fn xchacha20_new_and_from_slice_are_equivalent() {
     let pt2 = infallible.decrypt(&ct2).unwrap();
     assert_eq!(pt2.as_slice(), plaintext);
 }
+
+// =========================================================================
+// segment_size_stats — on-demand min/max/mean/p50/p90 size distribution.
+// =========================================================================
+
+#[test]
+fn segment_size_stats_all_zero_when_nothing_flushed() {
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path());
+    // Append without flushing: no segment files exist on disk yet.
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+    let s = buf.segment_size_stats().unwrap();
+    assert_eq!(s.count, 0, "no segments on disk yet");
+    assert_eq!(s.min_bytes, 0);
+    assert_eq!(s.max_bytes, 0);
+    assert_eq!(s.mean_bytes, 0);
+    assert_eq!(s.p50_bytes, 0);
+    assert_eq!(s.p90_bytes, 0);
+}
+
+#[test]
+fn segment_size_stats_single_segment_all_fields_equal() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        },
+    )
+    .unwrap();
+    for i in 0..4 {
+        buf.append(test_item(i)).unwrap();
+    }
+    buf.flush().unwrap();
+    let s = buf.segment_size_stats().unwrap();
+    assert_eq!(s.count, 1);
+    assert!(s.max_bytes > 0, "flushed segment must have nonzero size");
+    // With one segment, min == mean == p50 == p90 == max.
+    assert_eq!(s.min_bytes, s.max_bytes);
+    assert_eq!(s.mean_bytes, s.max_bytes);
+    assert_eq!(s.p50_bytes, s.max_bytes);
+    assert_eq!(s.p90_bytes, s.max_bytes);
+}
+
+#[test]
+fn segment_size_stats_matches_manual_recompute_and_percentiles() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        },
+    )
+    .unwrap();
+    // Five segments of varying item counts so the byte sizes differ.
+    for n in [3u64, 1, 5, 2, 4] {
+        for i in 0..n {
+            buf.append(test_item(i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+    let s = buf.segment_size_stats().unwrap();
+    assert_eq!(s.count, 5);
+    assert_eq!(s.count, count_disk_segments(tmp.path()));
+
+    // Independent brute-force straight from the directory.
+    let mut sizes: Vec<u64> = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+        .map(|e| e.metadata().map_or(0, |m| m.len()))
+        .collect();
+    sizes.sort();
+    assert_eq!(s.min_bytes, *sizes.first().unwrap());
+    assert_eq!(s.max_bytes, *sizes.last().unwrap());
+    let total: u64 = sizes.iter().sum();
+    assert_eq!(s.mean_bytes, total / sizes.len() as u64);
+    // Cross-validate the nearest-rank percentiles against an independent
+    // float implementation of ceil(p/100 · n).
+    let n = sizes.len();
+    let rank = |pct: f64| -> usize {
+        let r = (pct / 100.0 * n as f64).ceil() as usize;
+        r.clamp(1, n) - 1
+    };
+    assert_eq!(s.p50_bytes, sizes[rank(50.0)]);
+    assert_eq!(s.p90_bytes, sizes[rank(90.0)]);
+    // Monotonicity invariant.
+    assert!(s.min_bytes <= s.p50_bytes);
+    assert!(s.p50_bytes <= s.p90_bytes);
+    assert!(s.p90_bytes <= s.max_bytes);
+}
+
+#[test]
+fn segment_size_stats_reflects_delete_acked() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        },
+    )
+    .unwrap();
+    // Three segments: [0,3], [4,7], [8,11] (4 items each).
+    for _ in 0..3 {
+        for i in 0..4u64 {
+            buf.append(test_item(i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+    let before = buf.segment_size_stats().unwrap();
+    assert_eq!(before.count, 3);
+
+    // Ack the first segment (covers seqs 0..=3).
+    buf.delete_acked(3).unwrap();
+    let after = buf.segment_size_stats().unwrap();
+    assert_eq!(
+        after.count, 2,
+        "first segment must be gone after acking seq 3"
+    );
+    assert_eq!(after.count, count_disk_segments(tmp.path()));
+    assert!(after.max_bytes <= before.max_bytes);
+}
+
+#[test]
+fn segment_size_stats_count_and_mean_consistent_after_sync() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        },
+    )
+    .unwrap();
+    for _ in 0..4 {
+        for i in 0..5u64 {
+            buf.append(test_item(i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+    // Recalibrate the atomic counters, then compare scan-derived count.
+    buf.sync_disk_bytes().unwrap();
+    let s = buf.segment_size_stats().unwrap();
+    let stats = buf.stats();
+    assert_eq!(s.count, stats.segment_count);
+
+    // mean = total / count (truncated), so mean·count <= total < mean·count + count.
+    let actual_total: u64 = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+        .map(|e| e.metadata().map_or(0, |m| m.len()))
+        .sum();
+    let mean_times_count = s.mean_bytes.saturating_mul(s.count);
+    assert!(
+        mean_times_count <= actual_total,
+        "mean·count must not exceed the real total"
+    );
+    assert!(
+        actual_total < mean_times_count + s.count,
+        "truncation error must be less than count"
+    );
+}

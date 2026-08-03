@@ -39,7 +39,10 @@ for arg in "$@"; do
     --no-actionlint) RUN_ACTIONLINT=0 ;;
     --no-changelog-links) RUN_CHANGELOG_LINKS=0 ;;
     -h|--help)
-      sed -n '2,22p' "$0"; exit 0 ;;
+      # Print the header comment block (everything from line 2 up to the first
+      # non-comment line). Self-maintaining: no hardcoded line range to drift
+      # when the header is edited.
+      awk 'NR==1 {next} /^#/ {print; next} {exit}' "$0"; exit 0 ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -51,12 +54,18 @@ FAILED_STEPS=()
 run() {
   local name="$1"; shift
   printf '\n=== %s ===\n' "$name"
-  if "$@"; then
+  # Run the command and capture its real exit status. The `|| rc=$?` form is
+  # essential under `set -e`: it defeats the early-exit for a failing command
+  # AND captures the true status. (Using `if "$@"; then ... fi` followed by
+  # `$?` is subtly wrong — an `if` with a false condition and no `else`
+  # returns 0 by POSIX, so `$?` would be 0 even on failure.)
+  local rc=0
+  "$@" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     printf 'PASS: %s\n' "$name"
     PASS=$((PASS + 1))
     return 0
   fi
-  local rc=$?
   printf 'FAIL (rc=%s): %s\n' "$rc" "$name" >&2
   FAIL=$((FAIL + 1))
   FAILED_STEPS+=("$name")
