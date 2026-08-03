@@ -103,4 +103,5 @@ for the full layout, migration path, and trigger conditions.
   identified by the mapping.
 - [`docs/status/2026-08-02_05-03_namtao-rust-learnings-and-strict-lint-adoption.md`](docs/status/2026-08-02_05-03_namtao-rust-learnings-and-strict-lint-adoption.md)
   — source of the strict lint architecture (now fully shipped) and the
-  panic-free guarantee design question.
+  panic-free guarantee (resolved 2026-08-04: root-cause deadlock elimination
+  in `for_each_from`, zero panic paths in library code).

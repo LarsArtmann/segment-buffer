@@ -43,7 +43,7 @@ test, not the buffer construction.
 | ------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `bench_append`            | Append throughput at batch sizes 1, 100, 1k, 10k                                                       |
 | `bench_read_from`         | `read_from` across flushed + in-memory items (incl. cold-vs-warm `read_from_scan_cache` group, v0.4.0) |
-| `bench_read_vs_for_each`  | `read_from` vs `for_each_from` (lending iterator) on 1k items                                          |
+| `bench_read_vs_for_each`  | `read_from` vs `for_each_from` (callback iterator) on 1k and 10k items                                 |
 | `bench_delete_acked`      | `delete_acked` at 100 and 10k segments                                                                 |
 | `bench_recover`           | Cold-start recovery over a populated directory                                                         |
 | `bench_stats`             | `stats()` snapshot vs 3 individual accessors                                                           |
@@ -110,8 +110,7 @@ delta is noise.
 
 Absolute nanosecond counts are hardware-dependent and rot the moment the bench
 moves to a different CPU. The durable claims are **ratios**: "`stats()` is
-~2.5× cheaper than 3 individual accessors", "`for_each_from` is ~21× faster
-than `read_from` on in-memory items". Ratios hold across hardware in
+~2.5× cheaper than 3 individual accessors". Ratios hold across hardware in
 proportion; absolutes do not.
 
 ### What the envelope costs
@@ -216,24 +215,28 @@ Range is 1–22; higher levels trade encode speed for ratio. Level 1 is the
 practical floor for fastest encode; levels above ~10 are rarely worth the
 encode cost for a spooling buffer.
 
-### 4. `for_each_from` over `read_from` (drain-side hot path)
+### 4. `for_each_from` vs `read_from` (callback vs owned `Vec<T>`)
 
-`read_from(start, limit)` returns a `Vec<T>` — it allocates and clones every
-item. `for_each_from(start, limit, callback)` is a lending iterator that hands
-each `&(seq, T)` to your callback with **zero allocation** on the in-memory
-path. On 1k in-memory items, `for_each_from` is roughly **21× faster** than
-`read_from` (see [FEATURES.md](../FEATURES.md)).
+`read_from(start, limit)` returns an owned `Vec<T>`. `for_each_from(start,
+limit, callback)` invokes your callback once per item and avoids returning an
+owned `Vec<T>`. Since the panic-free re-entrancy fix, both paths clone the
+in-memory tail once — `for_each_from` snapshots the window under the lock and
+releases it before the callback. The two are now roughly equal on in-memory
+items (~23 us at 1k); `for_each_from` stays marginally cheaper because it
+avoids the returned `Vec<T>` allocation and drop. Re-entrant calls from inside
+the callback (`append`, `stats`, `delete_acked`) are safe — no panic, no
+deadlock.
 
 ```rust,ignore
-buffer.for_each_from(0, 1000, |(seq, item)| {
-    // Your drain logic — no Vec allocation, no clone.
-    // Re-entry into the buffer here panics (re-entrancy guard).
+buffer.for_each_from(0, 1000, |seq, item| {
+    // Your drain logic — no returned Vec<T> to allocate or drop.
+    // Re-entry into the buffer here is safe (panic-free).
 })?;
 ```
 
 Use `read_from` when you need to own the items (e.g. sending across a thread
-boundary); use `for_each_from` when you process them in place (e.g. serializing
-to a cloud request body).
+boundary); use `for_each_from` for callback-style in-place processing (e.g.
+serializing to a cloud request body).
 
 ### Ordering of impact
 
