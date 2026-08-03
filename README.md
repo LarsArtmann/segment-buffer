@@ -190,20 +190,28 @@ println!(
 
 ## How it works
 
-```text
-append(item) ─► unflushed: Vec<T>   (in-memory, inside the Mutex)
-                    │
-                    ▼   batch full  OR  flush_interval elapsed  OR  flush()
-              take() the batch, compute start_seq/end_seq INSIDE the lock
-                    │
-                    ▼   (lock released: mutex is never held across file I/O)
-              CBOR ─► zstd ─► [optional cipher.encrypt]
-                    │
-                    ▼
-              prepend 8-byte SBF1 envelope ─► write seg_*.zst.tmp ─► fsync ─► atomic rename
-                    │
-                    ▼   (lock re-acquired)
-              approx_disk_bytes += len; segment_count += 1
+```mermaid
+flowchart TD
+    A["append(item)"] --> B["unflushed: Vec&lt;T&gt; — in-memory"]
+    B -.->|"batch full · flush interval · flush()"| C
+
+    subgraph lock1 ["Mutex held"]
+        C["take() batch, assign start_seq / end_seq"]
+    end
+
+    C -->|"lock released"| D
+
+    subgraph pipeline ["Mutex released — encode + I/O"]
+        D["CBOR serialize"] --> E["zstd compress"]
+        E --> F["cipher.encrypt (optional)"]
+        F --> G["SBF1 envelope → write .tmp → fsync → atomic rename"]
+    end
+
+    G -->|"lock re-acquired"| H
+
+    subgraph lock2 ["Mutex held"]
+        H["approx_disk_bytes += len · segment_count += 1"]
+    end
 ```
 
 `read_from(start, limit)` scans on-disk segments (sorted by start) then drains the
