@@ -21,20 +21,20 @@ cd "$(dirname "$0")/.."
 # --- Extract the canonical MSRV from Cargo.toml ---
 CANONICAL=$(grep '^rust-version' Cargo.toml | head -1 | sed 's/.*"\([0-9.]*\)".*/\1/')
 if [[ -z "$CANONICAL" ]]; then
-  echo "FAIL: could not extract rust-version from Cargo.toml" >&2
-  exit 1
+	echo "FAIL: could not extract rust-version from Cargo.toml" >&2
+	exit 1
 fi
 echo "Canonical MSRV (Cargo.toml): $CANONICAL"
 
 FAILURES=0
 check() {
-  local location="$1" pattern="$2"
-  if grep -q "$pattern" "$location" 2>/dev/null; then
-    echo "  OK:   $location"
-  else
-    echo "FAIL:   $location — expected to contain '$pattern'" >&2
-    FAILURES=$((FAILURES + 1))
-  fi
+	local location="$1" pattern="$2"
+	if grep -q "$pattern" "$location" 2>/dev/null; then
+		echo "  OK:   $location"
+	else
+		echo "FAIL:   $location — expected to contain '$pattern'" >&2
+		FAILURES=$((FAILURES + 1))
+	fi
 }
 
 # --- ci.yml: matrix entry + msrv job ---
@@ -51,10 +51,10 @@ check "docs/MSRV.md" "\*\*$CANONICAL\*\*"
 
 # --- Summary ---
 if [[ "$FAILURES" -gt 0 ]]; then
-  echo ""
-  echo "MSRV DRIFT DETECTED: $FAILURES location(s) out of sync with Cargo.toml." >&2
-  echo "Fix ALL of the above to match rust-version = \"$CANONICAL\" in Cargo.toml." >&2
-  exit 1
+	echo ""
+	echo "MSRV DRIFT DETECTED: $FAILURES location(s) out of sync with Cargo.toml." >&2
+	echo "Fix ALL of the above to match rust-version = \"$CANONICAL\" in Cargo.toml." >&2
+	exit 1
 fi
 echo ""
 echo "All MSRV locations agree on $CANONICAL."

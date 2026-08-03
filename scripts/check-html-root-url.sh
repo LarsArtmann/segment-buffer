@@ -14,20 +14,20 @@ cd "$(dirname "$0")/.." || exit 1
 
 cargo_version=$(grep -E '^version = ' Cargo.toml | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
 
-url_version=$(grep -E 'html_root_url = "https://docs\.rs/segment-buffer/' src/lib.rs \
-  | head -1 \
-  | sed -E 's|.*/segment-buffer/([^"]+)".*|\1|')
+url_version=$(grep -E 'html_root_url = "https://docs\.rs/segment-buffer/' src/lib.rs |
+	head -1 |
+	sed -E 's|.*/segment-buffer/([^"]+)".*|\1|')
 
 if [[ -z "$cargo_version" || -z "$url_version" ]]; then
-  echo "FAIL: could not extract one of the versions." >&2
-  echo "  Cargo.toml version:    '${cargo_version:-<not found>}'" >&2
-  echo "  html_root_url version: '${url_version:-<not found>}'" >&2
-  exit 2
+	echo "FAIL: could not extract one of the versions." >&2
+	echo "  Cargo.toml version:    '${cargo_version:-<not found>}'" >&2
+	echo "  html_root_url version: '${url_version:-<not found>}'" >&2
+	exit 2
 fi
 
 if [[ "$cargo_version" == "$url_version" ]]; then
-  echo "OK: html_root_url ($url_version) == Cargo.toml version ($cargo_version)"
-  exit 0
+	echo "OK: html_root_url ($url_version) == Cargo.toml version ($cargo_version)"
+	exit 0
 fi
 
 echo "FAIL: html_root_url version ($url_version) != Cargo.toml version ($cargo_version)" >&2
