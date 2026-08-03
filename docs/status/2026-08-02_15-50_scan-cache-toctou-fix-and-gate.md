@@ -1,5 +1,9 @@
 # Status Report — 2026-08-02 15:50
 
+> **Update 2026-08-03:** the fix + tests + docs are now on `master`
+> (commit `dc7ea7a` and subsequent). CI is green. The scan-cache TOCTOU
+> fix shipped. See [Resolution](#resolution-2026-08-03) below.
+
 _Session: close out the consistency-model property-test task — fix the scan-cache TOCTOU the prior session hid, run the full gate, reconcile the docs._
 
 ---
@@ -351,3 +355,23 @@ not _proven_, the `mtime_supported == false` path is still racy, there is an
 empty-message commit in the history, and **nothing has been pushed to CI.**
 The deliverable is real; the rigor around "done" is still short of the bar
 this crate's rules set.
+
+---
+
+## Resolution (2026-08-03)
+
+The fix and all associated tests/docs are now on `master` and CI is green.
+
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| Push to origin | ~~7 commits unpushed~~ done — on master (`dc7ea7a` + subsequent) | CI green |
+| f.1 Deterministic Barrier-based regression test | **Still open** — the fix is validated 40× empirically, not via a deterministic Barrier test | Tracked in TODO_LIST |
+| f.2 Loom-modeling `scan_segments` | **Still open** — `MockStore.scan()` could in principle be stubbed | Low priority |
+| f.3 `mtime_supported == false` gap | **Still open** — documented honestly in DOMAIN_LANGUAGE.md, not code-fixed | Tracked in TODO_LIST |
+| f.4 Invariant proof in AGENTS.md | done — the "read_from race windows" section in AGENTS.md now describes the scan-cache TOCTOU fix | |
+| f.5 Run concurrent flush test 100× | Partially — 40× done, not 100× | Low priority |
+| f.6–f.30 | Mix of done and open — see individual items | Brainstorm items not separately actioned |
+
+**g.1 (push):** Resolved — commits pushed, CI green.
+**g.2 (Barrier test before shippable):** Shipped without the Barrier test; the empirical validation was accepted.
+**g.3 (`mtime_supported == false` fix):** Open — documented as a known limitation in DOMAIN_LANGUAGE.md.

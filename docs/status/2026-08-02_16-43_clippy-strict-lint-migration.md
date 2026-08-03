@@ -1,8 +1,17 @@
 # Status: Clippy Strict-Lint Migration — All Targets Clean, CI RED
 
+> **Update 2026-08-03 (commits `9106af1`..`4b7a240`):** the fix commits were
+> pushed and CI went green. The full strict lint posture shipped on master:
+> `pedantic` + `nursery` + all restriction lints (`as_conversions`,
+> `arithmetic_side_effects`, `unwrap_used`, etc.) are now at `deny` in
+> `Cargo.toml [lints.clippy]`, with test/bench/example modules carrying
+> `#![allow(...)]` overrides. This report's "CI is RED" claim was accurate at
+> the time of writing; it is resolved. Full item-by-item status in
+> [Resolution](#resolution-2026-08-03) below.
+
 **Date:** 2026-08-02 16:43
 **Session scope:** Fix all clippy errors after Cargo.toml lint posture tightened to deny `pedantic` + `nursery` + `as_conversions` + `arithmetic_side_effects` across all targets.
-**Outcome:** Local gate fully green (201 → 0 errors). **CI is RED** on the first commit and the fixes have not been pushed.
+~~**Outcome:** Local gate fully green (201 → 0 errors). **CI is RED** on the first commit and the fixes have not been pushed.~~ **Outcome (at time of writing):** Local gate fully green (201 → 0 errors). CI was RED on the first commit; fixes were local-only. **Resolved:** fix commits pushed, CI green (see update above).
 
 ---
 
@@ -162,3 +171,28 @@ The auto-git daemon committed `9106af1` (the Cargo.toml lint tightening) BEFORE 
 2. **Should the `fuzz/Cargo.toml` carry the same strict lint config?** The auto-git daemon copied it there, but fuzz targets are nightly-only exploration code where `unwrap()` and `as` are idiomatic. Relaxing or removing the lint config there may be more appropriate.
 
 3. **Is the `finish_non_exhaustive()` change to `SegmentBuffer`'s Debug impl acceptable?** It changes the output from `SegmentBuffer { dir: "...", pending_count: 0, ... }` to `SegmentBuffer { dir: "...", ..., .. }`. This is semantically more honest (we don't print all fields) but it's a visible change in Debug output format.
+
+---
+
+## Resolution (2026-08-03)
+
+The fix commits (`1f63b02`..`4b7a240`) were pushed to `origin/master`. CI went
+green. The full strict lint posture shipped: `pedantic` + `nursery` +
+`as_conversions` + `arithmetic_side_effects` + `unwrap_used` + `expect_used`
++ `indexing_slicing` + `string_slice` + `panic_in_result_fn` + `panic` +
+`exit` + `todo` + `unimplemented` + `unchecked_time_subtraction` +
+`unreachable` — all at `deny` in `Cargo.toml [lints.clippy]`.
+
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| f.1 Push fix commits | ~~Push the fix commits~~ done — commits on master | CI green on `4b7a240` and later |
+| f.2 Verify CI green | done | `04a28b7` (flake.lock bump) confirms CI healthy |
+| f.3 Update CHANGELOG `[Unreleased]` | **Still open** — the living docs still describe "pedantic at warn"; CHANGELOG needs the full strict migration entry | Tracked in docs-health pass |
+| f.4 Fuzz targets clippy | Partially — fuzz targets are nightly-only; lint posture not verified under `+nightly clippy` | Low priority |
+| f.5 Benchmark `bench_append` | Not done — `saturating_add` perf impact unmeasured | Low priority (compiler likely optimizes) |
+| f.6 Run `scripts/verify-gate.sh` | done — later sessions ran the full 14-gate script | |
+| f.7–f.25 | Open considerations | Brainstorm items; no action required |
+
+**Q1 (push):** Resolved — commits pushed, CI green.
+**Q2 (fuzz lint config):** Open — `fuzz/Cargo.toml` carries the lint config; fuzz targets have not been verified under nightly clippy. Low priority.
+**Q3 (`finish_non_exhaustive`):** Shipped as-is. The `..` Debug output is acceptable.
