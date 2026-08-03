@@ -2035,8 +2035,8 @@ where
     /// `O(n_segments)` directory scan performed outside the buffer mutex.
     /// It is an observability query: call it from a metrics path or an
     /// on-demand tuning check, not the append hot path. The scan reuses the
-    /// same [`scan_segments`](Self::scan_segments) cache (with `mtime`
-    /// invalidation) as every other directory-derived read, so a burst of
+    /// same `scan_segments` cache (with `mtime` invalidation) as every other
+    /// directory-derived read, so a burst of
     /// [`stats`](Self::stats) / [`sync_disk_bytes`](Self::sync_disk_bytes) /
     /// [`segment_size_stats`](Self::segment_size_stats) calls shares one
     /// physical directory read.
