@@ -1082,4 +1082,71 @@ proptest! {
             );
         }
     }
+
+    /// `segment_size_stats()` must agree with a brute-force directory scan on
+    /// every field, for any number of flushes and items-per-flush. This is the
+    /// authoritative cross-check that the on-demand distribution is exact
+    /// (count/min/max/mean) and that the nearest-rank percentiles match an
+    /// independent float implementation of `ceil(p / 100 · n)`.
+    #[test]
+    fn segment_size_stats_matches_directory(
+        n_flushes in 0u8..8,
+        items_per_flush in 1u16..40,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::SegmentConfig {
+            flush_policy: crate::FlushPolicy::Manual,
+            ..crate::SegmentConfig::default()
+        };
+        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
+            .expect("open must succeed");
+        for _ in 0..n_flushes {
+            for i in 0..items_per_flush {
+                buf.append(PropItem {
+                    id: u64::from(i),
+                    payload: format!("payload-{i}"),
+                })
+                .expect("append");
+            }
+            buf.flush().expect("flush");
+        }
+
+        let s = buf.segment_size_stats().expect("segment_size_stats");
+
+        // Brute-force the same distribution straight from the directory.
+        let mut sizes: Vec<u64> = std::fs::read_dir(tmp.path())
+            .expect("read_dir")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+            .map(|e| e.metadata().map_or(0u64, |m| m.len()))
+            .collect();
+        sizes.sort();
+
+        prop_assert_eq!(s.count, sizes.len() as u64);
+
+        if sizes.is_empty() {
+            prop_assert_eq!(s.min_bytes, 0);
+            prop_assert_eq!(s.max_bytes, 0);
+            prop_assert_eq!(s.mean_bytes, 0);
+            prop_assert_eq!(s.p50_bytes, 0);
+            prop_assert_eq!(s.p90_bytes, 0);
+        } else {
+            let n = sizes.len();
+            prop_assert_eq!(s.min_bytes, *sizes.first().unwrap());
+            prop_assert_eq!(s.max_bytes, *sizes.last().unwrap());
+            let total: u64 = sizes.iter().sum();
+            prop_assert_eq!(s.mean_bytes, total / n as u64);
+            // Independent float implementation of the nearest-rank formula.
+            let rank = |pct: f64| -> usize {
+                let r = (pct / 100.0 * n as f64).ceil() as usize;
+                r.clamp(1, n) - 1
+            };
+            prop_assert_eq!(s.p50_bytes, sizes[rank(50.0)]);
+            prop_assert_eq!(s.p90_bytes, sizes[rank(90.0)]);
+            // Monotonicity must always hold.
+            prop_assert!(s.min_bytes <= s.p50_bytes);
+            prop_assert!(s.p50_bytes <= s.p90_bytes);
+            prop_assert!(s.p90_bytes <= s.max_bytes);
+        }
+    }
 }

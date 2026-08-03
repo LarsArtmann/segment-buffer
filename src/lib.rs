@@ -1936,6 +1936,7 @@ where
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     #[must_use = "the path is meaningless if discarded"]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn path(&self) -> &std::path::Path {
         &self.dir
     }
@@ -2069,8 +2070,10 @@ where
     #[must_use = "the size distribution is meaningless if discarded"]
     pub fn segment_size_stats(&self) -> Result<SegmentSizeStats> {
         let segments = self.scan_segments()?;
-        let mut sizes: Vec<u64> =
-            segments.iter().map(|s| self.store.segment_size(*s)).collect();
+        let mut sizes: Vec<u64> = segments
+            .iter()
+            .map(|s| self.store.segment_size(*s))
+            .collect();
         if sizes.is_empty() {
             return Ok(SegmentSizeStats {
                 count: 0,
@@ -2114,10 +2117,7 @@ where
         // rank = ceil(pct/100 · n), computed as ceil(a / 100) = (a + 99) / 100.
         // `checked_div` keeps the strict `arithmetic_side_effects` lint happy.
         let scaled = pct.saturating_mul(n_u64);
-        let rank = scaled
-            .saturating_add(99)
-            .checked_div(100)
-            .unwrap_or(n_u64);
+        let rank = scaled.saturating_add(99).checked_div(100).unwrap_or(n_u64);
         let rank = rank.clamp(1, n_u64);
         let idx = usize::try_from(rank.saturating_sub(1)).unwrap_or(0);
         sorted.get(idx).copied().unwrap_or(0)

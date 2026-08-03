@@ -2208,6 +2208,36 @@ fn append_all_visibly_cheaper_lock_count_than_loop_append() {
     assert_eq!(buf.latest_sequence(), 199);
 }
 
+#[test]
+fn append_all_auto_flush_increments_segment_count() {
+    // append_all routes through the same flush() (and therefore the same
+    // segment_count fetch_add(1)) codepath as single-append auto-flush when
+    // the batch threshold is crossed. Assert the live segment_count reflects
+    // the auto-flushed segment — closes the gap where append_all-triggered
+    // auto-flush had no explicit segment_count assertion.
+    let tmp = TempDir::new().unwrap();
+    let buf = test_buffer(tmp.path()); // FlushPolicy::Batch(4)
+
+    // Below threshold: no auto-flush, segment_count stays 0.
+    buf.append_all([test_item(0), test_item(1), test_item(2)])
+        .unwrap();
+    assert_eq!(
+        buf.stats().segment_count,
+        0,
+        "below batch threshold, append_all must not auto-flush"
+    );
+
+    // Crossing the threshold (4 items pending) triggers an auto-flush inside
+    // append_all, writing all pending items as exactly one segment.
+    buf.append_all([test_item(3), test_item(4), test_item(5), test_item(6)])
+        .unwrap();
+    assert_eq!(
+        buf.stats().segment_count,
+        1,
+        "append_all crossing the batch threshold must auto-flush exactly one segment"
+    );
+}
+
 // =========================================================================
 // path() and config() accessors
 // =========================================================================
@@ -2935,8 +2965,15 @@ fn xchacha20_new_and_from_slice_are_equivalent() {
 #[test]
 fn segment_size_stats_all_zero_when_nothing_flushed() {
     let tmp = TempDir::new().unwrap();
-    let buf = test_buffer(tmp.path());
-    // Append without flushing: no segment files exist on disk yet.
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            ..test_config(1024 * 1024)
+        },
+    )
+    .unwrap();
+    // Append without flushing: items stay in memory, no segment files on disk.
     for i in 0..4 {
         buf.append(test_item(i)).unwrap();
     }
@@ -2999,7 +3036,7 @@ fn segment_size_stats_matches_manual_recompute_and_percentiles() {
     // Independent brute-force straight from the directory.
     let mut sizes: Vec<u64> = fs::read_dir(tmp.path())
         .unwrap()
-        .filter_map(Result::ok)
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
         .map(|e| e.metadata().map_or(0, |m| m.len()))
         .collect();
@@ -3081,7 +3118,7 @@ fn segment_size_stats_count_and_mean_consistent_after_sync() {
     // mean = total / count (truncated), so mean·count <= total < mean·count + count.
     let actual_total: u64 = fs::read_dir(tmp.path())
         .unwrap()
-        .filter_map(Result::ok)
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
         .map(|e| e.metadata().map_or(0, |m| m.len()))
         .sum();
