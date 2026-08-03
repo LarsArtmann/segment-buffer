@@ -1431,17 +1431,21 @@ where
     ///
     /// # Performance
     ///
-    /// Micro-benchmarked in `benches/bench_read_vs_for_each.rs` against
-    /// in-memory pending items (no segment files):
+    /// Since the panic-free re-entrancy fix, `for_each_from` snapshots the
+    /// in-memory pending window under the lock and releases the lock before
+    /// invoking `f`. Both `for_each_from` and `read_from` therefore clone the
+    /// in-memory items once and are now roughly equal on the in-memory tail
+    /// (indicative, measured on master):
     ///
-    /// | Items | `read_from` | `for_each_from` | Speedup |
-    /// |-------|-------------|-----------------|---------|
-    /// | 1,000 | ~26 µs      | ~1.2 µs         | ~21×    |
-    /// | 10,000| ~200 µs     | ~10 µs          | ~20×    |
+    /// | Items | `read_from` | `for_each_from` |
+    /// |-------|-------------|-----------------|
+    /// | 1,000 | ~23 µs      | ~23 µs          |
+    /// | 10,000| ~220 µs     | ~197 µs         |
     ///
-    /// The speedup shrinks toward zero once on-disk segments dominate, because
-    /// both paths pay the same CBOR+zstd+cipher decode cost per segment — the
-    /// clone saving only applies to the in-memory tail.
+    /// `for_each_from` stays marginally cheaper (no owned `Vec<T>` to return and
+    /// drop) and is the right choice for callback-style consumption. Once
+    /// on-disk segments dominate, both paths pay the same CBOR+zstd+cipher
+    /// decode cost per segment.
     ///
     /// # Re-entrancy
     ///
@@ -2203,23 +2207,20 @@ where
     /// [`Iterator`] combinators (`.take`, `.filter`, `.map`, …).
     ///
     /// This is a *materialising* iterator: items are loaded eagerly up to
-    /// `limit` (memory cost `O(limit)`). For a *lending* iterator that
-    /// passes in-memory items by reference without cloning, use
-    /// [`for_each_from`](Self::for_each_from) — that variant is ~20× faster
-    /// on the in-memory tail but takes a closure instead of returning an
-    /// `Iterator`. The two coexist because no stable-Rust `Iterator`
-    /// trait can currently express "yield `&T` from `&mut self`" without
-    /// pre-collecting.
+    /// `limit` (memory cost `O(limit)`) via [`read_from`](Self::read_from).
+    /// [`for_each_from`](Self::for_each_from) offers the same items through a
+    /// callback instead of an owned `Iterator`; since the panic-free
+    /// re-entrancy fix it no longer holds the mutex across the callback and is
+    /// marginally cheaper than `read_from` (no returned `Vec<T>` to drop). The
+    /// two coexist because no stable-Rust `Iterator` trait can currently
+    /// express "yield `&T` from `&mut self`" without pre-collecting.
     ///
-    /// # Re-entrancy contract
+    /// # Re-entrancy
     ///
-    /// The iterator borrows the buffer for `'a`. Drop the iterator before
-    /// calling any other `&self` method on the same buffer; if the
-    /// iterator is alive across a `flush` / `append` / `delete_acked`
-    /// call, that call will panic with a clear message (same contract as
-    /// [`for_each_from`](Self::for_each_from)). The simplest pattern is
-    /// `for item in buf.iter_from(..)? { ... }` — the `for` loop drops the
-    /// iterator at the end of the block.
+    /// The iterator borrows the buffer for `'a` but holds no buffer mutex
+    /// across `next` calls (items are materialised eagerly). Re-entrant
+    /// `&self` calls are therefore safe while the iterator is live; the
+    /// lifetime tie is purely about borrow validity.
     ///
     /// # Example
     ///

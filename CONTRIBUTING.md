@@ -71,8 +71,11 @@ This crate uses a **strict Clippy lint strategy** inspired by
 `Cargo.toml [lints.clippy]` denies `pedantic` + `nursery` + all restriction
 lints (`as_conversions`, `arithmetic_side_effects`, `unwrap_used`,
 `expect_used`, `indexing_slicing`, `string_slice`, `panic_in_result_fn`,
-`panic`, `exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`,
-`unreachable`) across **all** targets.
+`panic`, `exit`, `todo`, `unimplemented`,
+`unreachable`) across **all** targets. (The
+`unchecked_time_subtraction` / `unchecked_duration_subtraction` lint is
+covered by the `nursery` group, not listed explicitly because the name
+differs between MSRV 1.86 and stable.)
 
 **Library code** (`src/lib.rs`, `src/segment.rs`, `src/cipher.rs`,
 `src/store.rs`, `src/error.rs`) is fully clippy-clean under the entire

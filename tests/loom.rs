@@ -750,6 +750,11 @@ fn read_from_concurrent_flush_scan_cache_no_corruption() {
 /// (not data corruption) and only asserts integrity of successful reads.
 #[test]
 fn read_from_concurrent_delete_acked_scan_cache_no_corruption() {
+    // The cache-invalidation sentinel appended after the race to force a
+    // fresh scan. Filtered out of the final assertion so the asserted set
+    // only ever contains the real items under test (0..=3) — not the
+    // throwaway item whose sole purpose is to dirty the scan cache.
+    const SENTINEL_ID: u64 = 99;
     loom::model(|| {
         let buf = open_with_mock(loom_config());
 
@@ -804,10 +809,16 @@ fn read_from_concurrent_delete_acked_scan_cache_no_corruption() {
         // would cause read_from to return Err(NotFound) — the documented
         // concurrent-delete race). After invalidation, all surviving items
         // must be visible and deleted items must not reappear.
-        buf.append(Item { id: 99 }).unwrap();
+        buf.append(Item { id: SENTINEL_ID }).unwrap();
         buf.flush().unwrap();
         let all = buf.read_from(0, 100).unwrap();
-        let ids: Vec<u64> = all.iter().map(|i| i.id).collect();
+        // Collect only the real items under test; the sentinel exists solely
+        // to invalidate the scan cache and must not pollute the assertion.
+        let ids: Vec<u64> = all
+            .iter()
+            .filter(|i| i.id != SENTINEL_ID)
+            .map(|i| i.id)
+            .collect();
         assert!(
             ids.contains(&2) && ids.contains(&3),
             "surviving items 2,3 must be visible after settling, got {ids:?}"
@@ -815,6 +826,75 @@ fn read_from_concurrent_delete_acked_scan_cache_no_corruption() {
         assert!(
             !ids.contains(&0) && !ids.contains(&1),
             "deleted items 0,1 must not reappear after settling, got {ids:?}"
+        );
+    });
+}
+
+/// `segment_count` is a `Relaxed`-ordered atomic maintained by independent
+/// `fetch_add` (on `flush`) and `fetch_sub` (on `delete_acked`) ops. Under a
+/// concurrent flush + delete it can momentarily wrap to a huge `u64`: if
+/// `delete_acked` observes and removes a segment whose `flush` has done its
+/// `write_atomic` but not yet its `fetch_add(1)`, the `fetch_sub` lands first
+/// in the atomic modification order and subtracts past zero. See the
+/// `segment_count` field doc comment for the full underflow contract.
+///
+/// This test proves, across every two-thread schedule:
+///
+/// 1. **No panic** — the wraparound is benign (unsigned wrap, never traps).
+/// 2. **Self-healing** — after both threads settle and `sync_disk_bytes`
+///    recalibrates the counter to the authoritative store scan,
+///    `stats().segment_count` equals the real on-disk segment count.
+#[test]
+fn segment_count_self_heals_after_concurrent_flush_and_delete() {
+    loom::model(|| {
+        // Keep a handle to the mock so we can read the authoritative on-disk
+        // count directly (`scan_segments` is private on the buffer).
+        let store = std::sync::Arc::new(MockStore::new());
+        let store_dyn: std::sync::Arc<dyn SegmentStore + Send + Sync> = store.clone();
+        let dir = tempfile::tempdir().unwrap();
+        let buf = Arc::new(
+            SegmentBuffer::open_with_store(dir.path(), loom_config(), store_dyn)
+                .expect("open_with_store must succeed on a fresh mock"),
+        );
+
+        // Pre-populate one segment [0..=1] (segment_count == 1).
+        for i in 0..2u64 {
+            buf.append(Item { id: i }).unwrap();
+        }
+        buf.flush().unwrap();
+
+        // Thread A: append + flush a second segment [2..=3] (fetch_add(1)).
+        let b1 = buf.clone();
+        let h1 = thread::spawn(move || {
+            for i in 2..4u64 {
+                b1.append(Item { id: i }).unwrap();
+            }
+            b1.flush().unwrap();
+        });
+
+        // Thread B: delete_acked(3) removes every segment with end <= 3 —
+        // [0..=1] and, if A's write_atomic has landed, [2..=3]. If B's scan
+        // sees [2..=3] before A's fetch_add(1) executes, the fetch_sub wraps
+        // segment_count past zero. Benign — see the post-sync assertion.
+        let b2 = buf.clone();
+        let h2 = thread::spawn(move || {
+            let _ = b2.delete_acked(3);
+        });
+
+        h1.join().unwrap();
+        h2.join().unwrap();
+
+        // Recalibrate: sync_disk_bytes overwrites segment_count with the
+        // authoritative directory-scan count, clearing any momentary wrap.
+        buf.sync_disk_bytes().unwrap();
+
+        let on_disk = store.scan().expect("mock scan must succeed").len() as u64;
+        assert_eq!(
+            buf.stats().segment_count,
+            on_disk,
+            "after sync, segment_count ({}) must match the real on-disk count ({})",
+            buf.stats().segment_count,
+            on_disk,
         );
     });
 }

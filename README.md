@@ -9,8 +9,6 @@
 
 High-throughput **local buffer for cloud sync**. Single-process by design, durability-configurable, optional performant encryption, at-least-once delivery.
 
-**Extracted from monitor365 (private), proven on 597M+ events.**
-
 **Contents:** [Why?](#why) · [Install](#install) · [Quickstart](#quickstart) · [Encryption](#encryption-at-rest) · [Cloud sync drain loop](#cloud-sync-the-at-least-once-drain-loop) · [Owned-item iterator](#owned-item-iterator-iter_from-v050) · [Crash recovery](#crash-recovery-open_with_report) · [How it works](#how-it-works) · [Crash behavior](#crash-behavior-configurable) · [Backpressure](#backpressure) · [Comparison](#comparison) · [Status](#status) · [License](#license)
 
 ## Why?
@@ -287,6 +285,10 @@ faster** than the prior baseline on single-run criterion medians. See
 for methodology, and [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the full
 impact-ordered tuning guide. A `Throughput` durability policy removes the
 per-flush fsync and opens a further large gain on cloud-sync workloads.
+
+---
+
+*Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private), proven on 597M+ events.*
 
 ## License
 

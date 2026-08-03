@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`SegmentSizeStats` + `segment_size_stats()`** (`src/lib.rs`): a new
+  on-demand size-distribution query returning `count` / `min` / `max` / `mean`
+  / `p50` / `p90` byte sizes of the on-disk segment files — the tuning
+  primitive for `FlushPolicy::Batch(N)`. Like `sync_disk_bytes`, it is an
+  `O(n_segments)` directory scan performed outside the buffer mutex, and is a
+  pure query (it does not mutate the cached counters). Percentiles use the
+  nearest-rank method. The new `SegmentSizeStats` struct is `#[non_exhaustive]`;
+  non-breaking.
+
 - **Deterministic Barrier-based regression test for the scan-cache TOCTOU**
   (`src/tests.rs`): `scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename`
   forces the exact `scan → rename → scan-returns-stale` interleaving via a

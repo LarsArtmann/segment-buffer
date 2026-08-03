@@ -112,20 +112,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ---
 
-## Features
-
-- `[ ]` **Per-segment size distribution for tuning.** A size summary (e.g.
-  p50/p90/max segment size) would help callers tune `FlushPolicy::Batch(N)`
-  against their throughput-vs-segment-count tradeoff. **Design question:**
-  maintain a running summary in the mutex (O(1) read, but adds invariant
-  surface area that must stay synced across flush + delete), or add a separate
-  `segment_size_stats()` method that scans on demand (like `sync_disk_bytes` —
-  simpler, but O(n\_segments) per call)? **Un-defer when:** a consumer
-  (monitor365) reports needing segment-size distribution for batch tuning.
-  Source: moved from ROADMAP.md.
-
----
-
 ## Design decisions deferred
 
 - `[ ]` **Health-check primitive — needs a design decision before any code.** A `fn health(&self) -> Result<HealthReport>` that probes directory writability, lock validity, and disk space. **The design question that must be answered first:** _what does a caller learn from `health()` that they cannot learn from `stats()` + a trial `append()`?_ Three candidate designs, each with a reason it might be Verschlimmbessern:
@@ -136,31 +122,31 @@ Status legend: `[ ]` pending · `[~]` in progress.
   | `health()` writes a sentinel file | Write + delete a `.healthcheck` file to probe writability | **Actively harmful on a near-full filesystem.** The write itself can fail (ENOSPC), and writing to a disk you're checking is healthy can worsen the condition.                                                                    |
   | `health()` checks free disk space | Statfs/GetDiskFreeSpace to report free bytes              | **Platform dependency.** Needs a new crate (`nix`, `winapi`, or `fs2`) for a feature that `store_pressure()` already approximates. Cross-platform free-space queries have subtle differences (available vs free vs total blocks). |
 
-  **Current verdict:** defer until a concrete consumer needs it. The canonical health check today is: call `stats()` for pressure, call `append()` with a trivial item and check for `Err` — the error is already typed (`SegmentError::Io` with `IoSite`). If a consumer needs lock-validity checking, the `Drop` impl already panics if the lock file was tampered with; an explicit probe adds little. **Un-defer when:** a real deployment reports that `stats() + trial append` is insufficient to detect a degraded state.
+  **DECISION (2026-08-04): DEFER.** No `health()` primitive — all three candidate designs are Verschlimmbessern (redundant, disk-harmful, or a platform dependency for something `store_pressure()` already approximates). The canonical health check is `stats()` for pressure plus a trial `append()`; note a single `append()` below the flush threshold never hits disk, so add an explicit `flush()` to probe writability. (The `Drop` impl is best-effort — it does **not** panic on lock tampering; lock loss is not surfaced as a health signal today.) **Un-defer when:** a real deployment reports that `stats()` + `flush()` is insufficient to detect a degraded state.
 
-- `[ ]` **Document panic-free guarantee as a public API contract?** The
-  strict lint architecture (on master, unreleased) makes library code
-  provably free of `unwrap()`, `expect()`, direct indexing, and string
-  slicing — enforced by `pedantic` + `nursery` + restriction lints at
-  `deny` in `Cargo.toml [lints.clippy]`. The only panic path is the
-  documented `for_each_from` re-entrancy guard. **The design question:**
-  is making "panic-free public API" an explicit documented guarantee a
-  selling point worth the commitment, or should it stay an internal
-  quality bar? A public guarantee is marketable but creates a maintenance
-  contract. **Un-defer when:** the crate is pitched to a new audience
-  (blog post, conference talk) where the guarantee is a differentiator,
-  or a consumer asks "can this panic?"
+- `[x]` **Panic-free public API — shipped (2026-08-04).** The re-entrancy
+  deadlock was eliminated at the root: `for_each_from` no longer holds the
+  buffer mutex across the user callback (in-memory pending items are
+  snapshotted under the lock, then the lock is released before the callback).
+  The `assert_not_reentered` guard, `iteration_in_progress` flag, and
+  `IterationGuard` RAII type are deleted — there are now zero `panic!` paths
+  in library code. Re-entrant calls from inside a `for_each_from` callback
+  (`append`, `stats`, `delete_acked`, …) are safe instead of panicking. The
+  quality posture is documented in `README.md` § Guarantees (as a quality
+  bar, not a load-bearing API contract). Tradeoff: the in-memory tail is now
+  cloned once (bounded by `limit`), so `for_each_from` is no longer ~21×
+  faster than `read_from` on pure in-memory reads — they are now roughly
+  equal.
 
-- `[ ]` **`mtime_supported == false` scan-cache gap — fix or formally
-  accept.** The scan-cache TOCTOU fix (`dc7ea7a`) only helps on filesystems
-  where `mtime` advances (`mtime_supported == true`: ext4/xfs/tmpfs/APFS/
-  NTFS — the common case). On coarse-granularity filesystems where the
-  open-time probe reports `false`, the cache relies solely on explicit
-  `invalidate_scan_cache` and the mid-scan-rename edge is not covered.
-  This is documented honestly in DOMAIN_LANGUAGE.md. **The design
-  question:** invest in a second validation mechanism for that path, or
-  formally accept the documented limitation? **Un-defer when:** a consumer
-  reports operating on a filesystem where `mtime_supported == false`.
+- `[x]` **`mtime_supported == false` scan-cache gap — FORMALLY ACCEPTED
+  (2026-08-04).** The scan-cache TOCTOU fix only helps where `mtime` advances
+  (ext4/xfs/tmpfs/APFS/NTFS). On coarse-granularity filesystems the cache
+  relies solely on `invalidate_scan_cache`, leaving external mid-scan rename
+  uncovered. **Accepted because** the single-process invariant already forbids
+  external directory mutation, so the `mtime` guard is defense-in-depth against
+  contract violations, not a primary guarantee. The limitation stays documented
+  in `docs/DOMAIN_LANGUAGE.md`. Re-open if a consumer reports operating on a
+  filesystem where `mtime_supported == false`.
 
 - `[ ]` **`segment_count` type consistency: `u64` vs `usize`.**
   `BufferStats::segment_count` is `u64` (matching `approx_disk_bytes`);
