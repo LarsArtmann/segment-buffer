@@ -40,9 +40,9 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
       - name: Clippy (default)
-        run: cargo clippy --all-targets -- -D warnings -A clippy::pedantic
+        run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (encryption)
-        run: cargo clippy --all-targets --features encryption -- -D warnings -A clippy::pedantic
+        run: cargo clippy --all-targets --features encryption -- -D warnings
       - name: Test (default)
         run: cargo test --no-fail-fast
       - name: Test (encryption)

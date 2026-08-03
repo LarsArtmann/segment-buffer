@@ -55,18 +55,18 @@ failures. This is a format change and is tracked under envelope v2.
 pooled zstd contexts all shipped (see FEATURES.md). Future: richer
 per-segment metrics (segment count, per-segment size histogram).
 
-### Lint evolution — incremental `pedantic` / `nursery`
+### Lint posture — fully strict (shipped unreleased)
 
-The two-tier panic-prevention lint architecture shipped (unreleased on
-master): universal control-flow lints in `[lints.clippy]` + library-only
-`#![deny(...)]` for `unwrap_used` / `expect_used` / `indexing_slicing` /
-`string_slice` / `panic_in_result_fn`. The full namtao set (`pedantic` +
-`nursery` + `as_conversions` + `arithmetic_side_effects`) produces ~570
-errors. The tractable path is incremental adoption: enable `pedantic` at
-`warn` level first (visible backlog, no CI breakage), then fix
-library-only violations module by module (start with `error.rs` — smallest
-module). The consumer crate (monitor365) already uses the full strict set;
-this crate should converge toward it without rushing.
+The full strict Clippy lint architecture shipped on master (unreleased):
+`pedantic` + `nursery` + all restriction lints (`as_conversions`,
+`arithmetic_side_effects`, `unwrap_used`, `expect_used`, `indexing_slicing`,
+`string_slice`, `panic_in_result_fn`, `panic`, `exit`, `todo`,
+`unimplemented`, `unchecked_time_subtraction`, `unreachable`) are at `deny`
+in `Cargo.toml [lints.clippy]`. Library code is fully clippy-clean under
+the entire strict set. Test/bench/example modules carry `#![allow(...)]`
+overrides. The consumer crate (monitor365) already uses the full strict
+set; this crate now matches it. The incremental-migration plan that
+previously lived here is obsolete — the work is done.
 
 ### Envelope v2 / format change
 
@@ -121,5 +121,5 @@ for the full layout, migration path, and trigger conditions.
   — the Pareto execution plan for closing the documentation and design gaps
   identified by the mapping.
 - [`docs/status/2026-08-02_05-03_namtao-rust-learnings-and-strict-lint-adoption.md`](docs/status/2026-08-02_05-03_namtao-rust-learnings-and-strict-lint-adoption.md)
-  — source of the two-tier lint architecture, the deferred `pedantic`/
-  `nursery` migration plan, and the panic-free guarantee design question.
+  — source of the strict lint architecture (now fully shipped) and the
+  panic-free guarantee design question.

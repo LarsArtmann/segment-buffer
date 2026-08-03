@@ -186,7 +186,7 @@
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--all-targets --features encryption";
-                cargoClippyExtraArgs = "-- -D warnings -A clippy::pedantic";
+                cargoClippyExtraArgs = "-- -D warnings";
               }
             );
             fmt = craneLib.cargoFmt { src = ./.; };

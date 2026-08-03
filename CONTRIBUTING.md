@@ -23,9 +23,9 @@ this (see `.github/workflows/ci.yml`).
 cargo test --no-fail-fast --features encryption
 
 # Lint (warnings are hard errors, both in CONTRIBUTING and CI via RUSTFLAGS=-D warnings)
-# pedantic is at `warn` for visibility but allowed in the gate; see Cargo.toml [lints.clippy]
-cargo clippy --all-targets -- -D warnings -A clippy::pedantic
-cargo clippy --all-targets --features encryption -- -D warnings -A clippy::pedantic
+# pedantic + nursery + restriction lints are at `deny` in Cargo.toml [lints.clippy]
+cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --features encryption -- -D warnings
 cargo fmt --all -- --check
 
 # Examples
@@ -66,30 +66,30 @@ nix flake check      # verify the flake
 
 ### Lint architecture
 
-This crate uses a **two-tier Clippy lint strategy**:
+This crate uses a **strict Clippy lint strategy** inspired by
+[namtao's "Strict Lints" philosophy](https://www.namtao.com/rust/#strict-lints).
+`Cargo.toml [lints.clippy]` denies `pedantic` + `nursery` + all restriction
+lints (`as_conversions`, `arithmetic_side_effects`, `unwrap_used`,
+`expect_used`, `indexing_slicing`, `string_slice`, `panic_in_result_fn`,
+`panic`, `exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`,
+`unreachable`) across **all** targets.
 
-**Tier 1 — `[lints.clippy]` in `Cargo.toml` (all targets):**
+**Library code** (`src/lib.rs`, `src/segment.rs`, `src/cipher.rs`,
+`src/store.rs`, `src/error.rs`) is fully clippy-clean under the entire
+strict set. All `as` conversions use `try_from`/`unwrap_or`, all arithmetic
+uses `saturating_*`/`wrapping_*`, and `#[must_use]` is on all builders.
 
-Panic-prevention lints that are safe for every compilation target (library,
-tests, benches, examples). These deny `exit`, `todo`, `unimplemented`,
-`unchecked_time_subtraction`, and `unreachable` — patterns that should never
-appear in any code, including test or bench code.
+**Non-production targets** (test modules in `src/tests.rs` and
+`src/property_tests.rs`, plus `benches/`, `examples/`, `tests/`) carry
+`#![allow(...)]` overrides covering `pedantic`, `nursery`,
+`as_conversions`, `arithmetic_side_effects`, and the panic-prevention
+lints. In test and bench code, `unwrap`/`expect` and `as` conversions
+are acceptable — a test failure should be loud and immediate.
 
-**Tier 2 — `#![deny(...)]` in `src/lib.rs` (library only):**
-
-Stricter panic-prevention lints that would be too noisy in test code
-(`unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`,
-`panic_in_result_fn`). These are crate-level denies so they apply to every
-source file in the library (`lib.rs`, `segment.rs`, `cipher.rs`, `store.rs`,
-`error.rs`) but NOT to integration tests, benches, or examples — those are
-separate compilation targets where `unwrap`/`expect` are acceptable.
-
-In-crate test modules (`src/tests.rs`, `src/property_tests.rs`) override the
-library denies with `#![allow(...)]` at their top, so unit tests can use
-`unwrap`/`expect` freely.
-
-This means: **library code must never use `unwrap`, `expect`, or direct
-indexing** — use `?`, `let-else`, `get()`, or explicit error returns instead.
+This means: **library code must never use `unwrap`, `expect`, direct
+indexing, `as` conversions, or unchecked arithmetic** — use `?`,
+`let-else`, `get()`, `try_from()`, `saturating_*`, or explicit error
+returns instead.
 
 ## Semver and stability policy
 

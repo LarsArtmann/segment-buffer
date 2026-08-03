@@ -13,11 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   all variants (`batch(256)`, `interval(5s)`, `batch_or_interval_min(batch=256,
 min=10, interval=5s, max=60s)`, `manual`). Stable format for log-scraping.
 
-- **`pedantic` Clippy lint group at `warn` level** (`Cargo.toml`): surfaces ~62
-  quality warnings (missing backticks, missing `#[must_use]`) during local
-  development without breaking CI. CI clippy commands include
-  `-A clippy::pedantic` to suppress in the gate. `error.rs` is pedantic-clean.
-
 - **Edge-case tests for `BatchOrIntervalMin`** (`src/tests.rs`): three boundary
   conditions — `min_batch == 0` (always flushes at interval), `max_interval ==
 interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
@@ -82,17 +77,18 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
 
 ### Changed
 
-- **`error.rs` pedantic-clean**: all missing-backticks doc warnings fixed
-  (first module toward full `pedantic` adoption).
-
-- **Two-tier Clippy lint architecture** (`Cargo.toml`, `src/lib.rs`): a
-  declarative `[lints.clippy]` section in `Cargo.toml` enforces panic-prevention
-  lints (`exit`, `todo`, `unimplemented`, `unchecked_time_subtraction`,
-  `unreachable`) across **all** targets (lib, tests, benches, examples), while a
-  crate-level `#![deny(...)]` in `src/lib.rs` extends stricter panic-prevention
-  (`unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`,
-  `panic_in_result_fn`) to **library code only**. Test modules override with
-  `#![allow(...)]` so assertions stay direct. Inspired by namtao's "Strict Lints"
+- **Strict Clippy lint architecture** (`Cargo.toml`, `src/lib.rs`): a
+  declarative `[lints.clippy]` section in `Cargo.toml` denies `pedantic` +
+  `nursery` + restriction lints (`as_conversions`, `arithmetic_side_effects`,
+  `unwrap_used`, `expect_used`, `indexing_slicing`, `string_slice`,
+  `panic_in_result_fn`, `panic`, `exit`, `todo`, `unimplemented`,
+  `unchecked_time_subtraction`, `unreachable`) across **all** targets. The
+  crate-level `#![deny(...)]` in `src/lib.rs` is retained as belt-and-braces
+  documentation of the library-only panic-prevention surface. Test, bench, and
+  example modules carry `#![allow(...)]` overrides so assertions stay direct.
+  Library code is fully clippy-clean under the entire strict set — provably
+  panic-free on every public API path (the only panic is the documented
+  `for_each_from` re-entrancy guard). Inspired by namtao's "Strict Lints"
   philosophy.
 
 - **`cargo-nextest` in the default Nix devShell** (`flake.nix`): faster and

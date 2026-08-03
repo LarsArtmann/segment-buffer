@@ -64,9 +64,9 @@ run() {
 }
 
 run "fmt"            cargo fmt --all -- --check
-run "clippy(default)" cargo clippy --all-targets -- -D warnings -A clippy::pedantic
-run "clippy(encryption)" cargo clippy --all-targets --features encryption -- -D warnings -A clippy::pedantic
-run "clippy(fuzz)"   cargo clippy --all-targets --features fuzz -- -D warnings -A clippy::pedantic
+run "clippy(default)" cargo clippy --all-targets -- -D warnings
+run "clippy(encryption)" cargo clippy --all-targets --features encryption -- -D warnings
+run "clippy(fuzz)"   cargo clippy --all-targets --features fuzz -- -D warnings
 run "test(default)"  cargo test --no-fail-fast
 run "test(encryption)" cargo test --no-fail-fast --features encryption
 run "doc"            env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features encryption
