@@ -205,7 +205,7 @@ append(item) ─► unflushed: Vec<T>   (in-memory, inside the Mutex)
               prepend 8-byte SBF1 envelope ─► write seg_*.zst.tmp ─► fsync ─► atomic rename
                     │
                     ▼   (lock re-acquired)
-              approx_disk_bytes += len
+              approx_disk_bytes += len; segment_count += 1
 ```
 
 `read_from(start, limit)` scans on-disk segments (sorted by start) then drains the

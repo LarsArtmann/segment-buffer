@@ -1835,7 +1835,7 @@ where
     ///
     /// | Operation                                  | Measured time (median, typical run) |
     /// |--------------------------------------------|--------------------------------------|
-    /// | `stats()` (single lock, 7-field snapshot)  | ~12 ns                               |
+    /// | `stats()` (single lock, 8-field snapshot)  | ~12 ns                               |
     /// | 3 individual accessors (`pending_count` + `latest_sequence` + `store_pressure`) | ~31 ns |
     ///
     /// So `stats()` is roughly **2.5× cheaper than 3 individual accessors**
@@ -1858,6 +1858,7 @@ where
     /// let snapshot = buf.stats();
     /// assert_eq!(snapshot.pending_count, 2);
     /// assert_eq!(snapshot.next_sequence, 2);
+    /// assert_eq!(snapshot.segment_count, 0); // nothing flushed yet
     /// assert!(snapshot.store_pressure < 0.01);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
