@@ -81,11 +81,11 @@ A single TODO_LIST.md item:
 
 ### Directly related to this session's work (high priority)
 
-1. **Add `curl` to `flake.nix` devShell `buildInputs`** — or remove the false comment from `verify-gate.sh`. Pick one.
+1. ~~**Add `curl` to `flake.nix` devShell `buildInputs`** — or remove the false comment from `verify-gate.sh`. Pick one.~~ done at `0ae88c5` (curl added to devShell `buildInputs`; comment corrected — only `check-changelog-links.sh` uses curl, not `check-html-root-url.sh`)
 2. **Add `check-changelog-links.sh` to `.github/workflows/ci.yml`** — establish CI parity with the local gate.
 3. **Run `scripts/verify-gate.sh` end-to-end** — confirm the full integrated gate passes (AGENTS.md rule 4).
-4. **Update AGENTS.md** — mention `check-changelog-links.sh` in the "Documentation health cadence" section's gate enumeration.
-5. **Fix the verify-gate.sh comment** — either add curl to devShell or rewrite the tool-availability note to be accurate.
+4. ~~**Update AGENTS.md** — mention `check-changelog-links.sh` in the "Documentation health cadence" section's gate enumeration.~~ done in docs-health pass (AGENTS.md "Documentation health cadence" section now lists `check-changelog-links.sh` alongside `lychee` and `check-html-root-url.sh`)
+5. ~~**Fix the verify-gate.sh comment** — either add curl to devShell or rewrite the tool-availability note to be accurate.~~ done at `0ae88c5` (comment rewritten: now says only `check-changelog-links.sh` uses curl, and that curl is in the devShell `buildInputs`)
 6. **Add CHANGELOG `[Unreleased]` entry** for the two script bug fixes and the gate wiring.
 
 ### Related to the gate/scripts (medium priority)
@@ -107,9 +107,9 @@ A single TODO_LIST.md item:
 
 ### Unrelated but noticed during this session
 
-18. **CHANGELOG.md, FEATURES.md, TODO_LIST.md, src/tests.rs are staged** (from prior session's segment_count work). These uncommitted changes should be reviewed and committed or unstaged.
+18. ~~**CHANGELOG.md, FEATURES.md, TODO_LIST.md, src/tests.rs are staged** (from prior session's segment_count work). These uncommitted changes should be reviewed and committed or unstaged.~~ done at `47b31cd`, `69e03e7` (all committed; working tree was clean at the start of the docs-health session)
 19. **9 commits ahead of origin/master** — consider pushing when CI is confirmed green.
-20. **The `docs/status/2026-08-03_23-57_roadmap-to-todo-migration-and-self-review.md`** file is untracked — should be committed or trashed.
+20. ~~**The `docs/status/2026-08-03_23-57_roadmap-to-todo-migration-and-self-review.md`** file is untracked — should be committed or trashed.~~ done at `3fa311e` (committed as part of "collapse test signature and add roadmap-to-todo migration status")
 
 ---
 
@@ -120,3 +120,19 @@ A single TODO_LIST.md item:
 2. **Should `check-changelog-links.sh` run in CI?** The local gate now checks it but CI doesn't. Adding it to CI means a broken CHANGELOG link blocks merge (good for hygiene, bad if someone pushes a CHANGELOG entry before the tag). The alternative is keeping it local-only as a pre-release checklist item. This is a workflow-policy choice.
 
 3. **Is the auto-commit daemon's bundling of unrelated changes into one commit acceptable, or should it be reconfigured?** My script fixes landed in a commit titled "feat(core): expose live segment_count in BufferStats." If the daemon can't be reconfigured, the workaround is committing immediately after each logical change — but I don't know if the daemon's behavior is configurable.
+
+---
+
+## Resolution (2026-08-04)
+
+| Item | Claim in report | Resolution | Commit | Release |
+| ---- | --------------- | ---------- | ------ | ------- |
+| f.1  | Add curl to flake.nix or remove comment | FIXED: curl added to devShell `buildInputs`; comment corrected | `0ae88c5` | unreleased |
+| f.4  | Update AGENTS.md gate enumeration | DONE: \"Documentation health cadence\" now lists `check-changelog-links.sh` | docs-health pass | unreleased |
+| f.5  | Fix verify-gate.sh comment | DONE: comment now says only check-changelog-links.sh uses curl | `0ae88c5` | unreleased |
+| f.6  | Add CHANGELOG [Unreleased] entry | PARTIALLY DONE: the script itself has an entry; the MAPFILE/HEAD bug fixes and gate wiring do not have explicit entries yet | — | — |
+| f.18 | Staged files need review/commit | DONE: all committed, working tree clean at docs-health session start | `47b31cd`, `69e03e7` | unreleased |
+| f.20 | Untracked status report file | DONE: committed | `3fa311e` | unreleased |
+| g.1  | curl in devShell vs rewrite script | RESOLVED: curl added to devShell (simpler path) | `0ae88c5` | unreleased |
+
+**Still open:** f.2 (CI parity for check-changelog-links), f.3 (full gate run), f.6 (explicit CHANGELOG entries for the two bug fixes), f.7–17 (rate-limit handling, GITHUB_TOKEN, MAPFILE audit, self-maintaining sed range, selective-run options, CI-vs-gate parity audit, set -euo pipefail, runtime docs), g.2 (CI policy), g.3 (daemon behavior).
