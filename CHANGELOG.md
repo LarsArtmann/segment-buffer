@@ -286,6 +286,17 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
 
 ### Documentation
 
+- **Updated test counts and descriptions** (`FEATURES.md`, `AGENTS.md`): unit
+  tests now 116 (was 115), property tests now 28 (was 26), with descriptions
+  expanded to cover the new `for_each_from` + `delete_acked`, `iter_from` +
+  flush + delete, and `segment_count` stress tests. The `iter_from` seq-number
+  fix is also documented in the `Owned-item iterator` capability note.
+
+- **Verification-discipline refresh** (`AGENTS.md`): rule 4 now cites the
+  canonical `scripts/verify-gate.sh` gate and documents the `set -euo pipefail`
+  + `run()` rewrite that captures real exit status, replacing the four-command
+  hand-rolled subset.
+
 - **Clarified `pending_count()` vs `unflushed` distinction** (`src/lib.rs`): the
   rustdoc now states explicitly that "pending" means _not yet acknowledged_
   (the total backlog of on-disk segments plus in-memory items), not "not yet
@@ -1212,7 +1223,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.4
 [0.5.3]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.3
 [0.5.2]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.2
