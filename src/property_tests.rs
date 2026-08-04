@@ -1219,9 +1219,12 @@ proptest! {
         let sorted: Vec<u64> = (0..u64::from(n)).collect();
         let result = crate::SegmentBuffer::<PropItem>::percentile_of_sorted(&sorted, pct);
 
-        // Independent float implementation of the nearest-rank formula.
+        // Independent integer implementation of the nearest-rank formula.
+        // Floating-point `ceil(pct/100 * n)` is not used here because it can
+        // round the product across an integer boundary (e.g. pct=55, n=100)
+        // and produce a false failure. `ceil(a/b)` is `(a + b - 1) / b`.
         let ni = usize::from(n);
-        let rank = (f64::from(pct) / 100.0 * ni as f64).ceil() as usize;
+        let rank = (pct as usize * ni + 99) / 100;
         let rank = rank.clamp(1, ni);
         let expected = sorted[rank - 1];
 
