@@ -820,12 +820,12 @@ struct BufferInner<T> {
 impl<T> BufferInner<T> {
     /// Total pending items: on-disk segments plus in-memory unflushed items.
     /// Equivalent to `next_seq - head_seq`.
-    fn pending_count(&self) -> u64 {
+    const fn pending_count(&self) -> u64 {
         self.next_seq.saturating_sub(self.head_seq)
     }
 
     /// Highest sequence number assigned, or `0` when the buffer is empty.
-    fn latest_sequence(&self) -> u64 {
+    const fn latest_sequence(&self) -> u64 {
         if self.next_seq == 0 {
             0
         } else {
@@ -1915,7 +1915,8 @@ where
         let segment_count = self
             .segment_count
             .load(std::sync::atomic::Ordering::Relaxed);
-        let store_pressure = Self::compute_store_pressure(approx_disk_bytes, self.config.max_size_bytes);
+        let store_pressure =
+            Self::compute_store_pressure(approx_disk_bytes, self.config.max_size_bytes);
         BufferStats {
             pending_count,
             latest_sequence,
