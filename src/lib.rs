@@ -2259,22 +2259,17 @@ where
                 _phantom: std::marker::PhantomData,
             });
         }
-        let items = self.read_from(start_seq, limit)?;
-        // The collect is required: SegmentIter.inner is typed as
-        // std::vec::IntoIter<(u64, T)>, so we need a concrete Vec to
-        // produce that type. The chained iterator alone would be
-        // Map<Enumerate<IntoIter<T>>>, which doesn't match.
-        #[allow(clippy::needless_collect)]
-        let indexed: Vec<(u64, T)> = items
-            .into_iter()
-            .enumerate()
-            .map(|(i, item)| {
-                (
-                    start_seq.saturating_add(u64::try_from(i).unwrap_or(u64::MAX)),
-                    item,
-                )
-            })
-            .collect();
+
+        // Materialise the items by calling the zero-copy lending path. This
+        // keeps the sequence-number computation in one place: `for_each_from`
+        // derives each seq from the segment's `start` or the pending-window
+        // base, so the returned pairs are correct even when `start_seq` falls
+        // inside a deleted segment (a gap that `read_from` legitimately skips).
+        let mut indexed: Vec<(u64, T)> = Vec::with_capacity(limit.min(1024));
+        self.for_each_from(start_seq, limit, |seq, item| {
+            indexed.push((seq, item.clone()));
+        })?;
+
         Ok(SegmentIter {
             inner: indexed.into_iter(),
             _phantom: std::marker::PhantomData,
