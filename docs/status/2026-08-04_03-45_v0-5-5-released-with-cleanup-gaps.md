@@ -10,15 +10,15 @@
 
 ### v0.5.5 is published and live
 
-| Surface | Status | Verified how |
-|---------|--------|-------------|
-| **crates.io** | `segment-buffer@0.5.5` live | `crates.io/api/v1/crates/segment-buffer/0.5.5` returned full JSON (checksum, crate_size 667 KB, published_by LarsArtmann) |
-| **docs.rs** | `docs.rs/segment-buffer/0.5.5` rendered | Fetched the page — full rustdoc with all structs/enums/traits visible |
-| **GitHub release** | `v0.5.5` release created | `gh api` returned release ID 364566156, html_url confirmed |
-| **Git tag** | `v0.5.5` pushed to origin | Tag points at `ac629b8` (the publish-fix commit) |
-| **CI (master @ ac629b8)** | All 13 jobs green | `gh run watch 30867450689` — every matrix job passed |
-| **Nix (master @ ac629b8)** | Green | `gh run list` confirmed `success` |
-| **Local verify-gate** | 15/15 ALL GATES GREEN | `scripts/verify-gate.sh --all` — including `changelog-links` now passing |
+| Surface                    | Status                                  | Verified how                                                                                                              |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **crates.io**              | `segment-buffer@0.5.5` live             | `crates.io/api/v1/crates/segment-buffer/0.5.5` returned full JSON (checksum, crate_size 667 KB, published_by LarsArtmann) |
+| **docs.rs**                | `docs.rs/segment-buffer/0.5.5` rendered | Fetched the page — full rustdoc with all structs/enums/traits visible                                                     |
+| **GitHub release**         | `v0.5.5` release created                | `gh api` returned release ID 364566156, html_url confirmed                                                                |
+| **Git tag**                | `v0.5.5` pushed to origin               | Tag points at `ac629b8` (the publish-fix commit)                                                                          |
+| **CI (master @ ac629b8)**  | All 13 jobs green                       | `gh run watch 30867450689` — every matrix job passed                                                                      |
+| **Nix (master @ ac629b8)** | Green                                   | `gh run list` confirmed `success`                                                                                         |
+| **Local verify-gate**      | 15/15 ALL GATES GREEN                   | `scripts/verify-gate.sh --all` — including `changelog-links` now passing                                                  |
 
 ### Release process executed
 
@@ -65,6 +65,7 @@ The auto-commit daemon produced a commit that is local-only (not pushed, not on 
 ```
 
 This refactors `src/lib.rs` (74 lines changed: 45 insertions, 29 deletions):
+
 - Extracts `BufferInner::pending_count()`, `BufferInner::latest_sequence()`, `BufferInner::pending_start()` helper methods.
 - Extracts `Buffer::compute_store_pressure(bytes, max)` static helper.
 - Updates `take`, `take_while`, `stats`, `store_pressure`, `latest_sequence`, `pending_count` to delegate.

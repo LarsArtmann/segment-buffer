@@ -4,7 +4,7 @@
 **Commits ahead of origin:** `2` (`8e2bcbf` release v0.5.5, `d190f1c` chore(release): cut 0.5.5...)  
 **Working tree:** clean  
 **Latest CI:** `success` (CI + Nix both green on `0db5fe1`)  
-**Current release target:** `v0.5.5` (Cargo.toml + html_root_url + CHANGELOG already bumped)  
+**Current release target:** `v0.5.5` (Cargo.toml + html_root_url + CHANGELOG already bumped)
 
 ---
 
@@ -45,8 +45,8 @@
   - `src/lib.rs` `html_root_url` = `https://docs.rs/segment-buffer/0.5.5`.
   - `scripts/check-html-root-url.sh` passes.
   - `cargo fmt --check`, `cargo clippy` (default + encryption), `cargo test
-    --no-fail-fast --features encryption`, and `cargo doc --no-deps --features
-    encryption` all pass.
+--no-fail-fast --features encryption`, and `cargo doc --no-deps --features
+encryption` all pass.
 - **CHANGELOG prepared for v0.5.5.**
   - `[Unreleased]` promoted to `[0.5.5] - 2026-08-04`.
   - New `[Unreleased]` section created above it.
@@ -141,7 +141,7 @@ blocked on the release action itself:
 5. `git tag v0.5.5` on the current HEAD (`8e2bcbf`).
 6. `git push origin master --tags`.
 7. Create GitHub release via `gh api --method POST
-   repos/LarsArtmann/segment-buffer/releases -f tag_name=v0.5.5 ...`.
+repos/LarsArtmann/segment-buffer/releases -f tag_name=v0.5.5 ...`.
 8. Verify the `publish.yml` workflow triggers and succeeds.
 9. Verify `https://crates.io/crates/segment-buffer/0.5.5` renders within 5 minutes.
 10. Verify `https://docs.rs/segment-buffer/0.5.5` renders.

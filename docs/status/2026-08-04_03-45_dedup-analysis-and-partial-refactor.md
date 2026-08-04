@@ -25,14 +25,14 @@ analysis was done manually by reading every source file.
 1. **`BufferInner<T>` helper methods extracted.** Three computations that were
    inlined at multiple call sites are now named methods on `BufferInner`:
 
-   | Helper | Previously duplicated at | Now used by |
-   |---|---|---|
-   | `pending_count()` | `pending_count()`, `stats()` | both public methods |
-   | `latest_sequence()` | `latest_sequence()`, `stats()` | both public methods |
-   | `pending_start()` | `read_from`, `for_each_from` | both internal call sites |
+   | Helper              | Previously duplicated at       | Now used by              |
+   | ------------------- | ------------------------------ | ------------------------ |
+   | `pending_count()`   | `pending_count()`, `stats()`   | both public methods      |
+   | `latest_sequence()` | `latest_sequence()`, `stats()` | both public methods      |
+   | `pending_start()`   | `read_from`, `for_each_from`   | both internal call sites |
 
 2. **`compute_store_pressure()` extracted.** The `approx_disk_bytes /
-   max_size_bytes` formula (with the `== 0` early return and `.min(1.0)`
+max_size_bytes` formula (with the `== 0` early return and `.min(1.0)`
    clamp) was duplicated verbatim in `store_pressure()` and `stats()`. Now
    both delegate to one private associated function.
 
@@ -43,13 +43,13 @@ analysis was done manually by reading every source file.
 
 ### Verification gate run this session
 
-| Gate | Command | Result |
-|---|---|---|
-| Compile | `cargo check --features encryption` | PASS |
-| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | PASS |
-| Clippy (default) | `cargo clippy --all-targets -- -D warnings` | PASS |
-| Format | `cargo fmt --all -- --check` | PASS (after one `cargo fmt --all` run) |
-| Tests | `cargo test --no-fail-fast --features encryption` | PASS (184/184) |
+| Gate                | Command                                                           | Result                                 |
+| ------------------- | ----------------------------------------------------------------- | -------------------------------------- |
+| Compile             | `cargo check --features encryption`                               | PASS                                   |
+| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | PASS                                   |
+| Clippy (default)    | `cargo clippy --all-targets -- -D warnings`                       | PASS                                   |
+| Format              | `cargo fmt --all -- --check`                                      | PASS (after one `cargo fmt --all` run) |
+| Tests               | `cargo test --no-fail-fast --features encryption`                 | PASS (184/184)                         |
 
 ---
 
@@ -118,12 +118,12 @@ this was touched:
 
 These were analysed and deliberately accepted:
 
-| Duplication | Why it stays |
-|---|---|
-| AES-GCM vs XChaCha20 cipher impls | Different AEAD types (`Aes256Gcm` vs `XChaCha20Poly1305`); the trait IS the abstraction. A shared helper would take more type params than the duplicated code has lines. |
+| Duplication                                 | Why it stays                                                                                                                                                                                          |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AES-GCM vs XChaCha20 cipher impls           | Different AEAD types (`Aes256Gcm` vs `XChaCha20Poly1305`); the trait IS the abstraction. A shared helper would take more type params than the duplicated code has lines.                              |
 | `read_from` vs `for_each_from` Phase 1 loop | Different iteration semantics: `read_from` pushes owned items into a `Vec`; `for_each_from` calls `f(seq, &item)` by reference. Abstracting loses `read_from`'s ability to own items without a clone. |
-| Test `#![allow(...)]` lint blocks | Each module needs its own — this is how Rust lint scopes work. Cannot be shared. |
-| Concurrent reader loops in tests | Each has test-specific inline assertions. A helper would need 8+ parameters. |
+| Test `#![allow(...)]` lint blocks           | Each module needs its own — this is how Rust lint scopes work. Cannot be shared.                                                                                                                      |
+| Concurrent reader loops in tests            | Each has test-specific inline assertions. A helper would need 8+ parameters.                                                                                                                          |
 
 ---
 
@@ -158,9 +158,9 @@ captures a clean state.
 
 2. **The deduplication analysis was thorough but the execution was
    incomplete.** The library refactoring is ~80% done (one missed call site
-   + one unextracted helper), and the test deduplication (the largest
-   duplication mass) was not started. A more disciplined approach would
-   finish one category completely before moving to the status report.
+   - one unextracted helper), and the test deduplication (the largest
+     duplication mass) was not started. A more disciplined approach would
+     finish one category completely before moving to the status report.
 
 3. **`property_tests.rs` needs the same helper discipline as `tests.rs`.**
    The 30+ inline `PropItem { id, payload: format!(...) }` constructions and

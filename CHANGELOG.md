@@ -294,8 +294,8 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
 
 - **Verification-discipline refresh** (`AGENTS.md`): rule 4 now cites the
   canonical `scripts/verify-gate.sh` gate and documents the `set -euo pipefail`
-  + `run()` rewrite that captures real exit status, replacing the four-command
-  hand-rolled subset.
+  - `run()` rewrite that captures real exit status, replacing the four-command
+    hand-rolled subset.
 
 - **Clarified `pending_count()` vs `unflushed` distinction** (`src/lib.rs`): the
   rustdoc now states explicitly that "pending" means _not yet acknowledged_
