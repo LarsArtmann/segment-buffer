@@ -292,18 +292,18 @@ No subject line. The `00-13` report item d.3 says: "I saw it in `git log`, noted
 This was the first docs-health pass on the 2026-08-04 reports. A subsequent
 pass (the current session) has resolved additional items.
 
-| Item | Claim in report | Resolution | Commit | Release |
-| ---- | --------------- | ---------- | ------ | ------- |
-| c.1  | Push to origin | RESOLVED: commits pushed; CI green on master | — | — |
-| c.4  | Check CI status before declaring done | RESOLVED: CI is green (`gh run list --limit 4` shows `success` on both CI and Nix workflows) | — | — |
-| c.5  | Update docs/DOMAIN_LANGUAGE.md | DONE: consistency-model section now cites the Barrier test, scan-cache loom tests, and the dual-mutation property test as proof artifacts | docs-health pass | unreleased |
-| c.6  | Run nix flake check | STILL OPEN — not run this session either | — | — |
-| c.10 | Address empty-message commit b149bfa | STILL OPEN — auto-commit daemon behavior; formally unresolved across 4+ sessions | — | — |
-| d.1  | Hand-reconstructed the gate | STILL OPEN — this is the most-repeated failure mode (4+ sessions); no session has run `scripts/verify-gate.sh` end-to-end | — | — |
-| d.2  | Declared "done" without checking CI | RESOLVED: CI is now green on master | — | — |
-| d.3  | Modified flake.nix without running nix flake check | STILL OPEN — nix flake check has never been run after the curl addition | — | — |
-| f.1  | Run scripts/verify-gate.sh end-to-end | STILL OPEN — across ALL 8 reports from 2026-08-04, no session ran the full gate | — | — |
-| f.2  | Investigate and fix the red CI run | RESOLVED: CI is green (MSRV lint issue fixed in concurrent commits) | — | — |
-| f.8  | Update docs/DOMAIN_LANGUAGE.md consistency-model | DONE: proof artifacts (Barrier test, loom scan-cache tests, dual-mutation property test) now cited | docs-health pass | unreleased |
+| Item | Claim in report                                    | Resolution                                                                                                                                | Commit           | Release    |
+| ---- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ---------- |
+| c.1  | Push to origin                                     | RESOLVED: commits pushed; CI green on master                                                                                              | —                | —          |
+| c.4  | Check CI status before declaring done              | RESOLVED: CI is green (`gh run list --limit 4` shows `success` on both CI and Nix workflows)                                              | —                | —          |
+| c.5  | Update docs/DOMAIN_LANGUAGE.md                     | DONE: consistency-model section now cites the Barrier test, scan-cache loom tests, and the dual-mutation property test as proof artifacts | docs-health pass | unreleased |
+| c.6  | Run nix flake check                                | STILL OPEN — not run this session either                                                                                                  | —                | —          |
+| c.10 | Address empty-message commit b149bfa               | STILL OPEN — auto-commit daemon behavior; formally unresolved across 4+ sessions                                                          | —                | —          |
+| d.1  | Hand-reconstructed the gate                        | STILL OPEN — this is the most-repeated failure mode (4+ sessions); no session has run `scripts/verify-gate.sh` end-to-end                 | —                | —          |
+| d.2  | Declared "done" without checking CI                | RESOLVED: CI is now green on master                                                                                                       | —                | —          |
+| d.3  | Modified flake.nix without running nix flake check | STILL OPEN — nix flake check has never been run after the curl addition                                                                   | —                | —          |
+| f.1  | Run scripts/verify-gate.sh end-to-end              | STILL OPEN — across ALL 8 reports from 2026-08-04, no session ran the full gate                                                           | —                | —          |
+| f.2  | Investigate and fix the red CI run                 | RESOLVED: CI is green (MSRV lint issue fixed in concurrent commits)                                                                       | —                | —          |
+| f.8  | Update docs/DOMAIN_LANGUAGE.md consistency-model   | DONE: proof artifacts (Barrier test, loom scan-cache tests, dual-mutation property test) now cited                                        | docs-health pass | unreleased |
 
 **Still open:** f.1 (run verify-gate.sh — the codebase's most-repeated failure mode), c.6 (nix flake check), c.10/d.6 (empty-message commits — daemon behavior), g.1–3 (push decision resolved; TODO_LIST routing resolved; CI fix resolved).

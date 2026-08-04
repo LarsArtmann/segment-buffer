@@ -43,14 +43,14 @@ over already-proven code.
 
 ### 4. Verification gate (all green, run this session)
 
-| Gate | Command | Result |
-| --- | --- | --- |
-| Format | `cargo fmt --all -- --check` | pass (after one fix) |
-| Clippy (default) | `cargo clippy --all-targets -- -D warnings` | pass |
-| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | pass |
-| Tests | `cargo test --no-fail-fast --features encryption` | 141 unit + 1 alloc + 39 doctests, all pass |
-| Loom | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 12/12 pass |
-| Docs | `cargo doc --no-deps --features encryption` | pass |
+| Gate                | Command                                                                   | Result                                     |
+| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------ |
+| Format              | `cargo fmt --all -- --check`                                              | pass (after one fix)                       |
+| Clippy (default)    | `cargo clippy --all-targets -- -D warnings`                               | pass                                       |
+| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings`         | pass                                       |
+| Tests               | `cargo test --no-fail-fast --features encryption`                         | 141 unit + 1 alloc + 39 doctests, all pass |
+| Loom                | `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release` | 12/12 pass                                 |
+| Docs                | `cargo doc --no-deps --features encryption`                               | pass                                       |
 
 ---
 

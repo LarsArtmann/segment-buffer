@@ -125,19 +125,19 @@ A single TODO_LIST.md item:
 
 ## Resolution (2026-08-04)
 
-| Item | Claim in report                         | Resolution                                                                                                                  | Commit               | Release    |
-| ---- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------- | ---------- |
-| f.1  | Add curl to flake.nix or remove comment | FIXED: curl added to devShell `buildInputs`; comment corrected                                                              | `0ae88c5`            | unreleased |
-| f.2  | Add check-changelog-links.sh to ci.yml  | DONE: `changelog-links` CI job added to `.github/workflows/ci.yml`                                                          | `01-14` session      | unreleased |
-| f.4  | Update AGENTS.md gate enumeration       | DONE: \"Documentation health cadence\" now lists `check-changelog-links.sh`                                                 | docs-health pass     | unreleased |
-| f.5  | Fix verify-gate.sh comment              | DONE: comment now says only check-changelog-links.sh uses curl                                                              | `0ae88c5`            | unreleased |
-| f.6  | Add CHANGELOG [Unreleased] entry        | DONE: entries exist for the MAPFILE bug, HEAD-tag skip, curl in devShell, and gate wiring                                   | multiple             | unreleased |
-| f.9  | Audit all scripts for MAPFILE casing    | DONE: audited all 4 scripts — clean (0 uppercase, 1 lowercase correct)                                                      | `01-14` session G3   | unreleased |
-| f.10 | Make sed help-range self-maintaining    | DONE: replaced `sed -n '2,22p'` with dynamic `awk` comment filter                                                           | `01-14` session G4   | unreleased |
-| f.16 | Add set -euo pipefail to verify-gate.sh | DONE: `set -u` → `set -euo pipefail`; `run()` rewritten to capture real exit status                                         | `01-14` session G2   | unreleased |
-| f.18 | Staged files need review/commit         | DONE: all committed, working tree clean at docs-health session start                                                        | `47b31cd`, `69e03e7` | unreleased |
-| f.20 | Untracked status report file            | DONE: committed                                                                                                             | `3fa311e`            | unreleased |
-| g.1  | curl in devShell vs rewrite script      | RESOLVED: curl added to devShell (simpler path)                                                                             | `0ae88c5`            | unreleased |
-| g.2  | Should check-changelog-links.sh run in CI? | RESOLVED: yes — `changelog-links` CI job added                                                                             | `01-14` session      | unreleased |
+| Item | Claim in report                            | Resolution                                                                                | Commit               | Release    |
+| ---- | ------------------------------------------ | ----------------------------------------------------------------------------------------- | -------------------- | ---------- |
+| f.1  | Add curl to flake.nix or remove comment    | FIXED: curl added to devShell `buildInputs`; comment corrected                            | `0ae88c5`            | unreleased |
+| f.2  | Add check-changelog-links.sh to ci.yml     | DONE: `changelog-links` CI job added to `.github/workflows/ci.yml`                        | `01-14` session      | unreleased |
+| f.4  | Update AGENTS.md gate enumeration          | DONE: \"Documentation health cadence\" now lists `check-changelog-links.sh`               | docs-health pass     | unreleased |
+| f.5  | Fix verify-gate.sh comment                 | DONE: comment now says only check-changelog-links.sh uses curl                            | `0ae88c5`            | unreleased |
+| f.6  | Add CHANGELOG [Unreleased] entry           | DONE: entries exist for the MAPFILE bug, HEAD-tag skip, curl in devShell, and gate wiring | multiple             | unreleased |
+| f.9  | Audit all scripts for MAPFILE casing       | DONE: audited all 4 scripts — clean (0 uppercase, 1 lowercase correct)                    | `01-14` session G3   | unreleased |
+| f.10 | Make sed help-range self-maintaining       | DONE: replaced `sed -n '2,22p'` with dynamic `awk` comment filter                         | `01-14` session G4   | unreleased |
+| f.16 | Add set -euo pipefail to verify-gate.sh    | DONE: `set -u` → `set -euo pipefail`; `run()` rewritten to capture real exit status       | `01-14` session G2   | unreleased |
+| f.18 | Staged files need review/commit            | DONE: all committed, working tree clean at docs-health session start                      | `47b31cd`, `69e03e7` | unreleased |
+| f.20 | Untracked status report file               | DONE: committed                                                                           | `3fa311e`            | unreleased |
+| g.1  | curl in devShell vs rewrite script         | RESOLVED: curl added to devShell (simpler path)                                           | `0ae88c5`            | unreleased |
+| g.2  | Should check-changelog-links.sh run in CI? | RESOLVED: yes — `changelog-links` CI job added                                            | `01-14` session      | unreleased |
 
 **Still open:** f.3 (full verify-gate.sh end-to-end run — no session has done this), f.7 (rate-limit handling), f.8 (GITHUB_TOKEN support), f.11–12 (--list / --only selective-run options), f.13 (full CI-vs-local-gate parity audit — changelog-links parity is closed, others not audited), f.14 (CI job that runs verify-gate.sh), f.15 (pin nixpkgs tool versions), f.17 (document gate runtime), g.3 (daemon behavior — open question).

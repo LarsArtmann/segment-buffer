@@ -92,7 +92,7 @@ and the status reports cited.
 - **Panic-free public API — SHIPPED (2026-08-04).** The re-entrancy deadlock
   was eliminated at the root (`for_each_from` no longer holds the mutex across
   the callback). Zero `panic!` paths in library code. See CHANGELOG `[Unreleased]
-  → Changed`.
+→ Changed`.
 
 - **`mtime_supported == false` scan-cache gap — FORMALLY ACCEPTED
   (2026-08-04).** The single-process invariant already forbids external

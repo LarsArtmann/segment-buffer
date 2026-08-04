@@ -238,14 +238,14 @@ The root-cause fix clones the in-memory window (bounded by `limit`). This elimin
 The panic-free API is shipped. All three deferred design decisions are resolved
 (panic-free SHIPPED, health-check DEFER, mtime gap FORMALLY ACCEPTED).
 
-| Item | Claim in report | Resolution | Commit | Release |
-| ---- | --------------- | ---------- | ------ | ------- |
-| b.2  | CI green verification — blocked | RESOLVED: CI is now green on master (MSRV lint issue diagnosed and fixed in concurrent commits) | — | — |
-| d.3  | cargo doc warning in segment_size_stats | DONE: private intra-doc link to `Self::scan_segments` converted to plain text | `01-14` session | unreleased |
-| f.3  | Fix cargo doc warning (private intra-doc link) | DONE: fixed by the 01-14 session | `01-14` session | unreleased |
-| f.4  | Run full verify-gate.sh | STILL OPEN — no session has run the full gate end-to-end | — | — |
-| f.5  | Check gh run list after push | RESOLVED: CI is green on master | — | — |
-| f.6  | Full benchmark run for publication-grade numbers | STILL OPEN — indicative numbers are in docs/perf but default-sample-size run not done | — | — |
-| g.1  | Push the 26 unpushed commits? | RESOLVED: commits pushed; CI green | — | — |
+| Item | Claim in report                                  | Resolution                                                                                      | Commit          | Release    |
+| ---- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- | --------------- | ---------- |
+| b.2  | CI green verification — blocked                  | RESOLVED: CI is now green on master (MSRV lint issue diagnosed and fixed in concurrent commits) | —               | —          |
+| d.3  | cargo doc warning in segment_size_stats          | DONE: private intra-doc link to `Self::scan_segments` converted to plain text                   | `01-14` session | unreleased |
+| f.3  | Fix cargo doc warning (private intra-doc link)   | DONE: fixed by the 01-14 session                                                                | `01-14` session | unreleased |
+| f.4  | Run full verify-gate.sh                          | STILL OPEN — no session has run the full gate end-to-end                                        | —               | —          |
+| f.5  | Check gh run list after push                     | RESOLVED: CI is green on master                                                                 | —               | —          |
+| f.6  | Full benchmark run for publication-grade numbers | STILL OPEN — indicative numbers are in docs/perf but default-sample-size run not done           | —               | —          |
+| g.1  | Push the 26 unpushed commits?                    | RESOLVED: commits pushed; CI green                                                              | —               | —          |
 
 **Still open:** f.4 (run verify-gate.sh end-to-end), f.6 (full benchmark run), g.2 (for_each_from perf regression acceptable? — the tradeoff is documented; a future `Arc<Vec<T>>` snapshot is a ROADMAP-level investigation).

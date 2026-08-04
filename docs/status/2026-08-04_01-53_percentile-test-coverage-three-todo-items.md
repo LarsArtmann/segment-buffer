@@ -24,13 +24,13 @@ field (p99, p95, ...) is correct by construction.
 **File:** `src/tests.rs`
 **Tests (5):**
 
-| Test | What it pins |
-|---|---|
-| `percentile_of_sorted_empty_returns_zero` | Empty slice → 0 |
-| `percentile_of_sorted_pct_zero_returns_minimum` | pct=0 → first element (rank clamped to 1) |
-| `percentile_of_sorted_pct_hundred_returns_maximum` | pct=100 → last element (rank = n) |
+| Test                                                         | What it pins                               |
+| ------------------------------------------------------------ | ------------------------------------------ |
+| `percentile_of_sorted_empty_returns_zero`                    | Empty slice → 0                            |
+| `percentile_of_sorted_pct_zero_returns_minimum`              | pct=0 → first element (rank clamped to 1)  |
+| `percentile_of_sorted_pct_hundred_returns_maximum`           | pct=100 → last element (rank = n)          |
 | `percentile_of_sorted_single_element_returns_it_for_all_pct` | n=1 → that element for every pct ∈ 0..=100 |
-| `percentile_of_sorted_is_monotonically_nondecreasing_in_pct` | Result never decreases as pct increases |
+| `percentile_of_sorted_is_monotonically_nondecreasing_in_pct` | Result never decreases as pct increases    |
 
 Until now the private helper was only exercised indirectly through
 `segment_size_stats`. These tests make the boundary contract explicit and
@@ -58,18 +58,19 @@ has encrypted variants of other tests and this one was missing for consistency.
 
 Ran and passed:
 
-| Gate | Command | Result |
-|---|---|---|
-| Format | `cargo fmt --all -- --check` | clean |
-| Clippy (default) | `cargo clippy --all-targets -- -D warnings` | clean |
-| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | clean |
-| Tests | `cargo test --no-fail-fast --features encryption` | 141 lib + 1 integration + 39 doctests, all pass |
-| Docs | `cargo doc --no-deps --features encryption` | clean, no warnings |
+| Gate                | Command                                                           | Result                                          |
+| ------------------- | ----------------------------------------------------------------- | ----------------------------------------------- |
+| Format              | `cargo fmt --all -- --check`                                      | clean                                           |
+| Clippy (default)    | `cargo clippy --all-targets -- -D warnings`                       | clean                                           |
+| Clippy (encryption) | `cargo clippy --all-targets --features encryption -- -D warnings` | clean                                           |
+| Tests               | `cargo test --no-fail-fast --features encryption`                 | 141 lib + 1 integration + 39 doctests, all pass |
+| Docs                | `cargo doc --no-deps --features encryption`                       | clean, no warnings                              |
 
 ### 6. Concurrent agent work (committed by auto-git daemon)
 
 Commit `50782dd` (not mine, arrived mid-session) also completed TODO items f.4
 and f.8:
+
 - `examples/segment_tuning.rs` (f.4 — segment_size_stats tuning demo)
 - `tests/loom.rs` comment documenting why segment_size_stats is absent from loom (f.8)
 - CHANGELOG.md entries for both
@@ -167,6 +168,7 @@ up (it predates me), but I added to it instead of flagging it.
 The helper hardcodes `FlushPolicy::Batch(4)`. Any test that needs controlled
 flush boundaries and reaches for this helper will silently produce the wrong
 segment count. It should either:
+
 - Be renamed to `encrypted_buffer_batch4` (honest naming), or
 - Take a `FlushPolicy` parameter, or
 - Have a companion `encrypted_buffer_manual` helper.

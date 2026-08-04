@@ -40,27 +40,27 @@ Cargo.toml edit and filed the feedback.
 Every `2026-08-04*` status report was read cover-to-cover before any
 annotation. Per-file classification:
 
-| File | Classification | Action |
-| ---- | -------------- | ------ |
-| `00-07_changelog-links-gate-wiring` | ANNOTATE (had partial appendix) | Updated Resolution table: f.2, f.6, f.9, f.10, f.16, g.2 now marked done; "Still open" list narrowed |
-| `00-13_scan-cache-toctou` | ANNOTATE (had partial appendix) | Updated: f.3 (MockStore investigation), f.4 (recover race impossible), f.5 (mtime gap accepted), f.10 (sentinel cleanup), f.19 (DOMAIN_LANGUAGE proof artifacts) now resolved |
-| `00-20_live-segment-count` | ANNOTATE (had partial appendix) | Updated: f.2–f.4, f.6–f.7 now marked done; "Still open" narrowed to release decision + user questions |
-| `00-40_update-old-docs-pass` | ANNOTATE (no appendix) | Added Resolution appendix: c.5 (DOMAIN_LANGUAGE), CI green, f.8 (proof artifacts); documented remaining open items |
-| `01-01_segment-size-stats` | ANNOTATE (no appendix) | Added Resolution appendix: all c-section items routed (in TODO_LIST or justified omission); g-section design questions marked DEFERRED with rationale |
-| `01-03_ci-fix-mermaid` | ANNOTATE (no appendix) | Added Resolution appendix: CI green, path() allow committed, lint name issue routed to BuildFlow feedback; mermaid verification still open (user action) |
-| `01-12_panic-free-api` | ANNOTATE (no appendix) | Added Resolution appendix: CI green, doc warning fixed, push resolved; for_each_from perf tradeoff documented |
-| `01-14_gate-ci-parity` | ANNOTATE (no appendix) | Added Resolution appendix: all 13 TODOs shipped, AGENTS loom count fixed, CI green; verify-gate.sh end-to-end still open |
+| File                                | Classification                  | Action                                                                                                                                                                        |
+| ----------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-07_changelog-links-gate-wiring` | ANNOTATE (had partial appendix) | Updated Resolution table: f.2, f.6, f.9, f.10, f.16, g.2 now marked done; "Still open" list narrowed                                                                          |
+| `00-13_scan-cache-toctou`           | ANNOTATE (had partial appendix) | Updated: f.3 (MockStore investigation), f.4 (recover race impossible), f.5 (mtime gap accepted), f.10 (sentinel cleanup), f.19 (DOMAIN_LANGUAGE proof artifacts) now resolved |
+| `00-20_live-segment-count`          | ANNOTATE (had partial appendix) | Updated: f.2–f.4, f.6–f.7 now marked done; "Still open" narrowed to release decision + user questions                                                                         |
+| `00-40_update-old-docs-pass`        | ANNOTATE (no appendix)          | Added Resolution appendix: c.5 (DOMAIN_LANGUAGE), CI green, f.8 (proof artifacts); documented remaining open items                                                            |
+| `01-01_segment-size-stats`          | ANNOTATE (no appendix)          | Added Resolution appendix: all c-section items routed (in TODO_LIST or justified omission); g-section design questions marked DEFERRED with rationale                         |
+| `01-03_ci-fix-mermaid`              | ANNOTATE (no appendix)          | Added Resolution appendix: CI green, path() allow committed, lint name issue routed to BuildFlow feedback; mermaid verification still open (user action)                      |
+| `01-12_panic-free-api`              | ANNOTATE (no appendix)          | Added Resolution appendix: CI green, doc warning fixed, push resolved; for_each_from perf tradeoff documented                                                                 |
+| `01-14_gate-ci-parity`              | ANNOTATE (no appendix)          | Added Resolution appendix: all 13 TODOs shipped, AGENTS loom count fixed, CI green; verify-gate.sh end-to-end still open                                                      |
 
 ### 2. Living docs de-drifted (docs-health BUILD + VERIFY)
 
-| File | Drift found | Fix |
-| ---- | ----------- | --- |
-| `FEATURES.md` | Loom 11 (actual 12); property tests 22 (actual 25→now 26); unreleased items list incomplete | Updated counts + descriptions; expanded unreleased list with segment_size_stats, panic-free re-entrancy, changelog-links CI job, verify-gate.sh fix |
-| `AGENTS.md` | Loom section said "11 tests" (actual 12); property_tests.rs said "22 properties" (actual 25→now 26) | Both corrected |
-| `docs/DOMAIN_LANGUAGE.md` | Consistency model cited loom/property tests generically; no mention of Barrier test or dual-mutation property test as proof artifacts | Added Barrier test, scan-cache loom tests, and dual-mutation property test as explicit proof citations |
-| `CHANGELOG.md` | Loom entry said "count is now 11" (actual 12) | Updated to "12 tests" |
-| `ROADMAP.md` | Health-check deferral was in TODO_LIST as a `[ ]` item (trophy-case pattern: decision already made) | Moved to Non-goals with rationale; TODO_LIST reference retained |
-| `TODO_LIST.md` | 2 `[x]` completed items (trophy-case); DEFER decision masquerading as open TODO; stale/over-broad items | Rebuilt: 0 completed items; 5 genuinely-open bounded Testing/Documentation items harvested from reports; resolved decisions in reference section |
+| File                      | Drift found                                                                                                                           | Fix                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FEATURES.md`             | Loom 11 (actual 12); property tests 22 (actual 25→now 26); unreleased items list incomplete                                           | Updated counts + descriptions; expanded unreleased list with segment_size_stats, panic-free re-entrancy, changelog-links CI job, verify-gate.sh fix |
+| `AGENTS.md`               | Loom section said "11 tests" (actual 12); property_tests.rs said "22 properties" (actual 25→now 26)                                   | Both corrected                                                                                                                                      |
+| `docs/DOMAIN_LANGUAGE.md` | Consistency model cited loom/property tests generically; no mention of Barrier test or dual-mutation property test as proof artifacts | Added Barrier test, scan-cache loom tests, and dual-mutation property test as explicit proof citations                                              |
+| `CHANGELOG.md`            | Loom entry said "count is now 11" (actual 12)                                                                                         | Updated to "12 tests"                                                                                                                               |
+| `ROADMAP.md`              | Health-check deferral was in TODO_LIST as a `[ ]` item (trophy-case pattern: decision already made)                                   | Moved to Non-goals with rationale; TODO_LIST reference retained                                                                                     |
+| `TODO_LIST.md`            | 2 `[x]` completed items (trophy-case); DEFER decision masquerading as open TODO; stale/over-broad items                               | Rebuilt: 0 completed items; 5 genuinely-open bounded Testing/Documentation items harvested from reports; resolved decisions in reference section    |
 
 ### 3. BuildFlow feedback filed
 
@@ -89,6 +89,7 @@ test(default) [115 lib + 1 alloc_guard + 34 doctests], test(encryption)
 links, 0 errors], actionlint, nix flake check [all checks passed].
 
 Skipped (with explicit flags + stated reasons):
+
 - `--no-supply-chain`: `cargo audit` + `cargo deny` — network-dependent, not affected by doc edits
 - `--no-loom`: 12 tests, ~4 min — no `tests/loom.rs` or `src/lib.rs` changes from this session
 - `--no-changelog-links`: GitHub API rate-limited from prior sessions' runs
@@ -138,6 +139,7 @@ the rules section, not a count fix.
 The `[Unreleased]` section covers all major deliverables (segment_size_stats,
 panic-free API, scan-cache TOCTOU fix, loom coverage, segment_count, strict
 Clippy, changelog-links CI job, verify-gate.sh fix, etc.). Gaps:
+
 - No entry for the BuildFlow feedback filing (appropriate — it's in another repo)
 - No entry for the AGENTS.md loom-count fix (covered by "docs-health pass" framing)
 - The `unchecked_time_subtraction` lint line is still in Cargo.toml (BuildFlow
@@ -155,7 +157,7 @@ Clippy, changelog-links CI job, verify-gate.sh fix, etc.). Gaps:
    not re-edited to avoid racing the daemon. One-line fix.
 
 3. **Run the loom suite.** `RUSTFLAGS="--cfg loom" cargo test --features loom
-   --test loom --release` (~4 min). I skipped it via `--no-loom` because I
+--test loom --release` (~4 min). I skipped it via `--no-loom` because I
    changed no `src/lib.rs` or `tests/loom.rs` code. The 12 loom tests are
    unaffected by doc-only edits. But "I skipped it" is still "I didn't run it."
 
@@ -245,7 +247,7 @@ one pass.
 
 4. **Doc-count claims should cite `grep -c` commands, not hardcoded numbers.**
    FEATURES.md does this correctly (`Counts verified by grep -c '#[test]'
-   src/tests.rs`), but the hardcoded count in the table cell still drifted. The
+src/tests.rs`), but the hardcoded count in the table cell still drifted. The
    tension is between readability (a number in the table) and accuracy (the
    command is the source of truth). A possible improvement: replace hardcoded
    counts with a note like "see `grep -c` command below" — but this hurts
@@ -282,7 +284,7 @@ one pass.
 ### Verification discipline (HIGH)
 
 5. **Run the loom suite.** `RUSTFLAGS="--cfg loom" cargo test --features loom
-   --test loom --release`. I skipped it; 12 tests, ~4 min.
+--test loom --release`. I skipped it; 12 tests, ~4 min.
 6. **Run `cargo audit` + `cargo deny check`.** Skipped via `--no-supply-chain`.
 7. **Run `check-changelog-links.sh`** once the GitHub API rate-limit resets.
 8. **Run `nix develop .#msrv -c cargo clippy --all-targets -- -D warnings`** to
@@ -384,21 +386,21 @@ investigate?
 
 ## Session honesty check
 
-| Rule | Followed? |
-| --- | --- |
-| `git status` before "done" | ✅ (this report — `src/property_tests.rs` modified, not mine) |
-| No fabricated baselines | ✅ (all test counts from literal `grep -c` and `cargo test` output) |
-| No line-number citations | ✅ (cited section names, item IDs, commit hashes) |
-| Full verification gate run | ⚠️ Ran `scripts/verify-gate.sh` (first session to do so!) but with `--no-supply-chain --no-loom --no-changelog-links`. 11/11 passed. The skips are documented above. |
-| `gh run list` before "done" | ✅ CI + Nix both `success` on master |
-| Lint posture matches CI | ✅ `-D warnings` on clippy |
-| Concurrency tests use `FlushPolicy::Manual` | N/A (no concurrency tests written) |
-| Docs updated in same session as code | ✅ (all living docs updated; 8 status reports annotated) |
-| Empty-message commit handled | ⚠️ `52e8c2d` and `b149bfa` are in the log with no subject. Noticed, not addressed (daemon behavior — formally unresolved across 5+ sessions). |
-| Checked for auto-generated config before editing | ❌ removed `unchecked_time_subtraction` without checking BuildFlow manages it (see d.1) |
-| Ran loom suite | ❌ skipped via `--no-loom` (no loom/code changes from this session) |
-| Ran supply-chain gate | ❌ skipped via `--no-supply-chain` |
-| Re-verified counts after daemon commits | ❌ caught the 25→26 drift at report time, not during the session |
+| Rule                                             | Followed?                                                                                                                                                            |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git status` before "done"                       | ✅ (this report — `src/property_tests.rs` modified, not mine)                                                                                                        |
+| No fabricated baselines                          | ✅ (all test counts from literal `grep -c` and `cargo test` output)                                                                                                  |
+| No line-number citations                         | ✅ (cited section names, item IDs, commit hashes)                                                                                                                    |
+| Full verification gate run                       | ⚠️ Ran `scripts/verify-gate.sh` (first session to do so!) but with `--no-supply-chain --no-loom --no-changelog-links`. 11/11 passed. The skips are documented above. |
+| `gh run list` before "done"                      | ✅ CI + Nix both `success` on master                                                                                                                                 |
+| Lint posture matches CI                          | ✅ `-D warnings` on clippy                                                                                                                                           |
+| Concurrency tests use `FlushPolicy::Manual`      | N/A (no concurrency tests written)                                                                                                                                   |
+| Docs updated in same session as code             | ✅ (all living docs updated; 8 status reports annotated)                                                                                                             |
+| Empty-message commit handled                     | ⚠️ `52e8c2d` and `b149bfa` are in the log with no subject. Noticed, not addressed (daemon behavior — formally unresolved across 5+ sessions).                        |
+| Checked for auto-generated config before editing | ❌ removed `unchecked_time_subtraction` without checking BuildFlow manages it (see d.1)                                                                              |
+| Ran loom suite                                   | ❌ skipped via `--no-loom` (no loom/code changes from this session)                                                                                                  |
+| Ran supply-chain gate                            | ❌ skipped via `--no-supply-chain`                                                                                                                                   |
+| Re-verified counts after daemon commits          | ❌ caught the 25→26 drift at report time, not during the session                                                                                                     |
 
 **Bottom line:** The docs-health and update-old-docs work is thorough — 8
 status reports annotated, 6 living docs de-drifted, TODO_LIST rebuilt from

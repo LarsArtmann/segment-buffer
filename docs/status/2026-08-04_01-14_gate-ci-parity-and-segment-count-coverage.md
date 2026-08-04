@@ -203,11 +203,11 @@ I added a loom test (11 → 12). AGENTS.md says 11. I noticed, decided not to fi
 All 13 TODOs executed by this session are shipped. The items below were open at
 report time and have since been resolved by subsequent sessions.
 
-| Item | Claim in report | Resolution | Commit | Release |
-| ---- | --------------- | ---------- | ------ | ------- |
-| c.4  | Update AGENTS.md loom count 11 → 12 | DONE: AGENTS.md now says "12 tests" with segment_count coverage described | docs-health pass | unreleased |
-| c.5  | Update AGENTS.md verification-discipline section for run() rewrite | PARTIALLY DONE: loom count fixed; the run() rewrite is reflected in the gate script but AGENTS.md verification-discipline section still describes the old behavior | — | — |
-| g.1  | Should I push the 29 unpushed commits? | RESOLVED: commits were pushed; CI is green on master | — | — |
-| g.2  | Should I fix the red CI run? | RESOLVED: CI is now green (the MSRV lint issue was diagnosed and the path() allow is committed) | `01-03` session | — |
+| Item | Claim in report                                                    | Resolution                                                                                                                                                         | Commit           | Release    |
+| ---- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | ---------- |
+| c.4  | Update AGENTS.md loom count 11 → 12                                | DONE: AGENTS.md now says "12 tests" with segment_count coverage described                                                                                          | docs-health pass | unreleased |
+| c.5  | Update AGENTS.md verification-discipline section for run() rewrite | PARTIALLY DONE: loom count fixed; the run() rewrite is reflected in the gate script but AGENTS.md verification-discipline section still describes the old behavior | —                | —          |
+| g.1  | Should I push the 29 unpushed commits?                             | RESOLVED: commits were pushed; CI is green on master                                                                                                               | —                | —          |
+| g.2  | Should I fix the red CI run?                                       | RESOLVED: CI is now green (the MSRV lint issue was diagnosed and the path() allow is committed)                                                                    | `01-03` session  | —          |
 
 **Still open:** f.1 (run verify-gate.sh end-to-end — no session has done this; four consecutive sessions have hand-reconstructed the gate), f.2 (changelog-links rate-limit recovery — unverified after edits), f.3 (push — RESOLVED, CI green), g.3 (empty-message commits — auto-commit daemon behavior, formally unresolved).
