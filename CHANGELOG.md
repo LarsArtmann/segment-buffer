@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal deduplication of library + test boilerplate** (`src/lib.rs`,
+  `src/property_tests.rs`): no user-facing change. Five computations that were
+  inlined at multiple call sites are now named, reused methods:
+  `BufferInner::pending_count()`, `BufferInner::latest_sequence()`, and
+  `BufferInner::pending_start()` (const fn where applicable) replace duplicated
+  sequence arithmetic in `stats()`, `pending_count()`, `latest_sequence()`,
+  `read_from`, `for_each_from`, and `delete_acked`. `Buffer::compute_store_pressure`
+  replaces the verbatim pressure formula in `store_pressure()` and `stats()`.
+  `Buffer::publish_disk_stats` replaces the two-atomic-store pattern in
+  `sync_disk_bytes` and `recover`. In the property-test module, `prop_item`,
+  `prop_config`, `prop_buffer`, `concurrent_test_config`, and `count_segments`
+  helpers replace ~100 lines of repeated inline construction. Behaviour is
+  unchanged; all 184 tests + 12 loom tests pass.
+
 ## [0.5.5] - 2026-08-04
 
 Non-breaking release: panic-free public API, live `segment_count`,
