@@ -80,13 +80,12 @@ fn concurrent_test_config() -> crate::SegmentConfig {
 /// Count `.zst` segment files on disk. Returns 0 if the directory
 /// cannot be read (fault-tolerant for transient race windows).
 fn count_segments(dir: &std::path::Path) -> u64 {
-    std::fs::read_dir(dir)
-        .map_or(0, |entries| {
-            entries
-                .filter_map(std::result::Result::ok)
-                .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
-                .count() as u64
-        })
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+            .count() as u64
+    })
 }
 
 proptest! {
@@ -695,10 +694,7 @@ proptest! {
         }
         for i in 0..in_memory {
             let seq = on_disk + i;
-            buf.append(PropItem {
-                id: seq,
-                payload: format!("payload-{seq}"),
-            })
+            buf.append(prop_item(seq))
             .expect("append must succeed");
         }
 
@@ -759,10 +755,7 @@ proptest! {
         }
         for i in 0..in_memory {
             let seq = on_disk + i;
-            buf.append(PropItem {
-                id: seq,
-                payload: format!("payload-{seq}"),
-            })
+            buf.append(prop_item(seq))
             .expect("append must succeed");
         }
 
