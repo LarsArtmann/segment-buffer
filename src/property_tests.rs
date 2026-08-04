@@ -126,7 +126,7 @@ proptest! {
     ) {
         let items: Vec<PropItem> = ids
             .iter()
-            .map(|&id| PropItem { id, payload: format!("payload-{id}") })
+            .map(|&id| prop_item(id))
             .collect();
         let path = std::path::Path::new("prop_test_segment.zst");
 
@@ -165,7 +165,7 @@ proptest! {
     ) {
         let items: Vec<PropItem> = ids
             .iter()
-            .map(|&id| PropItem { id, payload: format!("payload-{id}") })
+            .map(|&id| prop_item(id))
             .collect();
         let path = std::path::Path::new("prop_test_segment.zst");
         let cipher = crate::AesGcmCipher::new(&key);
@@ -194,7 +194,7 @@ proptest! {
     ) {
         let items: Vec<PropItem> = ids
             .iter()
-            .map(|&id| PropItem { id, payload: format!("payload-{id}") })
+            .map(|&id| prop_item(id))
             .collect();
         let path = std::path::Path::new("prop_test_segment_xchacha.zst");
         let cipher = crate::XChaCha20Poly1305Cipher::new(&key);
@@ -300,18 +300,12 @@ proptest! {
 
         // After up to 499 appends under Manual, there must be zero segment
         // files on disk. Items live only in memory until the caller flushes.
-        let segment_count = std::fs::read_dir(tmp.path())
-            .map_or(0, |entries| entries.filter_map(std::result::Result::ok).filter(|e| {
-                e.file_name().to_string_lossy().ends_with(".zst")
-            }).count());
+        let segment_count = count_segments(tmp.path());
         prop_assert_eq!(segment_count, 0, "Manual policy must not auto-flush");
 
         // But an explicit flush must still work and make items durable.
         buf.flush().expect("explicit flush must succeed");
-        let segment_count_after = std::fs::read_dir(tmp.path())
-            .map_or(0, |entries| entries.filter_map(std::result::Result::ok).filter(|e| {
-                e.file_name().to_string_lossy().ends_with(".zst")
-            }).count());
+        let segment_count_after = count_segments(tmp.path());
         if n > 0 {
             prop_assert_eq!(segment_count_after, 1, "explicit flush must create exactly one segment");
         }
@@ -466,10 +460,7 @@ proptest! {
 
         for _ in 0..n_flushes {
             for i in 0..items_per_flush {
-                buf.append(PropItem {
-                    id: u64::from(i),
-                    payload: format!("payload-{i}"),
-                }).expect("append");
+                buf.append(prop_item(u64::from(i))).expect("append");
             }
             buf.flush().expect("flush");
         }
@@ -603,10 +594,7 @@ proptest! {
         for seg in 0..num_segments {
             for i in 0..items_per_segment {
                 let seq = seg * items_per_segment + i;
-                buf.append(PropItem {
-                    id: seq,
-                    payload: format!("payload-{seq}"),
-                })
+                buf.append(prop_item(seq))
                 .expect("append must succeed");
             }
             buf.flush().expect("flush must succeed");
@@ -699,10 +687,7 @@ proptest! {
         let buf = prop_buffer(tmp.path());
 
         for i in 0..on_disk {
-            buf.append(PropItem {
-                id: i,
-                payload: format!("payload-{i}"),
-            })
+            buf.append(prop_item(i))
             .expect("append must succeed");
         }
         if on_disk > 0 {
@@ -766,10 +751,7 @@ proptest! {
         let buf = prop_buffer(tmp.path());
 
         for i in 0..on_disk {
-            buf.append(PropItem {
-                id: i,
-                payload: format!("payload-{i}"),
-            })
+            buf.append(prop_item(i))
             .expect("append must succeed");
         }
         if on_disk > 0 {
@@ -836,10 +818,7 @@ proptest! {
         for (kind, n, ack_seq) in &ops {
             if *kind == 0 {
                 for _ in 0..*n {
-                    buf.append(PropItem {
-                        id: next_id,
-                        payload: format!("payload-{next_id}"),
-                    })
+                    buf.append(prop_item(next_id))
                     .expect("append must succeed");
                     next_id = next_id.saturating_add(1);
                 }
@@ -912,10 +891,7 @@ proptest! {
         for seg in 0..num_segments {
             for i in 0..items_per_segment {
                 let seq = seg * items_per_segment + i;
-                buf.append(PropItem {
-                    id: seq,
-                    payload: format!("payload-{seq}"),
-                })
+                buf.append(prop_item(seq))
                 .unwrap();
             }
             buf.flush().unwrap();
@@ -1015,19 +991,13 @@ proptest! {
         );
 
         for i in 0..on_disk {
-            buf.append(PropItem {
-                id: i,
-                payload: format!("payload-{i}"),
-            })
+            buf.append(prop_item(i))
             .unwrap();
         }
         buf.flush().unwrap();
         for i in 0..in_memory {
             let seq = on_disk + i;
-            buf.append(PropItem {
-                id: seq,
-                payload: format!("payload-{seq}"),
-            })
+            buf.append(prop_item(seq))
             .unwrap();
         }
 
@@ -1140,10 +1110,7 @@ proptest! {
         let buf = prop_buffer(tmp.path());
         for _ in 0..n_flushes {
             for i in 0..items_per_flush {
-                buf.append(PropItem {
-                    id: u64::from(i),
-                    payload: format!("payload-{i}"),
-                })
+                buf.append(prop_item(u64::from(i)))
                 .expect("append");
             }
             buf.flush().expect("flush");
@@ -1245,19 +1212,13 @@ proptest! {
         );
 
         for i in 0..on_disk {
-            buf.append(PropItem {
-                id: i,
-                payload: format!("payload-{i}"),
-            })
+            buf.append(prop_item(i))
             .unwrap();
         }
         buf.flush().unwrap();
         for i in 0..in_memory {
             let seq = on_disk + i;
-            buf.append(PropItem {
-                id: seq,
-                payload: format!("payload-{seq}"),
-            })
+            buf.append(prop_item(seq))
             .unwrap();
         }
 
@@ -1373,10 +1334,7 @@ proptest! {
         for seg in 0..num_segments {
             for i in 0..items_per_segment {
                 let seq = seg * items_per_segment + i;
-                buf.append(PropItem {
-                    id: seq,
-                    payload: format!("payload-{seq}"),
-                })
+                buf.append(prop_item(seq))
                 .unwrap();
             }
             buf.flush().unwrap();
@@ -1487,20 +1445,14 @@ proptest! {
         for seg in 0..u64::from(on_disk_segments) {
             for i in 0..items_per_segment {
                 let seq = seg * items_per_segment + i;
-                buf.append(PropItem {
-                    id: seq,
-                    payload: format!("payload-{seq}"),
-                })
+                buf.append(prop_item(seq))
                 .unwrap();
             }
             buf.flush().unwrap();
         }
         for i in 0..in_memory {
             let seq = on_disk + i;
-            buf.append(PropItem {
-                id: seq,
-                payload: format!("payload-{seq}"),
-            })
+            buf.append(prop_item(seq))
             .unwrap();
         }
 
@@ -1614,20 +1566,14 @@ proptest! {
         for seg in 0..u64::from(on_disk_segments) {
             for i in 0..items_per_segment {
                 let seq = seg * items_per_segment + i;
-                buf.append(PropItem {
-                    id: seq,
-                    payload: format!("payload-{seq}"),
-                })
+                buf.append(prop_item(seq))
                 .unwrap();
             }
             buf.flush().unwrap();
         }
         for i in 0..in_memory {
             let seq = on_disk + i;
-            buf.append(PropItem {
-                id: seq,
-                payload: format!("payload-{seq}"),
-            })
+            buf.append(prop_item(seq))
             .unwrap();
         }
 
