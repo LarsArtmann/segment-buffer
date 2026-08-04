@@ -817,6 +817,30 @@ struct BufferInner<T> {
     last_flush: Instant,
 }
 
+impl<T> BufferInner<T> {
+    /// Total pending items: on-disk segments plus in-memory unflushed items.
+    /// Equivalent to `next_seq - head_seq`.
+    fn pending_count(&self) -> u64 {
+        self.next_seq.saturating_sub(self.head_seq)
+    }
+
+    /// Highest sequence number assigned, or `0` when the buffer is empty.
+    fn latest_sequence(&self) -> u64 {
+        if self.next_seq == 0 {
+            0
+        } else {
+            self.next_seq.saturating_sub(1)
+        }
+    }
+
+    /// Sequence number of the first unflushed in-memory item
+    /// (`next_seq - unflushed.len()`).
+    fn pending_start(&self) -> u64 {
+        self.next_seq
+            .saturating_sub(u64::try_from(self.unflushed.len()).unwrap_or(u64::MAX))
+    }
+}
+
 /// High-throughput local buffer for cloud sync, holding items of `T` in
 /// memory and spilling them to compressed segment files for at-least-once
 /// delivery to a cloud endpoint.
@@ -1402,9 +1426,7 @@ where
         // Phase 2: read from in-memory pending events.
         if result.len() < limit {
             let inner = self.inner.lock();
-            let pending_start = inner
-                .next_seq
-                .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+            let pending_start = inner.pending_start();
             for (i, event) in inner.unflushed.iter().enumerate() {
                 let seq = pending_start.saturating_add(u64::try_from(i).unwrap_or(u64::MAX));
                 if seq < start_seq {
@@ -1535,9 +1557,7 @@ where
         if visited < limit {
             let (base_seq, window): (u64, Vec<T>) = {
                 let inner = self.inner.lock();
-                let pending_start = inner
-                    .next_seq
-                    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+                let pending_start = inner.pending_start();
                 let skip =
                     usize::try_from(start_seq.saturating_sub(pending_start)).unwrap_or(usize::MAX);
                 let remaining = limit.saturating_sub(visited);
@@ -1691,12 +1711,7 @@ where
     ///
     #[must_use = "the sequence number is meaningless if discarded"]
     pub fn latest_sequence(&self) -> u64 {
-        let inner = self.inner.lock();
-        if inner.next_seq == 0 {
-            0
-        } else {
-            inner.next_seq.saturating_sub(1)
-        }
+        self.inner.lock().latest_sequence()
     }
 
     /// Total items waiting in the buffer: on-disk segments **plus** in-memory
@@ -1738,8 +1753,7 @@ where
     ///
     #[must_use = "the backlog size is meaningless if discarded"]
     pub fn pending_count(&self) -> u64 {
-        let inner = self.inner.lock();
-        inner.next_seq.saturating_sub(inner.head_seq)
+        self.inner.lock().pending_count()
     }
 
     /// Standard [`len`](#method.len) alias for [`pending_count`](Self::pending_count).
@@ -1815,13 +1829,10 @@ where
         // store_pressure only needs approx_disk_bytes + max_size_bytes —
         // neither requires the mutex. Read the atomic directly to avoid
         // contending with append/flush.
-        if self.config.max_size_bytes == 0 {
-            return 0.0;
-        }
         let bytes = self
             .approx_disk_bytes
             .load(std::sync::atomic::Ordering::Relaxed);
-        (bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
+        Self::compute_store_pressure(bytes, self.config.max_size_bytes)
     }
 
     /// True when disk usage exceeds 90% of the configured limit.
@@ -1893,12 +1904,8 @@ where
     #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
     pub fn stats(&self) -> BufferStats {
         let inner = self.inner.lock();
-        let pending_count = inner.next_seq.saturating_sub(inner.head_seq);
-        let latest_sequence = if inner.next_seq == 0 {
-            0
-        } else {
-            inner.next_seq.saturating_sub(1)
-        };
+        let pending_count = inner.pending_count();
+        let latest_sequence = inner.latest_sequence();
         // Load the atomic OUTSIDE the mutex's critical section logic — the
         // value is approximate by design, so a torn read between this load
         // and the inner.lock() is acceptable.
@@ -1908,11 +1915,7 @@ where
         let segment_count = self
             .segment_count
             .load(std::sync::atomic::Ordering::Relaxed);
-        let store_pressure = if self.config.max_size_bytes == 0 {
-            0.0
-        } else {
-            (approx_disk_bytes as f32 / self.config.max_size_bytes as f32).min(1.0)
-        };
+        let store_pressure = Self::compute_store_pressure(approx_disk_bytes, self.config.max_size_bytes);
         BufferStats {
             pending_count,
             latest_sequence,
@@ -2103,6 +2106,19 @@ where
             p50_bytes: Self::percentile_of_sorted(&sizes, 50),
             p90_bytes: Self::percentile_of_sorted(&sizes, 90),
         })
+    }
+
+    /// Disk-usage pressure as `approx_disk_bytes / max_size_bytes`, clamped to
+    /// `[0.0, 1.0]`. Returns `0.0` when `max_size_bytes == 0` (limit disabled).
+    /// Shared by [`store_pressure`](Self::store_pressure) and
+    /// [`stats`](Self::stats) so the formula stays in one place.
+    #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
+    fn compute_store_pressure(approx_disk_bytes: u64, max_size_bytes: u64) -> f32 {
+        if max_size_bytes == 0 {
+            0.0
+        } else {
+            (approx_disk_bytes as f32 / max_size_bytes as f32).min(1.0)
+        }
     }
 
     /// Nearest-rank percentile of a non-empty, ascending-sorted slice.
