@@ -47,6 +47,22 @@ Status legend: `[ ]` pending · `[~]` in progress.
   regressions. _Standing item._ Effort: ~15 min. _(User action — requires a
   browser, not a code change.)_
 
+- `[x]` **`examples/segment_tuning.rs`** — a runnable demo showing
+  `segment_size_stats()` used to adjust `FlushPolicy::Batch(N)` based on
+  observed p50/max. The feature's stated purpose (tuning) has no example;
+  the crate has 13 examples for other use cases. Effort: ~30 min. Source:
+  `docs/status/2026-08-04_01-01_*` item f.4. **Done** (2026-08-04):
+  `examples/segment_tuning.rs` — three-phase tuning loop (baseline → sweep →
+  recommendation) with a configurable target segment-size window.
+
+- `[x]` **Document why `segment_size_stats` is absent from the loom suite.**
+  It adds no mutex concurrency surface (pure query reusing the
+  already-covered `scan_segments` path), but the justification should be
+  noted in a comment in `tests/loom.rs` or in AGENTS.md. Effort: ~5 min.
+  Source: `docs/status/2026-08-04_01-01_*` item f.8. **Done** (2026-08-04):
+  paragraph added to `tests/loom.rs` module docs → "What this does NOT
+  cover".
+
 ---
 
 ## Design decisions deferred
