@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-08-04
+
+Non-breaking release: panic-free public API, live `segment_count`,
+`segment_size_stats` tuning primitive, scan-cache TOCTOU fix, strict Clippy
+lint architecture, and expanded concurrency-property coverage. No API break,
+no on-disk format change, no new dependency.
+
 ### Added
+
+- **`for_each_from` under concurrent `delete_acked` property test**
+  (`src/property_tests.rs`): exercises the delete-ack race window through the
+  lending-iterator callback path, proving it returns no wrong, out-of-order, or
+  payload-mismatched items.
+
+- **`iter_from` under concurrent flush + delete property test**
+  (`src/property_tests.rs`): races the materialising iterator against a front
+  deleter and an in-memory flusher simultaneously, proving the wrapper does not
+  introduce new failure modes.
+
+- **High-concurrency `segment_count` stress test** (`src/tests.rs`):
+  `segment_count_stress_4_writers_2_deleters` runs 4 writers and 2 deleters in
+  parallel, asserting the live atomic counter never panics and converges to the
+  actual directory count after `sync_disk_bytes`.
 
 - **`SegmentSizeStats` + `segment_size_stats()`** (`src/lib.rs`): a new
   on-demand size-distribution query returning `count` / `min` / `max` / `mean`
@@ -205,6 +227,19 @@ interval` (min_batch irrelevant), `min_batch == batch_size` (interval arm
   control flow changes.
 
 ### Fixed
+
+- **`iter_from` sequence-number bug with gaps** (`src/lib.rs`): the wrapper
+  enumerated returned items from `start_seq + i`, which is wrong when a deleted
+  segment leaves a gap (e.g. `start_seq = 0` but the first surviving segment
+  starts at `11`). The implementation now reuses `for_each_from`, which derives
+  each `seq` from the segment's actual `start` or the pending-window base, so
+  the returned `(seq, item)` pairs are always correct. No API signature change.
+
+- **Floating-point false-positive in percentile property test**
+  (`src/property_tests.rs`): `percentile_of_sorted_matches_nearest_rank_for_all_pct`
+  used `(pct / 100.0 * n).ceil()` as the reference, which can round the product
+  across an integer boundary (`pct=55, n=100` produced `expected=56` instead of
+  `55`). The reference now uses integer `div_ceil`, eliminating the flake.
 
 - **Scan-cache TOCTOU under concurrent `flush`** (`src/lib.rs`): `scan_segments`
   captured the directory `mtime` _after_ its `readdir`. A segment rename landing
