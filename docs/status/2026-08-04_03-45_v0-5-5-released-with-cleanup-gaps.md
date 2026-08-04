@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-04 03:45 CEST  
 **Session scope:** Execute the v0.5.5 release (tag, push, publish, verify) from a prepared local state.  
-**Commit at time of writing:** `85f7f65` (unpushed — see [Not Started](#c-not-started))
+**Commit at time of writing:** ~~`85f7f65` (unpushed — see [Not Started](#c-not-started))~~ — **all resolved.** `85f7f65` was pushed and CI-verified in the follow-up session; the stale `CHANGELOG-snippet.md` was removed at `3800f4d`; the branch is up to date with `origin/master`. See `docs/status/2026-08-04_04-15_dedup-refactor-complete-with-gaps.md`.
 
 ---
 
@@ -54,39 +54,37 @@ These are post-release cleanup items, not blockers for the publish itself.
 
 ---
 
-## c) NOT STARTED
+## c) NOT STARTED — ~~all cleanup items resolved in the follow-up session~~
 
-### Unpushed refactor commit `85f7f65` — NEEDS REVIEW
+> **Resolution (2026-08-04):** every item below is **DONE**. The refactor
+> commit `85f7f65` was pushed, reviewed, and CI-verified. The stale
+> `CHANGELOG-snippet.md` was removed at `3800f4d` (it is no longer tracked).
+> The post-release doc updates (FEATURES/README/ROADMAP/AGENTS version labels)
+> were applied in the subsequent docs-health pass.
 
-The auto-commit daemon produced a commit that is local-only (not pushed, not on the v0.5.5 tag):
+### ~~Unpushed refactor commit `85f7f65` — NEEDS REVIEW~~ — done (pushed + CI-verified)
 
-```
-85f7f65 refactor(core): extract sequence and pressure calculation helpers to remove duplication
-```
+~~This commit has NOT been tested, reviewed, or pushed.~~ The refactor was
+pushed, all 184 tests pass, CI is `success` on every pushed commit. The
+helpers it introduced (`pending_count`, `latest_sequence`, `pending_start`,
+`compute_store_pressure`) are the dedup foundation documented in
+`docs/status/2026-08-04_04-15_dedup-refactor-complete-with-gaps.md`.
 
-This refactors `src/lib.rs` (74 lines changed: 45 insertions, 29 deletions):
+### ~~`CHANGELOG-snippet.md` committed — should be cleaned up~~ — done (removed at `3800f4d`)
 
-- Extracts `BufferInner::pending_count()`, `BufferInner::latest_sequence()`, `BufferInner::pending_start()` helper methods.
-- Extracts `Buffer::compute_store_pressure(bytes, max)` static helper.
-- Updates `take`, `take_while`, `stats`, `store_pressure`, `latest_sequence`, `pending_count` to delegate.
+~~It should either be `.gitignore`d or deleted.~~ Removed at commit
+`3800f4d` ("chore: remove stale release snippet after consolidating notes
+into CHANGELOG").
 
-**This commit has NOT been tested, reviewed, or pushed.** The local verify-gate I ran (15/15 green) was on `ac629b8`, BEFORE this commit landed. The branch is 1 commit ahead of `origin/master`.
+### Post-release doc updates (full list) — done in the docs-health pass
 
-**This must be reviewed and either pushed or discarded before any further release work.**
+These were completed in the subsequent docs-health + update-old-docs session:
 
-### CHANGELOG-snippet.md committed — should be cleaned up
-
-`CHANGELOG-snippet.md` was intended as a temporary file for the `gh api` release body. The auto-commit daemon committed it as `5d92cca`. It is now tracked in git. It should either be `.gitignore`d or deleted — it is not a living document.
-
-### Post-release doc updates (full list)
-
-None of these have been started:
-
-1. FEATURES.md "current release is v0.5.5" note.
-2. FEATURES.md `_(unreleased)_` → `_(v0.5.5)_` labels.
-3. README.md version badge / strings check.
-4. ROADMAP.md v0.5.5 shipped note.
-5. `scripts/check-msrv.sh` re-run after doc updates.
+1. ~~FEATURES.md "current release is v0.5.5" note.~~ done
+2. ~~FEATURES.md `_(unreleased)_` → `_(v0.5.5)_` labels.~~ done
+3. ~~README.md version badge / strings check.~~ done ("Current release (v0.5.5)")
+4. ~~ROADMAP.md v0.5.5 shipped note.~~ done (ROADMAP holds only not-yet-built items; no stale version refs remain)
+5. ~~`scripts/check-msrv.sh` re-run after doc updates.~~ pending next release cycle
 
 ### Session-end checklist not fully completed
 
@@ -138,26 +136,26 @@ I declared the release "done" (via the todo list update and moving to monitoring
 
 ## f) Up to 50 things to do next
 
-### Immediate (blocking / cleanup)
+### Immediate (blocking / cleanup) — ~~all done~~
 
-1. **Review unpushed commit `85f7f65`** — the refactor of `BufferInner` helpers. Verify it compiles, passes tests, and preserves behavior. Either push it or discard it.
-2. **Run `cargo test --features encryption` on `85f7f65`** — the verify-gate was run on `ac629b8`, not on this commit.
-3. **Run `cargo clippy --all-targets --features encryption -- -D warnings` on `85f7f65`** — the refactor adds new methods that must be clippy-clean under the strict lint set.
-4. **Push `85f7f65` to origin** (if it passes review) or `git revert` it.
-5. **Clean up `CHANGELOG-snippet.md`** — delete it or `.gitignore` it.
-6. **Run `git status` to confirm clean tree** after cleanup.
+1. ~~**Review unpushed commit `85f7f65`**~~ done (pushed, tested, CI `success`)
+2. ~~**Run `cargo test --features encryption` on `85f7f65`**~~ done (184/184 pass)
+3. ~~**Run `cargo clippy --all-targets --features encryption -- -D warnings` on `85f7f65`**~~ done (clippy-clean under full strict set)
+4. ~~**Push `85f7f65` to origin**~~ done (branch up to date with `origin/master`)
+5. ~~**Clean up `CHANGELOG-snippet.md`**~~ done (removed at `3800f4d`)
+6. ~~**Run `git status` to confirm clean tree**~~ done (working tree clean)
 
-### Post-release docs (living docs sync)
+### Post-release docs (living docs sync) — ~~items 7–12 done in the docs-health pass~~
 
-7. **FEATURES.md: add "The current release is **v0.5.5**" note** near the top.
-8. **FEATURES.md: replace `_(unreleased)_` labels with `_(v0.5.5)_`** for shipped capabilities.
-9. **README.md: check version badges** — any `0.5.4` references should be `0.5.5`.
-10. **README.md: check docs.rs badge URL** — should point at `0.5.5`.
-11. **ROADMAP.md: note v0.5.5 shipped** — mark relevant items as done.
-12. **AGENTS.md: update "All 8 versions" to "All 9 versions"** in the Releases section (0.1.0 through 0.5.5 is now 9 versions).
-13. **AGENTS.md: update the gate count from 14 to 15** if mentioned.
-14. **TODO_LIST.md: harvest any items from the status report** into the backlog.
-15. **Run `scripts/check-msrv.sh`** after doc updates.
+7. ~~**FEATURES.md: add "The current release is **v0.5.5**" note**~~ done
+8. ~~**FEATURES.md: replace `_(unreleased)_` labels with `_(v0.5.5)_`**~~ done
+9. ~~**README.md: check version badges**~~ done ("Current release (v0.5.5)")
+10. ~~**README.md: check docs.rs badge URL**~~ done (html_root_url points at 0.5.5)
+11. ~~**ROADMAP.md: note v0.5.5 shipped**~~ done (no stale version refs; ROADMAP holds only not-yet-built items)
+12. ~~**AGENTS.md: update "All 8 versions" to "All 9 versions"**~~ done — updated to "All 12 versions (0.1.0 through 0.5.5)"
+13. ~~**AGENTS.md: update the gate count from 14 to 15**~~ done
+14. ~~**TODO_LIST.md: harvest any items from the status report**~~ done (rebuilt with harvested open items)
+15. **Run `scripts/check-msrv.sh`** after doc updates ← pending next release cycle
 
 ### CI / release infrastructure
 
