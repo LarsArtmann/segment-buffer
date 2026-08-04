@@ -11,10 +11,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ---
 
-## Testing
-
----
-
 ## Documentation
 
 - `[ ]` **Visually verify README rendering** on GitHub, docs.rs, and a
@@ -23,17 +19,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
   all need a human eye — lychee catches link and anchor drift, not rendering
   regressions. _Standing item._ Effort: ~15 min. _(User action — requires a
   browser, not a code change.)_
-
----
-
-## Design decisions deferred
-
-- `[ ]` **`segment_count` type consistency: `u64` vs `usize`.**
-  `BufferStats::segment_count` is `u64` (matching `approx_disk_bytes`);
-  `RecoveryReport::segment_count` is `usize`. Both are correct for their
-  context, but the inconsistency should be noted and either documented or
-  reconciled. **Un-defer when:** the next release that touches either
-  struct. Source: `docs/status/2026-08-04_00-20_*` item g.1.
 
 ---
 
@@ -61,6 +46,13 @@ and the status reports cited.
   guarantee. **Re-open if:** a consumer reports operating on a filesystem
   where `mtime_supported == false`. Source: `docs/status/2026-08-04_01-12_*`.
 
+- **`segment_count` type consistency — DOCUMENTED (2026-08-04).**
+  `BufferStats::segment_count` is `u64` because it is a live atomic counter
+  maintained on the flush/delete hot path; `RecoveryReport::segment_count` is
+  `usize` because it is a one-time open-time snapshot derived from `Vec::len()`.
+  Both are correct for their context, so no reconciliation is needed.
+  Source: doc comments on `BufferStats` and `RecoveryReport` in `src/lib.rs`.
+
 ---
 
 ## See also
@@ -69,7 +61,7 @@ and the status reports cited.
   (streaming CBOR early-stop, Blake3 checksum, compression negotiation,
   metadata block, streaming cipher), second `SegmentStore` impl.
 - [CHANGELOG.md](CHANGELOG.md) — shipped work.
-- [`docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`](docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md)
+- [`docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0-6-deferrals.md`](docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0-6-deferrals.md)
   — full rationale for the envelope v2 deferrals.
 - [`docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md`](docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md)
   — Pareto plan and addendum covering the perf batch that shipped

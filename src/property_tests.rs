@@ -1367,6 +1367,122 @@ proptest! {
         }
     }
 
+    /// Exercises the **delete-acked race window** through the `for_each_from`
+    /// lending iterator — the same documented boundary as `read_from`, but
+    /// using the callback path. The reader tolerates spurious `Io` errors
+    /// (segment deleted between scan and read) and transient gaps; it fails on
+    /// any wrong, out-of-order, or payload-mismatched item.
+    #[test]
+    fn for_each_from_invariant_under_concurrent_delete_acked(
+        num_segments in 3u8..15,
+        items_per_segment in 5u8..30,
+        read_batch_size in 10u16..200,
+    ) {
+        let items_per_segment = u64::from(items_per_segment);
+        let num_segments = u64::from(num_segments);
+        let total = items_per_segment * num_segments;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                crate::SegmentConfig {
+                    flush_policy: crate::FlushPolicy::Manual,
+                    max_size_bytes: 100 * 1024 * 1024,
+                    compression_level: 1,
+                    durability: crate::DurabilityPolicy::Throughput,
+                    cipher: None,
+                },
+            )
+            .unwrap(),
+        );
+
+        for seg in 0..num_segments {
+            for i in 0..items_per_segment {
+                let seq = seg * items_per_segment + i;
+                buf.append(PropItem {
+                    id: seq,
+                    payload: format!("payload-{seq}"),
+                })
+                .unwrap();
+            }
+            buf.flush().unwrap();
+        }
+
+        let corruption = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            // Reader: scans forward via for_each_from, verifying every item
+            // inside the callback. Retries/skips on empty or Io errors.
+            let buf_r = std::sync::Arc::clone(&buf);
+            let corrupt_r = std::sync::Arc::clone(&corruption);
+            s.spawn(move || {
+                let mut pos = 0u64;
+                let mut prev_id: Option<u64> = None;
+                let mut empty_retries = 0u32;
+                while pos < total {
+                    let mut last_visited = pos;
+                    let mut prev = prev_id;
+                    let mut bad = false;
+                    match buf_r.for_each_from(pos, read_batch_size as usize, |seq, item| {
+                        if seq != item.id
+                            || item.id >= total
+                            || item.payload != format!("payload-{}", item.id)
+                            || prev.is_some_and(|p| item.id <= p)
+                        {
+                            bad = true;
+                        }
+                        prev = Some(item.id);
+                        last_visited = item.id.saturating_add(1);
+                    }) {
+                        Ok(0) => {
+                            empty_retries += 1;
+                            if empty_retries > 5 {
+                                pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                                empty_retries = 0;
+                            } else {
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                            }
+                            continue;
+                        }
+                        Ok(_) => {
+                            empty_retries = 0;
+                            prev_id = prev;
+                            pos = last_visited;
+                            continue;
+                        }
+                        Err(_) => {
+                            // Io: segment deleted between scan and read.
+                            pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                        }
+                    }
+                    if bad {
+                        corrupt_r.store(true, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                }
+            });
+
+            // Deleter: removes segments from the front, racing the reader.
+            let buf_d = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                for acked in (items_per_segment..total).step_by(items_per_segment as usize) {
+                    let _ = buf_d.delete_acked(acked);
+                    std::thread::sleep(std::time::Duration::from_micros(10));
+                }
+            });
+        });
+
+        prop_assert!(
+            !corruption.load(std::sync::atomic::Ordering::SeqCst),
+            "for_each_from returned wrong data under concurrent delete_acked \
+             (num_segments={}, items_per_segment={}, read_batch_size={})",
+            num_segments,
+            items_per_segment,
+            read_batch_size
+        );
+    }
+
     /// Both mutations at once: a deleter removing front segments AND a flusher
     /// draining the in-memory tail, racing a single reader. This is the union
     /// of the two race windows — until now only single-mutation races were
@@ -1499,5 +1615,170 @@ proptest! {
             in_memory,
             read_batch_size
         );
+    }
+
+    /// Exercises the materialising iterator path (`iter_from` → `SegmentIter`)
+    /// under the combined race window. A deleter removes front segments while a
+    /// flusher drains the in-memory tail, both racing a reader that walks the
+    /// `(seq, item)` iterator. The wrapper is just a `read_from` + enumerate
+    /// + collect, so this proves it does not introduce new failure modes or
+    /// corrupt sequence numbers on the way out.
+    #[test]
+    fn iter_from_invariant_under_concurrent_flush_and_delete(
+        on_disk_segments in 3u8..12,
+        items_per_segment in 5u8..20,
+        in_memory_count in 20u16..200,
+        read_batch_size in 10u16..200,
+    ) {
+        let items_per_segment = u64::from(items_per_segment);
+        let on_disk = u64::from(on_disk_segments) * items_per_segment;
+        let in_memory = u64::from(in_memory_count);
+        let total = on_disk + in_memory;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                crate::SegmentConfig {
+                    flush_policy: crate::FlushPolicy::Manual,
+                    max_size_bytes: 100 * 1024 * 1024,
+                    compression_level: 1,
+                    durability: crate::DurabilityPolicy::Throughput,
+                    cipher: None,
+                },
+            )
+            .unwrap(),
+        );
+
+        for seg in 0..u64::from(on_disk_segments) {
+            for i in 0..items_per_segment {
+                let seq = seg * items_per_segment + i;
+                buf.append(PropItem {
+                    id: seq,
+                    payload: format!("payload-{seq}"),
+                })
+                .unwrap();
+            }
+            buf.flush().unwrap();
+        }
+        for i in 0..in_memory {
+            let seq = on_disk + i;
+            buf.append(PropItem {
+                id: seq,
+                payload: format!("payload-{seq}"),
+            })
+            .unwrap();
+        }
+
+        let corruption = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        std::thread::scope(|s| {
+            // Reader: walks the iterator returned by iter_from, verifying seq
+            // and payload. Tolerates spurious Io and transient gaps.
+            let buf_r = std::sync::Arc::clone(&buf);
+            let corrupt_r = std::sync::Arc::clone(&corruption);
+            s.spawn(move || {
+                let mut pos = 0u64;
+                let mut prev_id: Option<u64> = None;
+                let mut empty_retries = 0u32;
+                while pos < total {
+                    match buf_r.iter_from(pos, read_batch_size as usize) {
+                        Ok(iter) => {
+                            let mut found = false;
+                            for (seq, item) in iter {
+                                found = true;
+                                if seq != item.id
+                                    || item.id >= total
+                                    || item.payload != format!("payload-{}", item.id)
+                                    || prev_id.is_some_and(|p| item.id <= p)
+                                {
+                                    corrupt_r
+                                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                                    return;
+                                }
+                                prev_id = Some(item.id);
+                                pos = item.id.saturating_add(1);
+                            }
+                            if found {
+                                empty_retries = 0;
+                            } else {
+                                empty_retries += 1;
+                                if empty_retries > 5 {
+                                    pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                                    empty_retries = 0;
+                                } else {
+                                    std::thread::sleep(std::time::Duration::from_micros(100));
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            // Io: segment deleted between scan and read.
+                            pos = ((pos / items_per_segment) + 1) * items_per_segment;
+                        }
+                    }
+                }
+            });
+
+            // Deleter: removes on-disk segments from the front, racing reads.
+            let buf_d = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                if items_per_segment > 0 {
+                    for acked in (items_per_segment..on_disk)
+                        .step_by(items_per_segment as usize)
+                    {
+                        let _ = buf_d.delete_acked(acked);
+                        std::thread::sleep(std::time::Duration::from_micros(10));
+                    }
+                }
+            });
+
+            // Flusher: drains the in-memory tail to disk, racing reads.
+            let buf_f = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                for _ in 0..20 {
+                    let _ = buf_f.flush();
+                    std::thread::sleep(std::time::Duration::from_micros(50));
+                }
+            });
+        });
+
+        prop_assert!(
+            !corruption.load(std::sync::atomic::Ordering::SeqCst),
+            "iter_from returned wrong data under concurrent flush + delete \
+             (on_disk_segments={}, items_per_segment={}, in_memory={}, read_batch_size={})",
+            on_disk_segments,
+            items_per_segment,
+            in_memory,
+            read_batch_size
+        );
+
+        // After the mutations settle, the remaining items must be visible and
+        // ordered from the live head sequence.
+        let _ = buf.flush();
+        let stats = buf.stats();
+        let head = stats.head_sequence;
+        let remaining = stats.next_sequence.saturating_sub(head);
+        let mut settled: Vec<u64> = Vec::new();
+        for _ in 0..10 {
+            settled = buf
+                .iter_from(head, remaining.max(1) as usize)
+                .map(|iter| iter.map(|(_, item)| item.id).collect())
+                .unwrap_or_default();
+            if settled.len() as u64 >= remaining {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        prop_assert_eq!(
+            settled.len() as u64,
+            remaining,
+            "after settle, iter_from did not see all remaining items \
+             (expected {}, got {})",
+            remaining,
+            settled.len()
+        );
+        for (i, &id) in settled.iter().enumerate() {
+            prop_assert_eq!(id, head + i as u64, "wrong id at offset {} after settle", i);
+        }
     }
 }

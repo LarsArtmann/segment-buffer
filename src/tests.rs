@@ -2462,6 +2462,70 @@ fn segment_count_recovered_on_reopen() {
     );
 }
 
+#[test]
+fn segment_count_stress_4_writers_2_deleters() {
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                ..test_config(1024 * 1024)
+            },
+        )
+        .unwrap(),
+    );
+
+    // Pre-seed a few segments so deleters have something to remove while
+    // writers are still producing new ones.
+    {
+        let b = Arc::clone(&buf);
+        for round in 0..3u64 {
+            for j in 0..4u64 {
+                b.append(test_item(round * 10 + j)).unwrap();
+            }
+            b.flush().unwrap();
+        }
+    }
+
+    std::thread::scope(|s| {
+        for writer_id in 0..4usize {
+            let b = Arc::clone(&buf);
+            s.spawn(move || {
+                for round in 0..25 {
+                    for j in 0..4u64 {
+                        let id = 100u64 + writer_id as u64 * 100 + round as u64 * 4 + j;
+                        b.append(test_item(id)).unwrap();
+                    }
+                    b.flush().unwrap();
+                }
+            });
+        }
+
+        for _ in 0..2usize {
+            let b = Arc::clone(&buf);
+            s.spawn(move || {
+                for _ in 0..20 {
+                    let stats = b.stats();
+                    if stats.next_sequence > stats.head_sequence && stats.pending_count == 0 {
+                        let _ = b.delete_acked(stats.latest_sequence);
+                    }
+                    std::thread::sleep(std::time::Duration::from_micros(50));
+                }
+            });
+        }
+    });
+
+    // sync_disk_bytes recalibrates the live counters to the directory reality.
+    buf.sync_disk_bytes().unwrap();
+    let stats = buf.stats();
+    assert_eq!(
+        stats.segment_count,
+        count_disk_segments(tmp.path()),
+        "live segment_count must converge to the actual disk segment count"
+    );
+}
+
 // under contention. Verifies correctness (all items readable) AND reports
 // a throughput number so perf regressions show up in test output.
 // =========================================================================

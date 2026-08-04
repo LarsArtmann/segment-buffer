@@ -789,7 +789,10 @@ pub struct SegmentSizeStats {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RecoveryReport {
-    /// Number of valid segment files found on disk during recovery.
+    /// Number of valid segment files found on disk during recovery. `usize`
+    /// because it is derived from a one-time `Vec::len()` at recovery; the
+    /// live counterpart in [`BufferStats`] is `u64` because it is maintained
+    /// as an atomic counter on the flush/delete hot path.
     pub segment_count: usize,
     /// Oldest sequence number recovered (the `start` of the first segment),
     /// or `0` when the directory was empty.
@@ -849,11 +852,11 @@ struct BufferInner<T> {
 ///   schedule by the loom tests in `tests/loom.rs` (4 tests, injected via a
 ///   `MockStore` through `open_with_store`). The 8-writer/4-reader stress
 ///   test in `src/tests.rs` covers the same contract statistically.
-/// - **Re-entrancy is rejected with a panic, not a deadlock.** Calling any
-///   `&self` method from inside a [`for_each_from`](Self::for_each_from)
-///   callback would deadlock `parking_lot::Mutex` (which is non-reentrant);
-///   an `AtomicBool` guard converts that into an immediate, diagnosable panic
-///   at the call site.
+/// - **Re-entrancy is safe, not a deadlock or panic.** The buffer mutex is
+///   never held across user callbacks (`for_each_from` snapshots and releases
+///   the lock before invoking `f`). Re-entrant calls (e.g. `append`, `stats`,
+///   `delete_acked` from a closure that captured an `Arc<SegmentBuffer<T>>`) are
+///   therefore safe and cannot deadlock — the public API is panic-free.
 #[doc(alias = "queue")]
 #[doc(alias = "spool")]
 #[doc(alias = "wal")]
