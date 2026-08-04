@@ -277,19 +277,13 @@ Reframed for the cloud-sync producer-side buffer target._
 
 ## Status
 
-**Current release (v0.5.4)**: `FlushPolicy::BatchOrIntervalMin` for tiny-segment
-suppression, allocation-count regression guard, expanded concurrency tests, and
-broader documentation. See [CHANGELOG.md](CHANGELOG.md) for full release history;
+**Current release (v0.5.5)**: a **panic-free public API** (re-entrancy deadlock
+eliminated at the root), live `segment_count` in `BufferStats`, the
+`segment_size_stats()` tuning primitive, a scan-cache TOCTOU fix, and a strict
+Clippy lint architecture (library code is provably panic-free). See
+[CHANGELOG.md](CHANGELOG.md) for full release history;
 see [FEATURES.md](FEATURES.md) for the capability inventory and
 [ROADMAP.md](ROADMAP.md) for long-term direction and explicit non-goals.
-
-**Unreleased (master):** the public API is now **panic-free**.
-`for_each_from` no longer holds the buffer mutex across the user callback
-(pending items are snapshotted under the lock then released), so re-entrant
-calls are safe, the old re-entrancy panic guard is gone, and no public method
-calls `panic!`/`unwrap`/`expect`/indexing (enforced by the strict Clippy lint
-stack). No on-disk format change. See the `[Unreleased]` section of
-[CHANGELOG.md](CHANGELOG.md) for details.
 
 **Performance highlight:** the `append/batch_1` benchmark is roughly **2×
 faster** than the prior baseline on single-run criterion medians. See

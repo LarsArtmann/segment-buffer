@@ -2,10 +2,10 @@
 
 **Session topic:** Code duplication analysis and elimination  
 **Working branch:** `master`  
-**Commits ahead of origin:** `2` (`85f7f65` refactor dedup helpers, `ac629b8` CI fix)  
+**Commits ahead of origin:** ~~`2`~~ — **all pushed and CI-verified** (branch is up to date with `origin/master` as of the follow-up session).  
 **Working tree:** clean (auto-git daemon committed the refactoring)  
-**Latest CI on pushed commits:** `success` (CI + Nix + Publish all green on `ac629b8`)  
-**WARNING:** Commit `85f7f65` has NOT been pushed yet — CI has not run on it.
+**Latest CI on pushed commits:** `success` (CI + Nix + Publish all green)  
+**Resolution:** commit `85f7f65` was pushed, reviewed, and CI-verified in the follow-up session. The `delete_acked` call site and `publish_disk_stats` helper it missed were completed at `19dc5ba`. See `docs/status/2026-08-04_04-15_dedup-refactor-complete-with-gaps.md`.
 
 ---
 
@@ -53,48 +53,37 @@ max_size_bytes` formula (with the `== 0` early return and `.min(1.0)`
 
 ---
 
-## b) PARTIALLY DONE
+## b) PARTIALLY DONE — ~~both items resolved in the follow-up session~~
 
-### `delete_acked` still inlines `pending_start`
+> **Resolution (2026-08-04):** both items below are **DONE**. `delete_acked`
+> now calls `inner.pending_start()` and the `publish_disk_stats` helper was
+> extracted, both at commit `19dc5ba` (see
+> `docs/status/2026-08-04_04-15_dedup-refactor-complete-with-gaps.md`).
 
-The `delete_acked` method at `src/lib.rs` line ~1673 still has the old
-hand-rolled expression:
+### ~~`delete_acked` still inlines `pending_start`~~ — done at `19dc5ba`
 
-```rust
-let pending_start = inner
-    .next_seq
-    .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
-```
+~~The `delete_acked` method at `src/lib.rs` line ~1673 still has the old~~
+~~hand-rolled expression:~~ The `delete_acked` call site was converted to
+`inner.pending_start()` in the follow-up session (`19dc5ba`).
 
-This should be `inner.pending_start()` — the exact same refactor already
-applied to `read_from` and `for_each_from`. It was missed because
-`delete_acked` was the next item on the list when the session was interrupted.
+### ~~No `publish_disk_stats` helper extracted yet~~ — done at `19dc5ba`
 
-**Severity:** Low (cosmetic — the formula is correct, just not DRY). The
-refactor is a one-line replacement.
-
-### No `publish_disk_stats` helper extracted yet
-
-`sync_disk_bytes` and `recover` both do:
-
-```rust
-self.segment_count.store(
-    u64::try_from(segments.len()).unwrap_or(u64::MAX),
-    std::sync::atomic::Ordering::Relaxed,
-);
-```
-
-with an accompanying `approx_disk_bytes.store(...)`. This was identified as
-extractable but not yet implemented.
+~~`sync_disk_bytes` and `recover` both do:~~ The `publish_disk_stats` helper
+was extracted in the follow-up session (`19dc5ba`); both call sites now
+delegate to it.
 
 ---
 
-## c) NOT STARTED
+## c) NOT STARTED — ~~test-code deduplication completed in the follow-up session~~
 
-### Test-code deduplication (the larger duplications)
+> **Resolution (2026-08-04):** the test-code deduplication **landed** at
+> commits `9bf7fc3`, `c85c5cf`, `4a6a8d1`. Helpers `prop_item`, `prop_config`,
+> `prop_buffer`, `concurrent_test_config`, and `count_segments` replaced ~100
+> lines of inline construction in `src/property_tests.rs`. A few inline
+> patterns were intentionally left (different payload formats / different
+> operations) — see `docs/status/2026-08-04_04-15_dedup-refactor-complete-with-gaps.md`.
 
-The agent search revealed **massive** duplication in the test files. None of
-this was touched:
+### ~~Test-code deduplication (the larger duplications)~~ — done at `9bf7fc3`–`4a6a8d1`
 
 1. **`property_tests.rs` has no test helpers.** It repeats:
    - `SegmentConfig { flush_policy: Manual, ..default() }` + `open()` — **11 times**
@@ -175,26 +164,26 @@ captures a clean state.
 
 ## f) Up to 50 things to get done next
 
-### Finish the current dedup work (high priority)
+### Finish the current dedup work (high priority) — ~~all done~~
 
-1. Replace `delete_acked`'s inline `pending_start` with `inner.pending_start()`
-2. Extract `publish_disk_stats(segments)` helper for `sync_disk_bytes` + `recover`
-3. Check if `stats()` still needs its `#[allow(clippy::as_conversions, ...)]` (the cast moved to `compute_store_pressure`)
-4. Push `85f7f65` and verify CI is green
-5. Run the loom gate: `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`
+1. ~~Replace `delete_acked`'s inline `pending_start` with `inner.pending_start()`~~ done at `19dc5ba`
+2. ~~Extract `publish_disk_stats(segments)` helper for `sync_disk_bytes` + `recover`~~ done at `19dc5ba`
+3. ~~Check if `stats()` still needs its `#[allow(clippy::as_conversions, ...)]` (the cast moved to `compute_store_pressure`)~~ done (the helper is `as`-free; lint posture preserved)
+4. ~~Push `85f7f65` and verify CI is green~~ done (branch up to date with `origin/master`, CI `success`)
+5. ~~Run the loom gate: `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`~~ done (12/12 pass)
 
-### Test-code deduplication (medium priority)
+### Test-code deduplication (medium priority) — ~~items 6–13 done~~
 
-6. Add `prop_item(n)` helper to `property_tests.rs` (mirrors `test_item`)
-7. Add `prop_config()` helper (Manual flush, configurable `max_size_bytes`)
-8. Add `prop_buffer(dir)` helper (open with `prop_config`)
-9. Add `concurrent_test_config()` helper (Manual + 100MB + Throughput + compression 1)
-10. Add `count_segments(dir)` helper to `property_tests.rs`
-11. Replace all 11 inline `SegmentConfig { Manual, ..default() }` + open blocks
-12. Replace all 6 inline concurrent-test config blocks
-13. Replace all 30+ inline `PropItem { ... }` constructions
-14. Extract `segment_size_stats` brute-force oracle into a test helper
-15. Consider sharing helpers between `tests.rs` and `property_tests.rs` via a `mod test_helpers`
+6. ~~Add `prop_item(n)` helper to `property_tests.rs` (mirrors `test_item`)~~ done at `9bf7fc3`
+7. ~~Add `prop_config()` helper (Manual flush, configurable `max_size_bytes`)~~ done at `9bf7fc3`
+8. ~~Add `prop_buffer(dir)` helper (open with `prop_config`)~~ done at `9bf7fc3`
+9. ~~Add `concurrent_test_config()` helper (Manual + 100MB + Throughput + compression 1)~~ done at `9bf7fc3`
+10. ~~Add `count_segments(dir)` helper to `property_tests.rs`~~ done at `c85c5cf`
+11. ~~Replace all 11 inline `SegmentConfig { Manual, ..default() }` + open blocks~~ done at `c85c5cf`
+12. ~~Replace all 6 inline concurrent-test config blocks~~ done at `c85c5cf`
+13. ~~Replace all 30+ inline `PropItem { ... }` constructions~~ done (most replaced at `c85c5cf`; 4 with non-standard payloads intentionally left — see follow-up report)
+14. Extract `segment_size_stats` brute-force oracle into a test helper ← not done (genuinely different operations; intentionally left)
+15. Consider sharing helpers between `tests.rs` and `property_tests.rs` via a `mod test_helpers` ← not done (separate modules, different error postures; intentionally left)
 
 ### Further library dedup analysis (lower priority)
 
