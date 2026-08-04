@@ -67,7 +67,7 @@ jobs:
         # (e.g., a flaky network check triggered a re-run of the tag workflow).
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          HTTP_CODE=$(curl -sSL -o /dev/null -w '%{http_code}' \
+          HTTP_CODE=$(curl -sSL -A "segment-buffer-publish-check/1.0" -o /dev/null -w '%{http_code}' \
             "https://crates.io/api/v1/crates/segment-buffer/$TAG")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "::notice::segment-buffer@$TAG is already published on crates.io; skipping publish step."
