@@ -1670,9 +1670,7 @@ where
             // delete), so head_seq must not advance past them. Without this
             // clamp, acknowledging past a buffer that still holds unflushed
             // items would make `pending_count` under-report the real backlog.
-            let pending_start = inner
-                .next_seq
-                .saturating_sub(u64::try_from(inner.unflushed.len()).unwrap_or(u64::MAX));
+            let pending_start = inner.pending_start();
             inner.head_seq = new_head.unwrap_or(inner.next_seq).min(pending_start);
         }
 
@@ -2020,12 +2018,7 @@ where
     pub fn sync_disk_bytes(&self) -> Result<u64> {
         let segments = self.scan_segments()?;
         let total: u64 = segments.iter().map(|s| self.store.segment_size(*s)).sum();
-        self.approx_disk_bytes
-            .store(total, std::sync::atomic::Ordering::Relaxed);
-        self.segment_count.store(
-            u64::try_from(segments.len()).unwrap_or(u64::MAX),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        self.publish_disk_stats(total, segments.len());
         Ok(total)
     }
 
@@ -2120,6 +2113,18 @@ where
         } else {
             (approx_disk_bytes as f32 / max_size_bytes as f32).min(1.0)
         }
+    }
+
+    /// Publish synced/recovered disk statistics into both atomic counters in
+    /// one shot. Shared by [`sync_disk_bytes`](Self::sync_disk_bytes) and
+    /// [`recover`](Self::recover) so the store sequence stays in one place.
+    fn publish_disk_stats(&self, bytes: u64, segment_count: usize) {
+        self.approx_disk_bytes
+            .store(bytes, std::sync::atomic::Ordering::Relaxed);
+        self.segment_count.store(
+            u64::try_from(segment_count).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     /// Nearest-rank percentile of a non-empty, ascending-sorted slice.
@@ -2335,12 +2340,7 @@ where
             inner.next_seq = next_seq;
         }
         // Store the recovered disk-bytes total into the atomic directly.
-        self.approx_disk_bytes
-            .store(total_bytes, std::sync::atomic::Ordering::Relaxed);
-        self.segment_count.store(
-            u64::try_from(segment_count).unwrap_or(u64::MAX),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        self.publish_disk_stats(total_bytes, segment_count);
         // Recovery just scanned the directory; populate the cache so the
         // first read_from/delete_acked after open does not re-scan.
         *self.scan_cache.lock() = Some(segments);
