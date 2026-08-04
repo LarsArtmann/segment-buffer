@@ -37,6 +37,58 @@ fn any_seq() -> impl Strategy<Value = u64> {
     0u64..=999_999_999_999
 }
 
+type PropBuffer = crate::SegmentBuffer<PropItem>;
+
+/// Standard test item: `id` plus `payload = "payload-{id}"`.
+fn prop_item(id: u64) -> PropItem {
+    PropItem {
+        id,
+        payload: format!("payload-{id}"),
+    }
+}
+
+/// Shared config: `FlushPolicy::Manual` (auto-flush disabled) so tests
+/// control flush explicitly. Only `max_size_bytes` varies.
+fn prop_config(max_size_bytes: u64) -> crate::SegmentConfig {
+    crate::SegmentConfig {
+        flush_policy: crate::FlushPolicy::Manual,
+        max_size_bytes,
+        compression_level: 3,
+        durability: crate::DurabilityPolicy::Segment,
+        cipher: None,
+    }
+}
+
+/// Open a buffer with [`prop_config`](1 MiB max).
+fn prop_buffer(dir: &std::path::Path) -> PropBuffer {
+    crate::SegmentBuffer::<PropItem>::open(dir, prop_config(1024 * 1024))
+        .expect("open must succeed")
+}
+
+/// Config for concurrent stress tests: large max, fast compression,
+/// no-fsync `Throughput` durability (the cloud is the durable copy).
+fn concurrent_test_config() -> crate::SegmentConfig {
+    crate::SegmentConfig {
+        flush_policy: crate::FlushPolicy::Manual,
+        max_size_bytes: 100 * 1024 * 1024,
+        compression_level: 1,
+        durability: crate::DurabilityPolicy::Throughput,
+        cipher: None,
+    }
+}
+
+/// Count `.zst` segment files on disk. Returns 0 if the directory
+/// cannot be read (fault-tolerant for transient race windows).
+fn count_segments(dir: &std::path::Path) -> u64 {
+    std::fs::read_dir(dir)
+        .map_or(0, |entries| {
+            entries
+                .filter_map(std::result::Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+                .count() as u64
+        })
+}
+
 proptest! {
     /// `filename ∘ parse_filename` must be the identity on valid ranges.
     /// This is the load-bearing crash-recovery contract.
@@ -240,12 +292,7 @@ proptest! {
         n in 0u16..500,
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         for i in 0..n {
             let _ = buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") });
@@ -278,12 +325,7 @@ proptest! {
         small_limit in 1u16..200,
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
         for i in 0..n {
             buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
         }
@@ -308,12 +350,7 @@ proptest! {
         ack2 in 0u64..49,
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
         for i in 0..n {
             buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
         }
@@ -341,12 +378,7 @@ proptest! {
         start in 0u64..50,
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
         for i in 0..n {
             buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
         }
@@ -378,12 +410,7 @@ proptest! {
         batch_sizes in proptest::collection::vec(0u16..50, 1..6),
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         let mut expected_next = 0u64;
         for (batch_idx, &size) in batch_sizes.iter().enumerate() {
@@ -435,12 +462,7 @@ proptest! {
         items_per_flush in 1u16..40,
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         for _ in 0..n_flushes {
             for i in 0..items_per_flush {
@@ -576,12 +598,7 @@ proptest! {
         let read_limit = read_limit as usize;
 
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         for seg in 0..num_segments {
             for i in 0..items_per_segment {
@@ -679,12 +696,7 @@ proptest! {
         let read_limit = read_limit as usize;
 
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         for i in 0..on_disk {
             buf.append(PropItem {
@@ -751,12 +763,7 @@ proptest! {
         let total = on_disk + in_memory;
 
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         for i in 0..on_disk {
             buf.append(PropItem {
@@ -823,12 +830,7 @@ proptest! {
         ops in proptest::collection::vec((0u8..3u8, 1u16..12u16, 0u32..1000u32), 0..50),
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
 
         let mut next_id = 0u64;
         for (kind, n, ack_seq) in &ops {
@@ -902,13 +904,7 @@ proptest! {
         let buf = std::sync::Arc::new(
             crate::SegmentBuffer::<PropItem>::open(
                 tmp.path(),
-                crate::SegmentConfig {
-                    flush_policy: crate::FlushPolicy::Manual,
-                    max_size_bytes: 100 * 1024 * 1024,
-                    compression_level: 1,
-                    durability: crate::DurabilityPolicy::Throughput,
-                    cipher: None,
-                },
+                concurrent_test_config(),
             )
             .unwrap(),
         );
@@ -1013,13 +1009,7 @@ proptest! {
         let buf = std::sync::Arc::new(
             crate::SegmentBuffer::<PropItem>::open(
                 tmp.path(),
-                crate::SegmentConfig {
-                    flush_policy: crate::FlushPolicy::Manual,
-                    max_size_bytes: 100 * 1024 * 1024,
-                    compression_level: 1,
-                    durability: crate::DurabilityPolicy::Throughput,
-                    cipher: None,
-                },
+                concurrent_test_config(),
             )
             .unwrap(),
         );
@@ -1147,12 +1137,7 @@ proptest! {
         items_per_flush in 1u16..40,
     ) {
         let tmp = tempfile::tempdir().unwrap();
-        let config = crate::SegmentConfig {
-            flush_policy: crate::FlushPolicy::Manual,
-            ..crate::SegmentConfig::default()
-        };
-        let buf = crate::SegmentBuffer::<PropItem>::open(tmp.path(), config)
-            .expect("open must succeed");
+        let buf = prop_buffer(tmp.path());
         for _ in 0..n_flushes {
             for i in 0..items_per_flush {
                 buf.append(PropItem {
@@ -1254,13 +1239,7 @@ proptest! {
         let buf = std::sync::Arc::new(
             crate::SegmentBuffer::<PropItem>::open(
                 tmp.path(),
-                crate::SegmentConfig {
-                    flush_policy: crate::FlushPolicy::Manual,
-                    max_size_bytes: 100 * 1024 * 1024,
-                    compression_level: 1,
-                    durability: crate::DurabilityPolicy::Throughput,
-                    cipher: None,
-                },
+                concurrent_test_config(),
             )
             .unwrap(),
         );
@@ -1386,13 +1365,7 @@ proptest! {
         let buf = std::sync::Arc::new(
             crate::SegmentBuffer::<PropItem>::open(
                 tmp.path(),
-                crate::SegmentConfig {
-                    flush_policy: crate::FlushPolicy::Manual,
-                    max_size_bytes: 100 * 1024 * 1024,
-                    compression_level: 1,
-                    durability: crate::DurabilityPolicy::Throughput,
-                    cipher: None,
-                },
+                concurrent_test_config(),
             )
             .unwrap(),
         );
@@ -1506,13 +1479,7 @@ proptest! {
         let buf = std::sync::Arc::new(
             crate::SegmentBuffer::<PropItem>::open(
                 tmp.path(),
-                crate::SegmentConfig {
-                    flush_policy: crate::FlushPolicy::Manual,
-                    max_size_bytes: 100 * 1024 * 1024,
-                    compression_level: 1,
-                    durability: crate::DurabilityPolicy::Throughput,
-                    cipher: None,
-                },
+                concurrent_test_config(),
             )
             .unwrap(),
         );
@@ -1639,13 +1606,7 @@ proptest! {
         let buf = std::sync::Arc::new(
             crate::SegmentBuffer::<PropItem>::open(
                 tmp.path(),
-                crate::SegmentConfig {
-                    flush_policy: crate::FlushPolicy::Manual,
-                    max_size_bytes: 100 * 1024 * 1024,
-                    compression_level: 1,
-                    durability: crate::DurabilityPolicy::Throughput,
-                    cipher: None,
-                },
+                concurrent_test_config(),
             )
             .unwrap(),
         );
