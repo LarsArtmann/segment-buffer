@@ -61,7 +61,7 @@ and the status reports cited.
   (streaming CBOR early-stop, Blake3 checksum, compression negotiation,
   metadata block, streaming cipher), second `SegmentStore` impl.
 - [CHANGELOG.md](CHANGELOG.md) — shipped work.
-- [`docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0-6-deferrals.md`](docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0-6-deferrals.md)
+- [`docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`](docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md)
   — full rationale for the envelope v2 deferrals.
 - [`docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md`](docs/planning/2026-07-21_08-26_flush-worker-and-tier-0-levers.md)
   — Pareto plan and addendum covering the perf batch that shipped
