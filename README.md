@@ -298,7 +298,7 @@ per-flush fsync and opens a further large gain on cloud-sync workloads.
 
 ---
 
-_Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private), proven on 597M+ events._
+_Extracted from monitor365 (private), proven on 597M+ events._
 
 ## License
 

@@ -34,12 +34,9 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## Documentation
 
-- `[ ]` **Visually verify README rendering** on GitHub, docs.rs, and a
-  narrow viewport (mobile-width). The ToC, Status block, Cargo features
-  table, Mermaid diagram, and the `iter_from` / `open_with_report` code blocks
-  all need a human eye — lychee catches link and anchor drift, not rendering
-  regressions. _Standing item._ Effort: ~15 min. _(User action — requires a
-  browser, not a code change.)_
+- ~~**Visually verify README rendering**~~ Done — verified on GitHub by user
+  (2026-08-10). Mermaid renders, ToC/tables/code blocks look fine. The README
+  is dense ("a bit MUCH") but acceptable for now.
 
 ---
 
