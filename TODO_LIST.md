@@ -46,12 +46,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
   but the materialising `iter_from` path has no dedicated loom proof. Source:
   `docs/status/archived/2026-08-04_02-48_*`.
 
-- `[ ]` **Add a property test for `compute_store_pressure`.** The extracted
-  helper (`bytes / max` clamped to `[0, 1]`) is a pure function and trivially
-  testable, yet has no dedicated property test. Verify the `max == 0` early
-  return, the clamp at `1.0`, and monotonicity in `bytes`. Source:
-  `docs/status/archived/2026-08-04_04-15_*`.
-
 - `[ ]` **Add a property test for `publish_disk_stats` correctness.** Verify the
   atomic counters (`approx_disk_bytes`, `segment_count`) match reality after
   `sync_disk_bytes` and `recover` across arbitrary append/flush/delete sequences.
@@ -61,12 +55,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
   `append`.** A loom test (`delete_acked_idempotent_under_concurrent_append`)
   exists; a property-test complement covering larger schedules would strengthen
   the proof. Source: `docs/status/archived/2026-08-04_04-15_*`.
-
-- `[ ]` **Add percentile edge-case property tests** for `percentile_of_sorted`:
-  `n=0` (empty slice) and duplicate values (ties). The parametrized test
-  (`percentile_of_sorted_matches_nearest_rank_for_all_pct`) starts at `n=1` and
-  uses distinct ascending values; real segment sizes can have ties. Source:
-  `docs/status/archived/2026-08-04_01-53_*`.
 
 - `[ ]` **Add a stress test for `segment_size_stats` under concurrent `flush` +
   `delete_acked`.** Currently only tested sequentially. A concurrent stress test
@@ -78,20 +66,9 @@ Status legend: `[ ]` pending · `[~]` in progress.
   `fuzz_append_all` and `fuzz_recovery` targets. Source:
   `docs/status/archived/2026-08-04_04-15_*`.
 
-- `[ ]` **Add an XChaCha20 variant of the encrypted `segment_size_stats` test.**
-  The test currently covers AES-GCM only; XChaCha20 is the recommended cipher for
-  new buffers. Belt-and-braces parity, ~10 min. Source:
-  `docs/status/archived/2026-08-04_01-53_*`.
-
 ---
 
 ## Code quality
-
-- `[ ]` **Convert the 4 remaining `"p-{i}"` `PropItem` constructions** in
-  `src/property_tests.rs` to the `prop_item(i)` helper. No test asserts on the
-  payload string content — only on ids and counts — so the conversion is safe
-  and removes the last inline-construction noise. Source:
-  `docs/status/archived/2026-08-04_04-15_*`.
 
 - `[ ]` **Derive `PartialEq` for `SegmentConfig`.** Would make test assertions
   on config equality direct instead of field-by-field. Verify the cipher field
@@ -99,11 +76,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
   not — `Arc` of a non-`PartialEq` trait object does, so this may need
   narrowing to the builder or a test-only comparison helper). Source:
   `docs/status/archived/2026-08-04_04-15_*`.
-
-- `[ ]` **Extract a `seq_to_index(u64) -> usize` helper** for the
-  `usize::try_from(x).unwrap_or(usize::MAX)` pattern repeated at 3 call sites
-  in `read_from`/`for_each_from`. Source:
-  `docs/status/archived/2026-08-02_16-43_*`.
 
 - `[ ]` **Add `FlushPolicy::validate()` method.** Move the `debug_assert!`s for
   `min_batch <= batch_size` etc. into a reusable method callable from both the
@@ -114,24 +86,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
   `loom` feature; the "not semver" claim currently relies on convention, not
   enforcement. Standard supertrait-in-private-module pattern. Source:
   `docs/status/archived/2026-08-04_04-15_*`.
-
----
-
-## API ergonomics
-
-- `[ ]` **Add `Display` impls for `DurabilityPolicy`, `BufferStats`, and
-  `SegmentConfig`.** Improves error messages, logging, and debugging output.
-  `FlushPolicy` already has `Display`; these types are `Debug`-only today.
-  Source: `docs/status/archived/2026-08-02_06-15_*`,
-  `docs/status/archived/2026-08-04_01-53_*`.
-
-- `[ ]` **Add `#[doc(alias = "backlog")]` on `pending_count()`.** Improves
-  discoverability — users searching for "backlog" in rustdoc land on the right
-  method. Source: `docs/status/archived/2026-08-02_06-15_*`.
-
-- `[ ]` **Add `#[must_use]` to the `BufferStats` struct.** The `stats()` method
-  already has `#[must_use`, but the struct itself does not. ~2 min. Source:
-  `docs/status/archived/2026-08-04_00-20_*`.
 
 ---
 
@@ -149,20 +103,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
 ---
 
 ## Documentation
-
-- `[ ]` **Add `batch_or_interval_min` and `segment_tuning` to the crate-level
-  Examples table** in `src/lib.rs` (`# Examples` section). The table lists 12
-  examples but omits the two newest (added in v0.5.4 / v0.5.5). Source:
-  `docs/status/archived/2026-08-04_01-58_*`.
-
-- `[ ]` **Add a `# Guarantees` section to the crate-level rustdoc.** The README
-  has a `## Guarantees` section documenting the panic-free API; the crate-level
-  rustdoc has `# Delivery guarantees` but no section about the panic-free
-  contract. Source: `docs/status/archived/2026-08-04_01-12_*`.
-
-- `[ ]` **Expand the FEATURES.md examples inventory.** The "Documentation &
-  examples" table lists only 3 of 14 examples. Either list all or link to a
-  directory listing. Source: `docs/status/archived/2026-08-04_01-58_*`.
 
 - `[ ]` **Visually verify README rendering** on GitHub, docs.rs, and a
   narrow viewport (mobile-width). The ToC, Status block, Cargo features

@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Display` impls for `DurabilityPolicy`, `BufferStats`, and `SegmentConfig`**
+  (`src/lib.rs`): all three types were `Debug`-only. Now they produce stable,
+  human-readable single-line summaries suitable for logging. `SegmentConfig`'s
+  `Display` masks the cipher (`[set]`/`[none]`) to prevent key leakage into
+  logs. Format follows the existing `FlushPolicy::Display` pattern.
+- **`#[must_use]` on `BufferStats`** (`src/lib.rs`): the stats snapshot is
+  meaningless if discarded — the lint now catches that at compile time.
+- **`#[doc(alias = "backlog")]` on `pending_count()`** (`src/lib.rs`):
+  discoverability — users searching for "backlog" in rustdoc now find the
+  right method.
+- **Property tests for `compute_store_pressure`** (`src/property_tests.rs`):
+  4 new properties covering zero-max, `[0,1]` clamping, monotonicity in bytes,
+  and saturation at `1.0`.
+- **Property tests for `percentile_of_sorted` edge cases**
+  (`src/property_tests.rs`): 4 new properties covering empty slice,
+  all-equal values, "result is an actual element" (no interpolation), and
+  p0/p100 boundary correctness.
+- **`segment_size_stats_works_with_xchacha20_encrypted_segments` test**
+  (`src/tests.rs`): parity test for the XChaCha20-Poly1305 cipher, mirroring
+  the existing AES-GCM test.
+
 ### Changed
+
+- **`seq_to_index` helper extraction** (`src/lib.rs`): three duplicated
+  `usize::try_from(seq.saturating_sub(base)).unwrap_or(usize::MAX)` call sites
+  in `read_from`/`for_each_from` replaced with a single private `seq_to_index`
+  helper. No behaviour change.
 
 - **Internal deduplication of library + test boilerplate** (`src/lib.rs`,
   `src/property_tests.rs`): no user-facing change. Five computations that were
@@ -40,6 +68,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **32 archived status/planning reports annotated and moved** to
   `docs/{status,planning}/archived/`. 6 high-value files received inline
   `~~strikethrough~~ done at <hash>` markers on concrete action items.
+- **Crate-level `# Guarantees` section** (`src/lib.rs`): documents the
+  panic-free public API contract (Clippy-enforced), single-process `flock`
+  enforcement, and filename-based crash recovery — previously implicit in CI
+  but invisible to API consumers.
+- **Examples table in crate-level rustdoc** (`src/lib.rs`): added missing
+  `batch_or_interval_min` and `segment_tuning` rows (2 of 14 examples were
+  undocumented).
+- **FEATURES.md examples inventory** (`FEATURES.md`): expanded from 3 to all
+  14 examples.
+- **AGENTS.md archive convention** (`AGENTS.md`): documented that resolved
+  reports move to `docs/{status,planning}/archived/`.
 
 ## [0.5.5] - 2026-08-04
 

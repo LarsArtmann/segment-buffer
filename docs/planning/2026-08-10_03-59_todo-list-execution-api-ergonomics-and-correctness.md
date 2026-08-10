@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-10 03:59 CEST
 **Author:** Docs-health session (continuation)
-**Status:** Planning — executing immediately after
+**Status:** FULLY EXECUTED — all 7 phases (P1–P7) shipped, 15/15 gates green, CI+Nix green. Commits `109f107`, `c86c347`.
 
 ---
 
