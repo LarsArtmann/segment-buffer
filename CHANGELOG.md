@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stale version reference — `_(unreleased)_` labels → `_(v0.5.5)_`, "current
   release is v0.5.4" → v0.5.5, "All 8 versions" → "All 12 versions", gate count
   14 → 15, and property-test count 25 → 28. No code change.
+- **CONTRIBUTING.md lint-architecture correction:** the
+  `unchecked_time_subtraction` lint was described as a `nursery`-group lint
+  "not listed explicitly"; it is actually a `pedantic`-group lint and is
+  explicitly listed in `Cargo.toml [lints.clippy]`.
+- **TODO_LIST rebuilt from 32-report harvest:** 7 → 24 items across 7
+  categories. ROADMAP gained a "Tooling direction" section. All items verified
+  against code.
+- **32 archived status/planning reports annotated and moved** to
+  `docs/{status,planning}/archived/`. 6 high-value files received inline
+  `~~strikethrough~~ done at <hash>` markers on concrete action items.
 
 ## [0.5.5] - 2026-08-04
 
