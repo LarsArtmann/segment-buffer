@@ -277,10 +277,12 @@ Reframed for the cloud-sync producer-side buffer target._
 
 ## Status
 
-**Current release (v0.5.5)**: a **panic-free public API** (re-entrancy deadlock
-eliminated at the root), live `segment_count` in `BufferStats`, the
-`segment_size_stats()` tuning primitive, a scan-cache TOCTOU fix, and a strict
-Clippy lint architecture (library code is provably panic-free). See
+**Current release (v0.5.6)**: a **panic-free public API** (re-entrancy deadlock
+eliminated at the root), sealed `SegmentStore` trait, `Display` impls for
+`BufferStats`/`SegmentConfig`/`DurabilityPolicy`, `SegmentConfig` equality,
+live `segment_count` in `BufferStats`, the `segment_size_stats()` tuning
+primitive, and a strict Clippy lint architecture (library code is provably
+panic-free). See
 [CHANGELOG.md](CHANGELOG.md) for full release history;
 see [FEATURES.md](FEATURES.md) for the capability inventory and
 [ROADMAP.md](ROADMAP.md) for long-term direction and explicit non-goals.

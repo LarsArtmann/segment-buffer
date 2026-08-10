@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-08-10
+
+API polish and test-coverage expansion. The `SegmentStore` trait is now sealed
+(feature-gated under `loom`; no impact on default-feature consumers),
+`SegmentConfig` gains `PartialEq`/`Eq`, `FlushPolicy` gains a reusable
+`validate()` method, and `BufferStats`/`DurabilityPolicy`/`SegmentConfig` gain
+human-readable `Display` impls. Test coverage expands with 2 loom tests, 2
+property tests, 1 stress test, 1 fuzz target, and 2 criterion benchmarks. No
+on-disk format change, no new dependency.
+
 ### Added
 
 - **`PartialEq` + `Eq` impls for `SegmentConfig`** (`src/lib.rs`): enables
@@ -1339,7 +1349,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.4
 [0.5.3]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.3
