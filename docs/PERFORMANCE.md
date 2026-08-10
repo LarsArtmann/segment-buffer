@@ -49,6 +49,8 @@ test, not the buffer construction.
 | `bench_stats`             | `stats()` snapshot vs 3 individual accessors                                                           |
 | `bench_append_all`        | `append_all` batch primitive vs loop of `append`                                                       |
 | `bench_durability_policy` | _(v0.5.0)_ A/B/C `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush                          |
+| `bench_segment_size_stats`| _(v0.5.5)_ `segment_size_stats()` scan cost at 100, 1k, 10k segments                                   |
+| `bench_cipher`            | _(v0.5.0)_ Flush encode pipeline: no cipher vs AES-256-GCM vs XChaCha20-Poly1305 (requires `--features encryption`) |
 
 ## Scaling test (end-to-end, 1M–100M scale)
 
@@ -249,6 +251,82 @@ For the cloud-sync deployment target, the levers rank roughly:
 
 If the cloud endpoint is the bottleneck (the common case), even lever 1 alone
 is enough — the buffer is no longer on the critical path.
+
+## Baseline snapshot (2026-08-10, v0.5.6, `--features encryption`)
+
+Single-run, single-machine, tmpfs-backed. Absolute numbers are indicative;
+ratios are durable. Run `cargo bench --features encryption` to reproduce.
+
+### Append throughput
+
+| Benchmark              | Median     | Throughput   |
+| ---------------------- | ---------- | ------------ |
+| `append/batch_1`       | 27.0 µs    | 37 Kelem/s   |
+| `append/batch_100`     | 48.4 µs    | 2.07 Melem/s |
+| `append/batch_1000`    | 157.4 µs   | 6.35 Melem/s |
+| `append/batch_10000`   | 1.19 ms    | 8.40 Melem/s |
+| `append_all/100`       | 45.0 µs    | 2.22 Melem/s |
+| `append_all/1000`      | 133.9 µs   | 7.47 Melem/s |
+| `append_all/10000`     | 1.19 ms    | 8.39 Melem/s |
+
+### Read path
+
+| Benchmark                          | Median     | Throughput   |
+| ---------------------------------- | ---------- | ------------ |
+| `read_from/limit_100`              | 1.51 ms    | 66 Kelem/s   |
+| `read_from/limit_1000`             | 1.45 ms    | 691 Kelem/s  |
+| `read_from/limit_10000`            | 1.50 ms    | 6.68 Melem/s |
+| `read_from_scan_cache/cold_10`     | 68.8 µs    | 1.45 Melem/s |
+| `read_from_scan_cache/warm_10`     | 51.4 µs    | 1.94 Melem/s |
+| `read_from_scan_cache/cold_100`   | 220.5 µs   | 453 Kelem/s  |
+| `read_from_scan_cache/warm_100`    | 230.4 µs   | 434 Kelem/s  |
+| `read_from_scan_cache/cold_1000`  | 2.74 ms    | 36.5 Kelem/s |
+| `read_from_scan_cache/warm_1000`  | 2.32 ms    | 43.1 Kelem/s |
+
+### `read_from` vs `for_each_from`
+
+| Benchmark                          | Median     |
+| ---------------------------------- | ---------- |
+| `read_vs_for_each/read_from/1000`     | 18.0 µs  |
+| `read_vs_for_each/for_each_from/1000` | 17.6 µs  |
+| `read_vs_for_each/read_from/10000`    | 183.9 µs |
+| `read_vs_for_each/for_each_from/10000` | 196.4 µs |
+
+### Delete, recovery, stats
+
+| Benchmark                    | Median     | Throughput   |
+| ---------------------------- | ---------- | ------------ |
+| `delete_acked/100_segments`  | 252.4 µs   | 396 Kelem/s  |
+| `delete_acked/10k_segments`  | 36.77 ms   | 272 Kelem/s  |
+| `recover/10_segments`         | 15.15 ms   | 660 elem/s   |
+| `recover/100_segments`        | 15.57 ms   | 6.42 Kelem/s |
+| `recover/1000_segments`       | 18.72 ms   | 53.4 Kelem/s |
+| `stats/stats_snapshot`       | 12.95 ns   | —            |
+| `stats/individual_accessors`  | 20.55 ns   | —            |
+
+### Durability policy (1000-event flush)
+
+| Policy        | Median     | Throughput   |
+| ------------- | ---------- | ------------ |
+| `Maximal`     | 198.5 µs   | 5.04 Melem/s |
+| `Segment`     | 174.4 µs   | 5.74 Melem/s |
+| `Throughput`  | 193.6 µs   | 5.17 Melem/s |
+
+### Cipher overhead (flush encode pipeline)
+
+| Cipher               | Median     |
+| -------------------- | ---------- |
+| no cipher            | 51.2 µs    |
+| AES-256-GCM          | 54.8 µs    |
+| XChaCha20-Poly1305   | 61.7 µs    |
+
+### Segment size stats scan cost
+
+| Segments | Median     |
+| -------- | ---------- |
+| 100      | 47.1 µs    |
+| 1000     | 464.4 µs   |
+| 10000    | 6.18 ms    |
 
 ## When to re-bench
 
