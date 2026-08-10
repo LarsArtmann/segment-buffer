@@ -401,6 +401,20 @@ pub enum DurabilityPolicy {
     Throughput,
 }
 
+impl std::fmt::Display for DurabilityPolicy {
+    /// Human-readable representation suitable for logging and diagnostics.
+    ///
+    /// The format is a single lowercase word per variant, stable across
+    /// releases so operators can grep for it in log output.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Maximal => write!(f, "maximal"),
+            Self::Segment => write!(f, "segment"),
+            Self::Throughput => write!(f, "throughput"),
+        }
+    }
+}
+
 /// Configuration knobs for [`SegmentBuffer`].
 ///
 /// This struct is `#[non_exhaustive]`: new fields may be added in any release
@@ -446,6 +460,30 @@ impl std::fmt::Debug for SegmentConfig {
             .field("durability", &self.durability)
             .field("cipher", &self.cipher.as_ref().map(|_| "[set]"))
             .finish()
+    }
+}
+
+impl std::fmt::Display for SegmentConfig {
+    /// Human-readable single-line summary suitable for logging.
+    ///
+    /// The cipher is masked (`[set]` / `[none]`) to avoid leaking key
+    /// material into logs, matching the [`Debug`][std::fmt::Debug]
+    /// representation. The format is stable across releases.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let cipher_label = if self.cipher.is_some() {
+            "[set]"
+        } else {
+            "[none]"
+        };
+        write!(
+            f,
+            "SegmentConfig(flush={}, max={}B, zstd={}, durability={}, cipher={})",
+            self.flush_policy,
+            self.max_size_bytes,
+            self.compression_level,
+            self.durability,
+            cipher_label,
+        )
     }
 }
 
@@ -659,6 +697,7 @@ impl SegmentConfig {
 /// without breaking semver. It is constructed internally by [`SegmentBuffer::stats`];
 /// callers read fields via dot-syntax or pattern-match with `..` only.
 #[derive(Debug, Clone)]
+#[must_use]
 #[non_exhaustive]
 pub struct BufferStats {
     /// Items waiting in the buffer (on-disk + in-memory pending).
@@ -1750,6 +1789,7 @@ where
     /// ```
     ///
     #[must_use = "the backlog size is meaningless if discarded"]
+    #[doc(alias = "backlog")]
     pub fn pending_count(&self) -> u64 {
         self.inner.lock().pending_count()
     }

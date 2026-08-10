@@ -294,7 +294,7 @@ proptest! {
         let buf = prop_buffer(tmp.path());
 
         for i in 0..n {
-            let _ = buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") });
+            let _ = buf.append(prop_item(u64::from(i)));
         }
 
         // After up to 499 appends under Manual, there must be zero segment
@@ -320,7 +320,7 @@ proptest! {
         let tmp = tempfile::tempdir().unwrap();
         let buf = prop_buffer(tmp.path());
         for i in 0..n {
-            buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
+            buf.append(prop_item(u64::from(i))).expect("append");
         }
         buf.flush().expect("flush");
 
@@ -345,7 +345,7 @@ proptest! {
         let tmp = tempfile::tempdir().unwrap();
         let buf = prop_buffer(tmp.path());
         for i in 0..n {
-            buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
+            buf.append(prop_item(u64::from(i))).expect("append");
         }
         buf.flush().expect("flush");
 
@@ -373,7 +373,7 @@ proptest! {
         let tmp = tempfile::tempdir().unwrap();
         let buf = prop_buffer(tmp.path());
         for i in 0..n {
-            buf.append(PropItem { id: u64::from(i), payload: format!("p-{i}") }).expect("append");
+            buf.append(prop_item(u64::from(i))).expect("append");
         }
         buf.flush().expect("flush");
 
