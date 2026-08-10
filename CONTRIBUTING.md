@@ -72,10 +72,9 @@ This crate uses a **strict Clippy lint strategy** inspired by
 lints (`as_conversions`, `arithmetic_side_effects`, `unwrap_used`,
 `expect_used`, `indexing_slicing`, `string_slice`, `panic_in_result_fn`,
 `panic`, `exit`, `todo`, `unimplemented`,
-`unreachable`) across **all** targets. (The
-`unchecked_time_subtraction` / `unchecked_duration_subtraction` lint is
-covered by the `nursery` group, not listed explicitly because the name
-differs between MSRV 1.86 and stable.)
+`unreachable`) across **all** targets. (`unchecked_time_subtraction`
+is a `pedantic`-group lint already denied via the group; it is also
+listed explicitly in `Cargo.toml` for clarity.)
 
 **Library code** (`src/lib.rs`, `src/segment.rs`, `src/cipher.rs`,
 `src/store.rs`, `src/error.rs`) is fully clippy-clean under the entire
