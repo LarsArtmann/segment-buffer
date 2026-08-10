@@ -1175,6 +1175,64 @@ fn flush_policy_display_formats_each_variant() {
     assert_eq!(FlushPolicy::Manual.to_string(), "manual");
 }
 
+#[test]
+fn durability_policy_display_formats_each_variant() {
+    assert_eq!(DurabilityPolicy::Maximal.to_string(), "maximal");
+    assert_eq!(DurabilityPolicy::Segment.to_string(), "segment");
+    assert_eq!(DurabilityPolicy::Throughput.to_string(), "throughput");
+}
+
+#[test]
+fn buffer_stats_display_formats_all_fields() {
+    let stats = BufferStats {
+        pending_count: 42,
+        latest_sequence: 100,
+        head_sequence: 50,
+        next_sequence: 101,
+        approx_disk_bytes: 4096,
+        segment_count: 4,
+        max_size_bytes: 1_048_576,
+        store_pressure: 0.004,
+    };
+    let s = stats.to_string();
+    assert!(s.contains("pending=42"), "missing pending_count: {s}");
+    assert!(s.contains("head=50"), "missing head_sequence: {s}");
+    assert!(s.contains("next=101"), "missing next_sequence: {s}");
+    assert!(s.contains("disk=4096B"), "missing approx_disk_bytes: {s}");
+    assert!(s.contains("in 4 segments"), "missing segment_count: {s}");
+    assert!(s.contains("pressure=0.00"), "missing store_pressure: {s}");
+}
+
+#[test]
+fn segment_config_display_masks_cipher() {
+    let config = SegmentConfig::default();
+    let s = config.to_string();
+    assert!(
+        s.contains("cipher=[none]"),
+        "plaintext config must show cipher=[none]: {s}"
+    );
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn segment_config_display_masks_cipher_when_set() {
+    let config = SegmentConfig {
+        cipher: Some(std::sync::Arc::new(
+            crate::cipher::XChaCha20Poly1305Cipher::new(&[0u8; 32]),
+        )),
+        ..SegmentConfig::default()
+    };
+    let s = config.to_string();
+    assert!(
+        s.contains("cipher=[set]"),
+        "encrypted config must show cipher=[set]: {s}"
+    );
+    assert!(
+        !s.contains("cipher=None"),
+        "Display must not leak cipher internals: {s}"
+    );
+}
+
 // =========================================================================
 // Error-path tests (no encryption)
 // =========================================================================
@@ -3273,6 +3331,58 @@ fn segment_size_stats_works_with_encrypted_segments() {
             compression_level: 3,
             durability: DurabilityPolicy::Segment,
             cipher: Some(Arc::new(AesGcmCipher::new(&[0u8; 32]))),
+        },
+    )
+    .unwrap();
+
+    // Three flushes with varying item counts so byte sizes differ.
+    for n in [3u64, 1, 5] {
+        for i in 0..n {
+            buf.append(test_item(i)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+
+    let s = buf.segment_size_stats().unwrap();
+    assert_eq!(s.count, 3);
+    assert_eq!(s.count, count_disk_segments(tmp.path()));
+
+    // Cross-check every field against a brute-force directory scan.
+    let mut sizes: Vec<u64> = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+        .map(|e| e.metadata().map_or(0, |m| m.len()))
+        .collect();
+    sizes.sort();
+    assert_eq!(s.min_bytes, *sizes.first().unwrap());
+    assert_eq!(s.max_bytes, *sizes.last().unwrap());
+    let total: u64 = sizes.iter().sum();
+    assert_eq!(s.mean_bytes, total / sizes.len() as u64);
+    let n = sizes.len();
+    let rank = |pct: f64| -> usize {
+        let r = (pct / 100.0 * n as f64).ceil() as usize;
+        r.clamp(1, n) - 1
+    };
+    assert_eq!(s.p50_bytes, sizes[rank(50.0)]);
+    assert_eq!(s.p90_bytes, sizes[rank(90.0)]);
+    assert!(s.min_bytes <= s.p50_bytes);
+    assert!(s.p50_bytes <= s.p90_bytes);
+    assert!(s.p90_bytes <= s.max_bytes);
+}
+
+#[cfg(feature = "encryption")]
+#[test]
+fn segment_size_stats_works_with_xchacha20_encrypted_segments() {
+    let tmp = TempDir::new().unwrap();
+    let buf = SegmentBuffer::open(
+        tmp.path(),
+        SegmentConfig {
+            flush_policy: FlushPolicy::Manual,
+            max_size_bytes: 1024 * 1024,
+            compression_level: 3,
+            durability: DurabilityPolicy::Segment,
+            cipher: Some(Arc::new(XChaCha20Poly1305Cipher::new(&[0u8; 32]))),
         },
     )
     .unwrap();

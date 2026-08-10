@@ -29,6 +29,19 @@
 //! the Domain Language doc for the full guarantee table and practical
 //! guidance.
 //!
+//! # Guarantees
+//!
+//! - **Panic-free public API.** No public method calls `panic!`, `unwrap`,
+//!   `expect`, direct indexing, or string slicing — enforced in CI by
+//!   `pedantic` + `nursery` + restriction Clippy lints at `deny`.
+//!   `for_each_from` never holds the mutex across the user callback (pending
+//!   items are snapshotted under the lock then released), so re-entrant calls
+//!   are safe and cannot deadlock.
+//! - **Single-process per directory.** Enforced by an exclusive `flock` at
+//!   `open`; a second process gets [`SegmentError::Locked`].
+//! - **Crash recovery by filename.** No WAL, no metadata database — scanning
+//!   the directory rebuilds all state from `seg_{start}_{end}.zst` filenames.
+//!
 //! # Schema evolution of `T`
 //!
 //! The crate has two versioning layers: the `SBF1` envelope (crate-managed,
@@ -79,6 +92,8 @@
 //! | `scaling`              | End-to-end 1M–100M lifecycle throughput.                                                       |
 //! | `encrypted`            | AES-256-GCM and XChaCha20-Poly1305 ciphers end-to-end (requires `--features encryption`).      |
 //! | `bring_your_own_cipher`| Implementing the `SegmentCipher` trait for a custom cipher (requires `--features encryption`). |
+//! | `batch_or_interval_min`| Suppressing tiny segments with the adaptive `BatchOrIntervalMin` policy.                       |
+//! | `segment_tuning`       | Using `segment_size_stats()` to tune batch size against resulting file sizes.                   |
 
 #![warn(missing_docs)]
 // Require every public function that can panic or return Result to document
@@ -727,6 +742,29 @@ pub struct BufferStats {
     /// `approx_disk_bytes / max_size_bytes`, clamped to `[0.0, 1.0]`.
     /// `0.0` when no limit is configured.
     pub store_pressure: f32,
+}
+
+impl std::fmt::Display for BufferStats {
+    /// Human-readable single-line summary suitable for logging.
+    ///
+    /// The format is compact and stable across releases so operators can
+    /// parse it in log-scraping tools. All eight fields appear in a fixed
+    /// order matching the struct declaration.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "BufferStats(pending={}, seqs={}..{} (head={} next={}), disk={}B/{}B in {} segments, pressure={:.2})",
+            self.pending_count,
+            self.head_sequence,
+            self.latest_sequence,
+            self.head_sequence,
+            self.next_sequence,
+            self.approx_disk_bytes,
+            self.max_size_bytes,
+            self.segment_count,
+            self.store_pressure,
+        )
+    }
 }
 
 /// Size distribution of the on-disk segment files at a point in time.
@@ -1449,7 +1487,7 @@ where
 
             let events = self.read_segment(*seg)?;
             let skip = if seg.start < start_seq {
-                usize::try_from(start_seq.saturating_sub(seg.start)).unwrap_or(usize::MAX)
+                Self::seq_to_index(start_seq, seg.start)
             } else {
                 0
             };
@@ -1570,7 +1608,7 @@ where
 
             let events = self.read_segment(*seg)?;
             let skip = if seg.start < start_seq {
-                usize::try_from(start_seq.saturating_sub(seg.start)).unwrap_or(usize::MAX)
+                Self::seq_to_index(start_seq, seg.start)
             } else {
                 0
             };
@@ -1597,8 +1635,7 @@ where
             let (base_seq, window): (u64, Vec<T>) = {
                 let inner = self.inner.lock();
                 let pending_start = inner.pending_start();
-                let skip =
-                    usize::try_from(start_seq.saturating_sub(pending_start)).unwrap_or(usize::MAX);
+                let skip = Self::seq_to_index(start_seq, pending_start);
                 let remaining = limit.saturating_sub(visited);
                 let base = pending_start.saturating_add(u64::try_from(skip).unwrap_or(u64::MAX));
                 let window = inner
@@ -2140,6 +2177,16 @@ where
             p50_bytes: Self::percentile_of_sorted(&sizes, 50),
             p90_bytes: Self::percentile_of_sorted(&sizes, 90),
         })
+    }
+
+    /// Convert a sequence number to a zero-based index relative to `base`.
+    ///
+    /// Equivalent to `(seq - base) as usize` but saturating and
+    /// `arithmetic_side_effects`-safe. Shared by `read_from` and
+    /// `for_each_from` (both the on-disk and in-memory phases) so the
+    /// seq→index conversion lives in one place.
+    fn seq_to_index(seq: u64, base: u64) -> usize {
+        usize::try_from(seq.saturating_sub(base)).unwrap_or(usize::MAX)
     }
 
     /// Disk-usage pressure as `approx_disk_bytes / max_size_bytes`, clamped to

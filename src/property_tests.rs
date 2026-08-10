@@ -1682,3 +1682,124 @@ proptest! {
         }
     }
 }
+
+// =========================================================================
+// Pure-function correctness: compute_store_pressure
+// =========================================================================
+
+proptest! {
+    /// `max_size_bytes == 0` means the limit is disabled → pressure is always 0.0.
+    #[test]
+    fn compute_store_pressure_zero_max_returns_zero(
+        bytes in any::<u64>(),
+    ) {
+        let pressure = PropBuffer::compute_store_pressure(bytes, 0);
+        prop_assert_eq!(pressure, 0.0, "disabled limit must give 0.0 pressure");
+    }
+
+    /// Pressure is clamped to [0.0, 1.0] for all inputs.
+    #[test]
+    fn compute_store_pressure_always_in_unit_range(
+        bytes in any::<u64>(),
+        max in 1u64..=u64::MAX,
+    ) {
+        let pressure = PropBuffer::compute_store_pressure(bytes, max);
+        prop_assert!(
+            (0.0..=1.0).contains(&pressure),
+            "pressure {} out of [0, 1] for bytes={} max={}",
+            pressure, bytes, max,
+        );
+    }
+
+    /// For a fixed max, increasing bytes must never decrease pressure.
+    #[test]
+    fn compute_store_pressure_monotone_in_bytes(
+        max in 1u64..=u64::MAX,
+        b1 in any::<u64>(),
+        b2 in any::<u64>(),
+    ) {
+        let (lo, hi) = if b1 <= b2 { (b1, b2) } else { (b2, b1) };
+        let p_lo = PropBuffer::compute_store_pressure(lo, max);
+        let p_hi = PropBuffer::compute_store_pressure(hi, max);
+        prop_assert!(
+            p_hi >= p_lo,
+            "pressure decreased from {} to {} when bytes went {} → {} (max={})",
+            p_lo, p_hi, lo, hi, max,
+        );
+    }
+
+    /// When bytes exceed max (both non-zero), pressure must be exactly 1.0.
+    #[test]
+    fn compute_store_pressure_saturates_at_one(
+        max in 1u64..=u64::MAX / 2,
+        overshoot in 1u64..=u64::MAX / 2,
+    ) {
+        let bytes = max.saturating_add(overshoot);
+        let pressure = PropBuffer::compute_store_pressure(bytes, max);
+        prop_assert_eq!(pressure, 1.0, "over-limit pressure must saturate at 1.0");
+    }
+
+    // =====================================================================
+    // Pure-function correctness: percentile_of_sorted
+    // =====================================================================
+
+    /// Empty slice always returns 0 regardless of pct.
+    #[test]
+    fn percentile_of_sorted_empty_returns_zero(
+        pct in 0u32..=100,
+    ) {
+        let result = PropBuffer::percentile_of_sorted(&[], pct);
+        prop_assert_eq!(result, 0, "empty slice must return 0");
+    }
+
+    /// All-equal slice: every percentile must return that single value.
+    #[test]
+    fn percentile_of_sorted_all_equal_returns_that_value(
+        val in any::<u64>(),
+        n in 1usize..=100,
+        pct in 0u32..=100,
+    ) {
+        let sorted = vec![val; n];
+        let result = PropBuffer::percentile_of_sorted(&sorted, pct);
+        prop_assert_eq!(
+            result, val,
+            "all-equal slice [{}×{}] must return {} at p{}",
+            val, n, val, pct,
+        );
+    }
+
+    /// Result must always be one of the actual elements (never interpolated).
+    #[test]
+    fn percentile_of_sorted_returns_an_actual_element(
+        mut values in proptest::collection::vec(0u64..1000, 1..200),
+        pct in 0u32..=100,
+    ) {
+        values.sort_unstable();
+        let result = PropBuffer::percentile_of_sorted(&values, pct);
+        prop_assert!(
+            values.contains(&result),
+            "p{} returned {} which is not in the slice",
+            pct, result,
+        );
+    }
+
+    /// p0 returns the minimum, p100 returns the maximum (nearest-rank boundaries).
+    #[test]
+    fn percentile_of_sorted_boundaries(
+        mut values in proptest::collection::vec(any::<u64>(), 1..200),
+    ) {
+        values.sort_unstable();
+        let min = values[0];
+        let max = *values.last().unwrap();
+        prop_assert_eq!(
+            PropBuffer::percentile_of_sorted(&values, 0),
+            min,
+            "p0 must return the minimum",
+        );
+        prop_assert_eq!(
+            PropBuffer::percentile_of_sorted(&values, 100),
+            max,
+            "p100 must return the maximum",
+        );
+    }
+}
