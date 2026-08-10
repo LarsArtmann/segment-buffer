@@ -744,23 +744,47 @@ pub struct BufferStats {
     pub store_pressure: f32,
 }
 
+/// Format a byte count as a compact human-readable string using binary
+/// units (`B`, `KB`, `MB`, `GB`, …). Values under 1024 show as raw bytes
+/// (`512B`); larger values use one decimal place (`4.0KB`, `1.0MB`).
+#[allow(clippy::as_conversions, clippy::cast_precision_loss)]
+fn format_bytes_human(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
+    const BASE: f64 = 1024.0;
+    if bytes < 1024 {
+        return format!("{bytes}B");
+    }
+    let mut value = bytes as f64;
+    let mut unit_idx: usize = 0;
+    let last_idx = UNITS.len().saturating_sub(1);
+    while value >= BASE && unit_idx < last_idx {
+        value /= BASE;
+        unit_idx = unit_idx.saturating_add(1);
+    }
+    let unit = UNITS.get(unit_idx).copied().unwrap_or("B");
+    format!("{value:.1}{unit}")
+}
+
 impl std::fmt::Display for BufferStats {
     /// Human-readable single-line summary suitable for logging.
     ///
-    /// The format is compact and stable across releases so operators can
-    /// parse it in log-scraping tools. All eight fields appear in a fixed
-    /// order matching the struct declaration.
+    /// The format is compact and stable across releases. All eight fields
+    /// appear in a fixed order matching the struct declaration. Byte values
+    /// (`approx_disk_bytes`, `max_size_bytes`) use binary units for
+    /// readability (`4.0KB`, `1.0MB`); all other fields are raw numbers.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let disk = format_bytes_human(self.approx_disk_bytes);
+        let max = format_bytes_human(self.max_size_bytes);
         write!(
             f,
-            "BufferStats(pending={}, seqs={}..{} (head={} next={}), disk={}B/{}B in {} segments, pressure={:.2})",
+            "BufferStats(pending={}, seqs={}..{} (head={} next={}), disk={}/{} in {} segments, pressure={:.2})",
             self.pending_count,
             self.head_sequence,
             self.latest_sequence,
             self.head_sequence,
             self.next_sequence,
-            self.approx_disk_bytes,
-            self.max_size_bytes,
+            disk,
+            max,
             self.segment_count,
             self.store_pressure,
         )

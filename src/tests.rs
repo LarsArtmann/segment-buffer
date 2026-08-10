@@ -1198,7 +1198,7 @@ fn buffer_stats_display_formats_all_fields() {
     assert!(s.contains("pending=42"), "missing pending_count: {s}");
     assert!(s.contains("head=50"), "missing head_sequence: {s}");
     assert!(s.contains("next=101"), "missing next_sequence: {s}");
-    assert!(s.contains("disk=4096B"), "missing approx_disk_bytes: {s}");
+    assert!(s.contains("disk=4.0KB/1.0MB"), "missing human-readable bytes: {s}");
     assert!(s.contains("in 4 segments"), "missing segment_count: {s}");
     assert!(s.contains("pressure=0.00"), "missing store_pressure: {s}");
 }

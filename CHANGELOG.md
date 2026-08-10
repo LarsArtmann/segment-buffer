@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`src/lib.rs`): all three types were `Debug`-only. Now they produce stable,
   human-readable single-line summaries suitable for logging. `SegmentConfig`'s
   `Display` masks the cipher (`[set]`/`[none]`) to prevent key leakage into
-  logs. Format follows the existing `FlushPolicy::Display` pattern.
+  logs. `BufferStats` formats byte values in human-readable binary units
+  (`4.0KB`, `1.0MB`). Format follows the existing `FlushPolicy::Display` pattern.
 - **`#[must_use]` on `BufferStats`** (`src/lib.rs`): the stats snapshot is
   meaningless if discarded — the lint now catches that at compile time.
 - **`#[doc(alias = "backlog")]` on `pending_count()`** (`src/lib.rs`):
