@@ -60,7 +60,7 @@ fn bench_read_from_scan_cache(c: &mut Criterion) {
     let items_per_segment = 100;
     let limit = 100;
 
-    for &n_segments in &[10usize, 100, 1_000] {
+    for &n_segments in &[10usize, 100, 1_000, 10_000] {
         group.throughput(criterion::Throughput::Elements(limit as u64));
 
         group.bench_function(format!("cold_{n_segments}_segments"), |b| {

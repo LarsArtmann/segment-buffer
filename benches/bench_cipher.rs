@@ -76,6 +76,7 @@ fn buffer_with_cipher(dir: &std::path::Path, cipher: CipherOpt) -> SegmentBuffer
 fn bench_cipher(c: &mut Criterion) {
     let mut group = c.benchmark_group("cipher_flush");
     group.sample_size(30);
+    group.throughput(criterion::Throughput::Elements(BATCH_SIZE as u64));
 
     let variants: [(BenchmarkId, CipherOpt); 3] = [
         (BenchmarkId::from_parameter("no_cipher"), None),

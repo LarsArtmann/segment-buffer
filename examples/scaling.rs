@@ -13,14 +13,31 @@
 //! # Usage
 //!
 //! ```text
-//! cargo run --release --example scaling -- [count] [batch_size] [compression] [payload_mult] [payload_kind]
-//! cargo run --release --example scaling                                     # 1M, batch 5000, zstd-3, 64B, uniform
-//! cargo run --release --example scaling -- 10000000                         # 10M
-//! cargo run --release --example scaling -- 100000000 10000 1                # 100M, batch 10k, zstd-1
-//! cargo run --release --example scaling -- 1000000 5000 3 50                # 1M, 50x payload (3.2KB/item)
-//! cargo run --release --example scaling -- 1000000 5000 3 10 text           # 1M, 10x, semi-compressible text
-//! cargo run --release --example scaling -- 1000000 5000 3 10 random         # 1M, 10x, pseudo-random hex
+//! cargo run --release --example scaling -- [OPTIONS] [count] [batch_size] [compression] [payload_mult] [payload_kind]
+//!
+//! # Defaults: 1M items, batch 5000, zstd-3, 64B uniform payload, tmpfs
+//! cargo run --release --example scaling
+//!
+//! # 100M on real disk (NOT tmpfs)
+//! cargo run --release --example scaling -- --dir /var/tmp/sb-bench 100000000 10000 1
+//!
+//! # 1M with encryption (requires --features encryption)
+//! # cargo run --release --example scaling --features encryption -- --encrypted 1000000
+//!
+//! # 1M, 10x payload, semi-compressible text
+//! cargo run --release --example scaling -- 1000000 5000 3 10 text
+//!
+//! # 1M, 10x, pseudo-random hex (worst-case compression)
+//! # cargo run --release --example scaling -- 1000000 5000 3 10 random
 //! ```
+//!
+//! # Options
+//!
+//! | Flag           | Default     | What it does                                              |
+//! | -------------- | ----------- | -------------------------------------------------------- |
+//! | `--dir DIR`    | tempdir     | Use a real directory instead of tmpfs. Tests real disk.  |
+//! | `--encrypted`  | off         | Enable XChaCha20-Poly1305 encryption (needs `encryption`). |
+//! | `--keep`       | off         | Don't delete `--dir` after the run (for inspection).      |
 //!
 //! # Payload kinds
 //!
@@ -37,6 +54,13 @@
 //! `uniform` answers "what's the ceiling?"; `random` answers "what's the
 //! floor?"; `text` and `json` model real-world telemetry. All payloads are
 //! deterministic (seeded by item id), so runs are reproducible.
+//!
+//! # Latency
+//!
+//! In addition to throughput, the load and drain phases record per-batch
+//! latencies and report **p50 / p95 / p99** percentiles. These surface tail
+//! latency from the inline flush on threshold-crossing appends and from
+//! disk I/O on the drain path.
 //!
 //! # Disk estimate
 //!
@@ -65,8 +89,10 @@
 )]
 
 use segment_buffer::{DurabilityPolicy, FlushPolicy, SegmentBuffer, SegmentConfig};
+#[cfg(feature = "encryption")]
+use segment_buffer::{SegmentCipher, XChaCha20Poly1305Cipher};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Fixed-size event: the payload length is `64 * payload_mult` bytes, filled
 /// per [`PayloadKind`]. Each item carries enough structure (id, timestamp, kind)
@@ -279,38 +305,112 @@ fn make_payload(id: u64, kind: PayloadKind, target_len: usize) -> String {
 /// fsync-bound regime.
 const DURABILITY: DurabilityPolicy = DurabilityPolicy::Throughput;
 
+/// Simple latency histogram for per-batch timings.
+/// Stores durations in microseconds and computes nearest-rank percentiles.
+struct LatencyHistogram {
+    samples: Vec<f64>, // microseconds
+}
+
+impl LatencyHistogram {
+    fn new() -> Self {
+        Self { samples: Vec::new() }
+    }
+
+    fn record(&mut self, elapsed: Duration) {
+        self.samples.push(elapsed.as_secs_f64() * 1_000_000.0);
+    }
+
+    fn percentile(&self, p: f64) -> f64 {
+        if self.samples.is_empty() {
+            return 0.0;
+        }
+        let mut sorted = self.samples.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let idx = ((p / 100.0) * (sorted.len() - 1) as f64).ceil() as usize;
+        sorted[idx.min(sorted.len() - 1)]
+    }
+
+    fn mean(&self) -> f64 {
+        if self.samples.is_empty() {
+            return 0.0;
+        }
+        self.samples.iter().sum::<f64>() / self.samples.len() as f64
+    }
+
+    fn count(&self) -> usize {
+        self.samples.len()
+    }
+}
+
 fn mib(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let count: u64 = std::env::args()
-        .nth(1)
+    // --- Parse args: flags first, then positional ---
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut dir_override: Option<String> = None;
+    let mut encrypted = false;
+    let mut keep_dir = false;
+    let mut positional: Vec<&str> = Vec::new();
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--dir" => {
+                i += 1;
+                dir_override = args.get(i).cloned();
+            }
+            "--encrypted" => encrypted = true,
+            "--keep" => keep_dir = true,
+            other if !other.starts_with("--") => positional.push(other),
+            other => {
+                eprintln!("unknown flag: {other}");
+                eprintln!("usage: scaling [--dir DIR] [--encrypted] [--keep] [count] [batch] [compression] [payload_mult] [payload_kind]");
+                std::process::exit(2);
+            }
+        }
+        i += 1;
+    }
+
+    let count: u64 = positional
+        .first()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1_000_000);
-    let batch: usize = std::env::args()
-        .nth(2)
+    let batch: usize = positional
+        .get(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(5_000);
-    let compression: i32 = std::env::args()
-        .nth(3)
+    let compression: i32 = positional
+        .get(2)
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
-    let payload_mult: usize = std::env::args()
-        .nth(4)
+    let payload_mult: usize = positional
+        .get(3)
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let payload_kind = match std::env::args().nth(5).as_deref() {
+    let payload_kind = match positional.get(4) {
         Some(s) => PayloadKind::parse(s)?,
         None => PayloadKind::Uniform,
     };
+
     let batch = batch.max(1);
     let payload_mult = payload_mult.max(1);
     let payload_len = 64 * payload_mult;
     let bytes_per_item: u64 = 8 + 8 + 1 + payload_len as u64;
 
-    let tmp = tempfile::tempdir()?;
-    let dir = tmp.path().to_path_buf();
+    // --- Directory: tempdir (tmpfs) or --dir override (real disk) ---
+    let (dir, _tmp_keep) = match &dir_override {
+        Some(path) => {
+            std::fs::create_dir_all(path)?;
+            (std::path::PathBuf::from(path), None)
+        }
+        None => {
+            let tmp = tempfile::tempdir()?;
+            let dir = tmp.path().to_path_buf();
+            (dir, Some(tmp))
+        }
+    };
 
     println!("=== segment-buffer scaling test ===");
     println!(
@@ -319,15 +419,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "payload: {payload_kind} {payload_len} B/item ({payload_mult}x base-64) | uncompressed: {bytes_per_item} B/item"
     );
+    let encrypted_label = if encrypted { "yes (XChaCha20-Poly1305)" } else { "no" };
+    println!("encrypted: {encrypted_label}");
     println!("dir: {}", dir.display());
+    let is_tmpfs = dir_override.is_none();
+    println!("disk: {}", if is_tmpfs { "tmpfs" } else { "real disk" });
     println!();
 
-    let config = SegmentConfig::builder()
-        .flush_policy(FlushPolicy::Manual) // one segment per explicit flush
-        .max_size_bytes(u64::MAX) // no backpressure ceiling; this measures raw scaling
+    #[allow(unused_mut)]
+    let mut config_builder = SegmentConfig::builder()
+        .flush_policy(FlushPolicy::Manual)
+        .max_size_bytes(u64::MAX)
         .compression_level(compression)
-        .durability(DURABILITY)
-        .build();
+        .durability(DURABILITY);
+
+    #[cfg(feature = "encryption")]
+    if encrypted {
+        let key = [0x42u8; 32];
+        let cipher: std::sync::Arc<dyn SegmentCipher + Send + Sync> =
+            std::sync::Arc::new(XChaCha20Poly1305Cipher::new(&key));
+        config_builder = config_builder.cipher(cipher);
+    }
+
+    #[cfg(not(feature = "encryption"))]
+    if encrypted {
+        eprintln!("--encrypted requires --features encryption");
+        std::process::exit(2);
+    }
+
+    let config = config_builder.build();
 
     // ------------------------------------------------------------------
     // Phase 1: LOAD — append_all in batches + flush per batch.
@@ -341,6 +461,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let buf = SegmentBuffer::<Event>::open(&dir, config.clone())?;
     let wall_start = Instant::now();
     let mut load_elapsed = std::time::Duration::ZERO;
+    let mut load_latencies = LatencyHistogram::new();
     let mut id = 0u64;
     let heartbeat = (count / 10).max(1);
     let mut next_heartbeat = heartbeat;
@@ -362,7 +483,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t = Instant::now();
         let last = buf.append_all(items)?;
         buf.flush()?;
-        load_elapsed += t.elapsed();
+        let batch_elapsed = t.elapsed();
+        load_elapsed += batch_elapsed;
+        load_latencies.record(batch_elapsed);
         id = last + 1;
         if id >= next_heartbeat {
             eprintln!(
@@ -399,6 +522,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             peak_disk as f64 / count as f64
         );
     }
+    println!(
+        "latency (µs): mean={:.1} p50={:.1} p95={:.1} p99={:.1} ({} batches)",
+        load_latencies.mean(),
+        load_latencies.percentile(50.0),
+        load_latencies.percentile(95.0),
+        load_latencies.percentile(99.0),
+        load_latencies.count()
+    );
     println!();
 
     // ------------------------------------------------------------------
@@ -426,8 +557,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut seen = 0u64;
     let mut expected_id = cursor;
     let t2 = Instant::now();
+    let mut drain_latencies = LatencyHistogram::new();
     let mut next_heartbeat = heartbeat;
     loop {
+        let batch_t = Instant::now();
         let batch_items = buf.read_from(cursor, batch)?;
         if batch_items.is_empty() {
             break;
@@ -442,6 +575,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let last_seq = cursor + batch_items.len() as u64 - 1;
         buf.delete_acked(last_seq)?;
+        let batch_elapsed = batch_t.elapsed();
+        drain_latencies.record(batch_elapsed);
         seen += batch_items.len() as u64;
         cursor = last_seq + 1;
         if seen >= next_heartbeat {
@@ -461,6 +596,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("elapsed:    {drain_secs:.2}s");
     println!("final disk: {:.1} MiB (should be ~0)", mib(final_disk));
+    println!(
+        "latency (µs): mean={:.1} p50={:.1} p95={:.1} p99={:.1} ({} batches)",
+        drain_latencies.mean(),
+        drain_latencies.percentile(50.0),
+        drain_latencies.percentile(95.0),
+        drain_latencies.percentile(99.0),
+        drain_latencies.count()
+    );
     println!();
 
     // ------------------------------------------------------------------
@@ -479,6 +622,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_eq!(final_disk, 0, "drain verify: disk not fully drained");
     println!("OK: gap-free, in-order, exactly {count} items, disk drained");
+
+    // Clean up --dir unless --keep was passed.
+    if let Some(path) = &dir_override {
+        if !keep_dir {
+            std::fs::remove_dir_all(path)?;
+            println!("\ncleaned up: {path}");
+        } else {
+            println!("\nkept: {path}");
+        }
+    }
 
     Ok(())
 }

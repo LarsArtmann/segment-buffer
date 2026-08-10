@@ -23,7 +23,7 @@ mod support;
 
 fn bench_append_all_vs_loop(c: &mut Criterion) {
     let mut group = c.benchmark_group("append_all");
-    for batch_size in [100usize, 1_000, 10_000] {
+    for batch_size in [10usize, 50, 100, 500, 1_000, 5_000, 10_000] {
         group.throughput(criterion::Throughput::Elements(batch_size as u64));
 
         group.bench_function(format!("loop_append_{batch_size}"), |b| {

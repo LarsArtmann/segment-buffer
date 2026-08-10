@@ -140,3 +140,7 @@ harness = false
 name = "bench_cipher"
 harness = false
 required-features = ["encryption"]
+
+[[bench]]
+name = "bench_concurrent_append"
+harness = false
