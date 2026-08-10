@@ -219,10 +219,11 @@ Selects per-flush fsync behaviour. Three variants:
 
 - `Maximal` — fsync the segment file AND `dir.sync_all()` after rename.
   Closes the rename-window gap. Use when this buffer is the last durable copy.
-- `Segment` _(today's default)_ — fsync the segment file only. Already not
+- `Segment` — fsync the segment file only. Already not
   fully durable (the rename window is ~5–30s on ext4/xfs defaults).
-- `Throughput` — no fsync; the cloud is the durable layer. Use for cloud-sync
-  deployments where the local disk is a throughput buffer.
+- `Throughput` _(default since v0.6.0)_ — no fsync; the cloud is the durable
+  layer. Use for cloud-sync deployments where the local disk is a throughput
+  buffer.
 
 Threaded through `SegmentStore::write_atomic` as a third parameter.
 
@@ -372,7 +373,7 @@ tradeable** — they are invariant by design.
 | [`DurabilityPolicy`](#durabilitypolicy-since-v050)             | crash resilience                          | throughput (fsync calls)                                                      | `Throughput` skips all fsync; `Segment` fsyncs file data only; `Maximal` fsyncs file + directory.                                                                                                                                                     |
 | [`FlushPolicy::Batch(n)`](#flushpolicy)                        | p99 latency + peak memory                 | throughput (fewer flushes) + disk space (better zstd ratio on larger batches) | Larger `n` → fewer, larger segment files → better compression, fewer syscalls, but bigger write-time spikes and higher memory.                                                                                                                        |
 | [`FlushPolicy::BatchOrIntervalMin`](#flushpolicy)              | segment-file count (vs `BatchOrInterval`) | disk space (avoids tiny segments) + syscall overhead                          | Suppresses interval-triggered flushes below `min_batch`, preventing tiny segment files during low-throughput periods. The `max_interval` safety valve ensures bounded in-memory latency.                                                              |
-| `compression_level` (1–22)                                     | CPU at flush time                         | disk space                                                                    | 1 = fastest, largest files. 22 = slowest, smallest files. Default 3 is a balanced starting point.                                                                                                                                                     |
+| `compression_level` (1–22)                                     | CPU at flush time                         | disk space                                                                    | 1 = fastest, largest files. 22 = slowest, smallest files. Default 1 since v0.5.7 (fastest encode, negligible ratio loss).                                                                                                                             |
 | [`read_from`](#read_from) vs [`for_each_from`](#for_each_from) | per-item clone allocations                | read throughput                                                               | Both clone the in-memory tail once: `for_each_from` snapshots it to release the mutex before the callback (panic-free re-entrancy). It avoids the returned `Vec<T>` and is marginally cheaper; both pay the same decode cost on disk-backed segments. |
 
 ### Worked example: maximum throughput, cloud-durable
@@ -381,7 +382,7 @@ tradeable** — they are invariant by design.
 let mut config = SegmentConfig::default();
 config.flush_policy = FlushPolicy::Batch(10_000); // large batches
 config.compression_level = 1;                     // minimal CPU
-config.durability = DurabilityPolicy::Throughput;  // no fsync
+// durability is already Throughput (the default since v0.6.0) — no fsync
 // Drain with for_each_from to avoid cloning.
 ```
 

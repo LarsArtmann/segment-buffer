@@ -55,21 +55,23 @@ If a proposed feature pulls any of the above into segment-buffer, reject it and 
 
 **Future cloud-sync extraction.** Cloud-sync may one day be extracted from monitor365 into its own crate. That extracted crate would sit _between_ segment-buffer and the cloud — it would consume segment-buffer, not be merged with it. segment-buffer stays the focused producer-side local buffer regardless. Do not use "cloud-sync will eventually be extracted" as a rationale for pulling sync logic, cursors, retry policy, or HTTP into this crate — that is scope creep in either direction.
 
-## Durability model (shipped in v0.5.0)
+## Durability model (shipped in v0.5.0, default flipped to `Throughput` in v0.6.0)
 
-**Today's default behavior** (`DurabilityPolicy::Segment`, what the crate has always done) fsyncs the segment file's data but NOT the directory inode after rename (`src/segment.rs` `write()` → `src/store.rs` `RealStore::write_atomic`). This means a host crash within the kernel's dir-inode flush window (~5–30s on ext4/xfs defaults) can leave the renamed file's data on disk but unreachable through the directory. SQLite went through this exact lesson. So today's behavior is **already not fully durable** — the framing isn't "weaken durability for speed", it's "make the tradeoff explicit and configurable."
+**Default since v0.6.0** (`DurabilityPolicy::Throughput`): no fsync at all — the kernel's dirty-page flusher handles when bytes reach disk (~30s on default Linux). This is the correct default for the crate's target use case: the cloud is the durable layer and this buffer is the local throughput buffer in front of it.
+
+The pre-v0.6.0 default (`Segment`) fsyncs the segment file's data but NOT the directory inode after rename. A host crash within the kernel's dir-inode flush window (~5–30s on ext4/xfs defaults) can leave the renamed file's data on disk but unreachable through the directory. SQLite went through this exact lesson.
 
 The `DurabilityPolicy` enum shipped in v0.5.0:
 
 | Policy       | Fsync file | Fsync dir after rename | Worst-case crash loss                            |
 | ------------ | ---------- | ---------------------- | ------------------------------------------------ |
 | `Maximal`    | yes        | yes                    | last in-flight flush only                        |
-| `Segment`    | yes        | no                     | rename window (~5–30s of flushes) — pre-v0.5.0   |
-| `Throughput` | no         | no                     | entire OS dirty window (~30s) — cloud is durable |
+| `Segment`    | yes        | no                     | rename window (~5–30s of flushes) — pre-v0.6.0 default |
+| `Throughput` | no         | no                     | entire OS dirty window (~30s) — default since v0.6.0, cloud is durable |
 
-- `Throughput` is the correct default for cloud-sync deployments where the cloud endpoint holds the durable copy and the local disk is a throughput buffer.
+- `Throughput` is the **default** since v0.6.0 — correct for cloud-sync deployments where the cloud endpoint holds the durable copy and the local disk is a throughput buffer.
 - `Maximal` is for standalone-queue deployments where this buffer is the last copy.
-- Backward compatibility: default stays `Segment` for one release after the enum lands, then flips to `Throughput` with a deprecation note.
+- `Segment` (the pre-v0.6.0 default) is still selectable for deployments that want the file-fsync-without-dir-fsync behavior.
 - Implementation: `policy: DurabilityPolicy` is threaded through `SegmentStore::write_atomic`; the trait signature now takes it as a third parameter. `RealStore::write_atomic` branches on it. The loom `MockStore` accepts it for signature compatibility and ignores it (loom does not model fsync). The policy is a `Copy` enum, no allocation.
 - The `Mutex<Compressor>` invariant ("never held across I/O") is preserved: the fsync happens after compression is done and the mutex is released.
 

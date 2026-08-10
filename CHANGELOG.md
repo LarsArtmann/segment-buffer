@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-10
+
+**Default durability policy flipped to `Throughput`.** Since v0.5.0 the
+default was `Segment` with a documented plan to flip after one release. Seven
+releases later, this is the flip. The crate's target use case is the local
+throughput buffer in front of cloud sync — the cloud is the durable layer,
+the local disk is a throughput buffer, and skipping fsync entirely is the
+correct default for that workload.
+
+This is a **behavioral change** (hence the minor bump): upgrading users who
+relied on the `Segment` default (fsync file data on every flush) will see a
+wider crash-loss window (~30s OS dirty window instead of the ~5-30s rename
+window). Existing on-disk segment files are unaffected — the policy is
+encode-time only, all existing files decode correctly.
+
+### Migration
+
+If you relied on the old default and need file-level fsync, set the policy
+explicitly:
+
+```rust
+let config = SegmentConfig::builder()
+    .durability(DurabilityPolicy::Segment)
+    .build();
+```
+
+For standalone-queue deployments where this buffer is the last durable copy,
+`Maximal` (fsync file + directory after rename) is recommended over `Segment`.
+
+### Changed
+
+- **Default `DurabilityPolicy` flipped from `Segment` to `Throughput`**
+  (`src/lib.rs`): the `#[default]` attribute moves from `Segment` to
+  `Throughput`. `SegmentConfig::default()` now produces a config that skips
+  fsync on every flush. `Maximal` and `Segment` remain fully selectable.
+- All documentation updated: rustdoc, README crash-behavior table,
+  `docs/DOMAIN_LANGUAGE.md`, `docs/LIMITATIONS.md`, `docs/PERFORMANCE.md`,
+  `FEATURES.md`, `AGENTS.md`.
+
+### Added
+
+- **`cargo publish --dry-run --features encryption`** added to the release
+  runbook (AGENTS.md) to catch Cargo.lock version-sync failures before the
+  tag push.
+
 ## [0.5.7] - 2026-08-10
 
 Performance tuning and documentation. The default zstd compression level

@@ -3160,12 +3160,13 @@ fn durability_policy_all_policies_recover_after_reopen() {
     }
 }
 
-/// The default `SegmentConfig` must select `Segment` (the documented
-/// backward-compat default for one release after the enum lands).
+/// The default `SegmentConfig` must select `Throughput` (the default since
+/// v0.6.0 — the cloud is the durable layer, the local disk is the throughput
+/// buffer).
 #[test]
-fn durability_policy_default_is_segment() {
+fn durability_policy_default_is_throughput() {
     let cfg = SegmentConfig::default();
-    assert_eq!(cfg.durability, DurabilityPolicy::Segment);
+    assert_eq!(cfg.durability, DurabilityPolicy::Throughput);
 }
 
 /// The builder `.durability(...)` setter must round-trip into the built config.

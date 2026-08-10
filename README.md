@@ -235,15 +235,15 @@ remaining filenames. No WAL, no metadata database.
 
 ## Crash behavior (configurable)
 
-> **Shipped in v0.5.0.** The default remains `Segment` (today's behavior) for one release for backward compatibility; cloud-sync deployments should switch to `Throughput` once the cloud endpoint holds the durable copy. Pick the policy at construction: `SegmentConfig::builder().durability(DurabilityPolicy::Throughput).build()`.
+> **Shipped in v0.5.0.** Since v0.6.0 the default is `Throughput` (no fsync) — the cloud is the durable layer and this buffer is the throughput buffer in front of it. Pick `Maximal` when this buffer is the last copy: `SegmentConfig::builder().durability(DurabilityPolicy::Maximal).build()`.
 
 | `DurabilityPolicy`              | Fsync file | Fsync dir after rename | Worst-case crash loss                                         | Use case                                        |
 | ------------------------------- | ---------- | ---------------------- | ------------------------------------------------------------- | ----------------------------------------------- |
 | `Maximal`                       | yes        | yes                    | last in-flight flush only                                     | standalone queue (this buffer is the last copy) |
-| `Segment` _(today's default)_   | yes        | no                     | the rename window (~5–30s of flushes, kernel-dependent)       | backwards-compatible default                    |
-| `Throughput` _(for cloud sync)_ | no         | no                     | entire OS dirty window (~30s); the cloud is the durable layer | high-throughput producer with cloud ack         |
+| `Segment`                       | yes        | no                     | the rename window (~5-30s of flushes, kernel-dependent)       | pre-v0.6.0 behavior (file fsync without dir fsync) |
+| `Throughput` _(default)_        | no         | no                     | entire OS dirty window (~30s); the cloud is the durable layer | cloud-sync producer with cloud ack              |
 
-Note: today's code fsyncs the segment file's data but not the directory inode after rename, so `Segment` already has a real (small) crash window. `Maximal` closes it at the cost of one extra `dir.sync_all()` per flush. `Throughput` removes the per-flush fsync entirely.
+`Throughput` (default since v0.6.0) removes the per-flush fsync entirely. `Segment` fsyncs the segment file's data but not the directory inode after rename, so it already has a real (small) crash window. `Maximal` closes it at the cost of one extra `dir.sync_all()` per flush.
 
 For the full set of performance levers (durability, flush policy, compression level, read path), see [Performance tuning](docs/PERFORMANCE.md#tuning-for-your-workload).
 
@@ -279,8 +279,10 @@ Reframed for the cloud-sync producer-side buffer target._
 
 ## Status
 
-**Current release (v0.5.6)**: a **panic-free public API** (re-entrancy deadlock
-eliminated at the root), sealed `SegmentStore` trait, `Display` impls for
+**Current release (v0.6.0)**: **default `DurabilityPolicy` flipped to
+`Throughput`** (no fsync — the cloud is the durable layer), a **panic-free
+public API** (re-entrancy deadlock eliminated at the root), sealed
+`SegmentStore` trait, `Display` impls for
 `BufferStats`/`SegmentConfig`/`DurabilityPolicy`, `SegmentConfig` equality,
 live `segment_count` in `BufferStats`, the `segment_size_stats()` tuning
 primitive, and a strict Clippy lint architecture (library code is provably
@@ -293,8 +295,8 @@ see [FEATURES.md](FEATURES.md) for the capability inventory and
 faster** than the prior baseline on single-run criterion medians. See
 [docs/perf/2026-07-20_hot-path-flamegraph.md](docs/perf/2026-07-20_hot-path-flamegraph.md)
 for methodology, and [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the full
-impact-ordered tuning guide. A `Throughput` durability policy removes the
-per-flush fsync and opens a further large gain on cloud-sync workloads.
+impact-ordered tuning guide. The default `Throughput` durability policy
+(now the default since v0.6.0) removes the per-flush fsync entirely.
 
 ---
 

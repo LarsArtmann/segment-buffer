@@ -92,16 +92,20 @@ fsync the in-memory tail. Call `flush()` at crash-sensitive boundaries or use a
 | `Segment`    | rename window (~5-30s of flushes on ext4/xfs)   |
 | `Throughput` | entire OS dirty window (~30s)                    |
 
-`Segment` (today's default) fsyncs the segment file's data but NOT the directory
-inode after rename. A host crash within the kernel's dir-inode flush window can
-leave the renamed file's data on disk but unreachable through the directory.
+`Throughput` (default since v0.6.0) skips all fsync entirely. This is correct
+when the cloud endpoint holds the durable copy and the local disk is a
+throughput buffer.
 
-`Throughput` skips all fsync entirely. This is correct when the cloud endpoint
-holds the durable copy and the local disk is a throughput buffer.
+`Segment` (the pre-v0.6.0 default) fsyncs the segment file's data but NOT the
+directory inode after rename. A host crash within the kernel's dir-inode flush
+window can leave the renamed file's data on disk but unreachable through the
+directory.
 
 **Not a bug:** the framing is not "weaken durability for speed" — it is "make
 the tradeoff explicit and configurable." `Segment` was always this way; the
-enum just makes it visible.
+enum just makes it visible. `Throughput` became the default in v0.6.0 because
+the crate's target use case is the local throughput buffer in front of cloud
+sync, where the cloud is the durable layer.
 
 ---
 

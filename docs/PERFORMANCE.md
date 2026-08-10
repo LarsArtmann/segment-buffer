@@ -135,16 +135,21 @@ sync. The cloud endpoint is normally the bottleneck; the levers below are for
 producers whose append or drain rate is gated by this buffer locally. They are
 all config-only — no code change, no format change, no new dependency.
 
-### 1. `DurabilityPolicy::Throughput` (biggest single win)
+### 1. `DurabilityPolicy` selection (biggest single win)
 
-The default `DurabilityPolicy::Segment` fsyncs the segment file's data on every
-flush. `Throughput` removes the fsync entirely. For cloud-sync deployments
-where the cloud endpoint holds the durable copy, this is the correct default —
-the local disk is a throughput buffer, not the system of record.
+The default `DurabilityPolicy::Throughput` (since v0.6.0) skips fsync entirely
+on every flush. This is the correct default for cloud-sync deployments where
+the cloud endpoint holds the durable copy — the local disk is a throughput
+buffer, not the system of record.
+
+If you override away from the default, `Segment` fsyncs the file data only
+(the pre-v0.6.0 behavior), and `Maximal` fsyncs both file and directory inode
+after rename.
 
 ```rust
 use segment_buffer::{DurabilityPolicy, SegmentConfig};
 
+// Throughput is already the default — this is just showing the explicit form.
 let config = SegmentConfig::builder()
     .durability(DurabilityPolicy::Throughput)
     .build();
@@ -152,7 +157,7 @@ let config = SegmentConfig::builder()
 
 **When NOT to use `Throughput`:** when this buffer IS the last copy of the data
 (standalone queue deployments). Use `Maximal` instead — it fsyncs both the file
-and the directory inode after rename, closing the ~5–30s rename-window gap that
+and the directory inode after rename, closing the ~5-30s rename-window gap that
 `Segment` leaves open. See the README "Crash behavior" table for the full
 policy matrix.
 

@@ -74,9 +74,10 @@
 //! **Durability:**
 //! - **Unflushed items are volatile** — the in-memory tail is lost on crash.
 //!   Call `flush()` at crash-sensitive boundaries.
-//! - **`DurabilityPolicy` trades durability for throughput** — `Segment`
-//!   (default) does not fsync the directory inode after rename; `Throughput`
-//!   skips fsync entirely. Only `Maximal` is fully crash-safe.
+//! - **`DurabilityPolicy` trades durability for throughput** —
+//!   `Throughput` (default) skips fsync entirely; `Segment` fsyncs the file
+//!   only; `Maximal` fsyncs file + directory. Only `Maximal` is fully
+//!   crash-safe.
 //!
 //! **Concurrent reads** (the canonical single-consumer drain loop never hits
 //! these):
@@ -168,7 +169,7 @@
 // docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
 // `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
 // Bump the version segment when cutting a release.
-#![doc(html_root_url = "https://docs.rs/segment-buffer/0.5.7")]
+#![doc(html_root_url = "https://docs.rs/segment-buffer/0.6.0")]
 // On docs.rs (nightly), enable the `doc_cfg` feature so feature-gated items
 // show an "Available on feature `encryption` only" badge. Inert on local
 // builds (stable) where `docsrs` is never set.
@@ -437,11 +438,9 @@ impl FlushPolicy {
 /// Selects how many `fsync`s the write path performs when [`flush`](SegmentBuffer::flush)
 /// spills a batch to disk. Higher durability costs throughput; lower
 /// durability relies on the cloud (or wherever the durable copy lives) to
-/// absorb crash loss. The cloud-sync vision for this crate makes
-/// [`Throughput`](Self::Throughput) the natural default once callers opt in,
-/// but [`Segment`](Self::Segment) remains the default for one release after
-/// the enum lands to avoid silently changing crash semantics for existing
-/// users.
+/// absorb crash loss. Since v0.6.0, [`Throughput`](Self::Throughput) is the
+/// default: the crate's target use case is the local throughput buffer in
+/// front of cloud sync, where the cloud endpoint is the durable layer.
 ///
 /// # Crash-loss semantics
 ///
@@ -452,14 +451,14 @@ impl FlushPolicy {
 /// | [`Throughput`](Self::Throughput) | no              | no                    | entire OS dirty window (~30s) — cloud is durable     |
 ///
 /// `Maximal` is for standalone-queue deployments where this buffer is the
-/// last copy. `Throughput` is the correct choice for cloud-sync deployments
-/// where the cloud endpoint holds the durable copy and the local disk is a
-/// throughput buffer. `Segment` is the pre-v0.5.0 behavior, kept as the
-/// default for one release for backward compatibility.
+/// last copy. `Throughput` (the default since v0.6.0) is the correct choice
+/// for cloud-sync deployments where the cloud endpoint holds the durable
+/// copy and the local disk is a throughput buffer. `Segment` is the
+/// pre-v0.6.0 default.
 ///
 /// # The rename-window gap (why `Segment` is not "fully durable")
 ///
-/// `Segment` (today's default) calls `file.sync_all()` on the segment data
+/// `Segment` (the pre-v0.6.0 default) calls `file.sync_all()` on the segment data
 /// before `fs::rename`, but it does **not** `dir.sync_all()` after the
 /// rename. On ext4/xfs defaults, a host crash within the kernel's dir-inode
 /// flush window (~5–30s) can leave the renamed file's data on disk but
@@ -483,19 +482,21 @@ pub enum DurabilityPolicy {
     Maximal,
 
     /// Fsync the segment file's data, but not the directory inode after
-    /// rename. This is the pre-v0.5.0 behavior. Kept as the
-    /// [`Default`] for one release after the enum
-    /// lands, then flips to [`Throughput`](Self::Throughput) with a
-    /// deprecation note.
-    #[default]
+    /// rename. This is the pre-v0.6.0 default. A host crash within the
+    /// kernel's directory-inode flush window (~5–30s on ext4/xfs defaults)
+    /// can leave the renamed file's data on disk but unreachable through
+    /// the directory. Select explicitly for standalone-queue deployments
+    /// that prefer the pre-v0.6.0 behavior over
+    /// [`Maximal`](Self::Maximal).
     Segment,
 
     /// Skip fsync entirely. The kernel's dirty-page flusher handles when the
     /// bytes reach disk (~30s on default Linux). The rename is still atomic,
     /// so concurrent readers never see a partial write — only a host crash
-    /// within the dirty window can lose the segment. Use when the cloud is
-    /// the durable layer and this buffer is the throughput buffer in front
-    /// of it.
+    /// within the dirty window can lose the segment. This is the
+    /// [`Default`] since v0.6.0: the cloud is the durable layer and this
+    /// buffer is the throughput buffer in front of it.
+    #[default]
     Throughput,
 }
 
@@ -537,10 +538,9 @@ pub struct SegmentConfig {
     pub compression_level: i32,
     /// Per-flush fsync behavior. See [`DurabilityPolicy`] for the three
     /// policies and their crash-loss tradeoffs. Default is
-    /// [`DurabilityPolicy::Segment`] (today's behavior) for backward
-    /// compatibility; cloud-sync deployments should switch to
-    /// [`DurabilityPolicy::Throughput`] once the cloud endpoint holds the
-    /// durable copy.
+    /// [`DurabilityPolicy::Throughput`] (since v0.6.0): the cloud is the
+    /// durable layer and this buffer is the throughput buffer. Switch to
+    /// [`DurabilityPolicy::Maximal`] when this buffer is the last copy.
     pub durability: DurabilityPolicy,
     /// Optional cipher for encrypting segment files at rest. When `None`,
     /// segments are written as plaintext zstd+CBOR. Held as an [`Arc`] so a
@@ -736,11 +736,11 @@ impl SegmentConfigBuilder {
     /// Override the per-flush durability policy. See [`DurabilityPolicy`] for
     /// the three policies and their crash-loss tradeoffs.
     ///
-    /// The default is [`DurabilityPolicy::Segment`] for backward
-    /// compatibility. For cloud-sync deployments where the cloud endpoint
-    /// holds the durable copy, [`DurabilityPolicy::Throughput`] eliminates
-    /// the per-flush fsync from the hot path (typically a 5–10× win on fast
-    /// storage).
+    /// The default is [`DurabilityPolicy::Throughput`] (since v0.6.0): no
+    /// fsync, the cloud is the durable layer. For standalone-queue
+    /// deployments where this buffer is the last copy, select
+    /// [`DurabilityPolicy::Maximal`] to fsync both the file and the
+    /// directory inode after rename.
     #[must_use]
     pub const fn durability(mut self, policy: DurabilityPolicy) -> Self {
         self.inner.durability = policy;
