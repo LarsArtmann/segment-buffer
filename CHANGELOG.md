@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sync_disk_bytes` and `recover`. In the property-test module, `prop_item`,
   `prop_config`, `prop_buffer`, `concurrent_test_config`, and `count_segments`
   helpers replace ~100 lines of repeated inline construction. Behaviour is
-  unchanged; all 184 tests + 12 loom tests pass.
+  unchanged; all 170 tests (default features) + 12 loom tests pass.
 
 ### Documentation
 
