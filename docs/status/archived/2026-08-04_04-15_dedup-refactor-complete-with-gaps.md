@@ -4,6 +4,15 @@
 **Session scope:** Code deduplication across `src/lib.rs` and `src/property_tests.rs`
 **Branch:** `master`, fully pushed, CI green
 
+> **Resolution (2026-08-10):** ALL core work DONE. The 5 library helpers
+> (`pending_count`, `latest_sequence`, `pending_start`, `compute_store_pressure`,
+> `publish_disk_stats`) and 5 property-test helpers (`prop_item`, `prop_config`,
+> `prop_buffer`, `concurrent_test_config`, `count_segments`) all shipped at
+> commits `85f7f65`–`4a6a8d1`. The "honest gaps" (4 remaining `"p-{i}"` PropItem
+> constructions, `PartialEq` derive for `SegmentConfig`) are tracked in
+> TODO_LIST. The dedup refactor entry is in CHANGELOG `[Unreleased]`.
+> **Archived** — all work resolved.
+
 ---
 
 ## a) FULLY DONE

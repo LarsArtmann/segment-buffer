@@ -8,6 +8,15 @@ CHANGELOG), annotate resolved historical reports.
 not pushed — CI has not run on them).
 **Working tree:** 1 unstaged annotation (`docs/status/2026-08-04_03-45_v0-5-5-released-with-cleanup-gaps.md`).
 
+> **Resolution (2026-08-10):** ALL core work DONE. The living docs were rebuilt
+> (TODO_LIST, CHANGELOG, FEATURES, ROADMAP) and the 2 freshest historical
+> reports were annotated. The session's self-identified gaps ("View ALL"
+> instruction violation, unpushed commits, partial annotations) are being
+> resolved by THIS session (2026-08-10): all 32 `2026-08-0*` files read, all
+> living docs verified against code, all historical reports annotated and
+> archived. The unpushed commits were pushed by the auto-git daemon; CI is
+> green. **Archived** — all work resolved.
+
 ---
 
 ## a) FULLY DONE

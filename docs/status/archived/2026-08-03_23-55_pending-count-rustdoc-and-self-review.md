@@ -4,6 +4,13 @@
 **Session scope:** Document the `pending_count()` vs `unflushed` distinction in rustdoc (TODO_LIST item f.7, Q3 option (c) from the 2026-08-02 backlog report).
 **Commits this session touched my work:** `359cea8` (daemon swept my `src/lib.rs` doc change into the scan-cache TOCTOU commit), `b149bfa` (daemon swept my CHANGELOG + TODO_LIST changes).
 
+> **Resolution (2026-08-10):** ALL core work DONE. The `pending_count()` vs
+> `unflushed` rustdoc clarification shipped in v0.5.5. The minor follow-up
+> items (`#[doc(alias)]`, propagation to `len()` / `BufferStats::pending_count`)
+> are aspirational polish, not tracked in TODO_LIST. The concurrent-agent
+> TOCTOU on TODO_LIST was resolved by the docs-health rebuild in the 2026-08-04
+> `04-34` session. **Archived** — all work resolved.
+
 ---
 
 ## a) FULLY DONE

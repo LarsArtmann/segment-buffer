@@ -28,7 +28,7 @@ Status legend: `[ ]` pending · `[~]` in progress.
   selectable for standalone-queue deployments. Update the default in
   `SegmentConfig::default()` / builder, add a deprecation callout in the rustdoc
   and `docs/DOMAIN_LANGUAGE.md`, and note the flip in the release CHANGELOG.
-  Source: AGENTS.md § Durability model, `docs/status/2026-08-04_04-15_*`.
+  Source: AGENTS.md § Durability model, `docs/status/archived/2026-08-04_04-15_*`.
 
 ---
 
@@ -39,18 +39,18 @@ Status legend: `[ ]` pending · `[~]` in progress.
   (snapshot the in-memory pending window under the lock, release the lock, then
   invoke the callback). It is covered statistically today by the stress test
   `concurrency_4_writers_1_reader_10k_events`; an exhaustive loom test would
-  prove every interleaving. Source: `docs/status/2026-08-04_04-15_*`.
+  prove every interleaving. Source: `docs/status/archived/2026-08-04_04-15_*`.
 
 - `[ ]` **Add a property test for `compute_store_pressure`.** The extracted
   helper (`bytes / max` clamped to `[0, 1]`) is a pure function and trivially
   testable, yet has no dedicated property test. Verify the `max == 0` early
   return, the clamp at `1.0`, and monotonicity in `bytes`. Source:
-  `docs/status/2026-08-04_04-15_*`.
+  `docs/status/archived/2026-08-04_04-15_*`.
 
 - `[ ]` **Add a fuzz target for `for_each_from`.** Arbitrary `start` + `limit`
   with concurrent mutations (flush / delete_acked) to complement the existing
   `fuzz_append_all` and `fuzz_recovery` targets. Source:
-  `docs/status/2026-08-04_04-15_*`.
+  `docs/status/archived/2026-08-04_04-15_*`.
 
 ---
 
@@ -60,14 +60,14 @@ Status legend: `[ ]` pending · `[~]` in progress.
   `src/property_tests.rs` to the `prop_item(i)` helper. No test asserts on the
   payload string content — only on ids and counts — so the conversion is safe
   and removes the last inline-construction noise. Source:
-  `docs/status/2026-08-04_04-15_*`.
+  `docs/status/archived/2026-08-04_04-15_*`.
 
 - `[ ]` **Derive `PartialEq` for `SegmentConfig`.** Would make test assertions
   on config equality direct instead of field-by-field. Verify the cipher field
   (`Arc<dyn SegmentCipher + Send + Sync>`) does not block the derive (it should
   not — `Arc` of a non-`PartialEq` trait object does, so this may need
   narrowing to the builder or a test-only comparison helper). Source:
-  `docs/status/2026-08-04_04-15_*`.
+  `docs/status/archived/2026-08-04_04-15_*`.
 
 ---
 

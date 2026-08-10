@@ -4,6 +4,13 @@
 
 **Outcome:** All 5 failures resolved. `buildflow format` exits 0. But the session cut corners and left debt.
 
+> **Resolution (2026-08-10):** ALL core work DONE. The 5 buildflow formatter
+> failures were fixed by adding nixfmt, dprint, shfmt, and prettier to the
+> devShell; `dprint.json` and `.buildflow.yml` were created; all shell scripts
+> were shfmt-formatted. The formatter setup shipped in v0.5.5. The 50-item
+> brainstorm in section f) is aspirational — no item is tracked in TODO_LIST.
+> **Archived** — all work resolved.
+
 ---
 
 ## a) FULLY DONE

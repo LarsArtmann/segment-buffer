@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helpers replace ~100 lines of repeated inline construction. Behaviour is
   unchanged; all 184 tests + 12 loom tests pass.
 
+### Documentation
+
+- **Version-label corrections across living docs** (FEATURES.md, README.md,
+  AGENTS.md, ROADMAP.md): the post-v0.5.5 docs-health pass corrected every
+  stale version reference — `_(unreleased)_` labels → `_(v0.5.5)_`, "current
+  release is v0.5.4" → v0.5.5, "All 8 versions" → "All 12 versions", gate count
+  14 → 15, and property-test count 25 → 28. No code change.
+
 ## [0.5.5] - 2026-08-04
 
 Non-breaking release: panic-free public API, live `segment_count`,

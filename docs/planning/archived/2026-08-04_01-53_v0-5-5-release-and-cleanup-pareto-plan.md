@@ -2,7 +2,15 @@
 
 **Date:** 2026-08-04 01:53
 **Author:** docs-health + update-old-docs session (second pass)
-**Status:** Planning — awaiting user approval before execution
+**Status:** ~~Planning — awaiting user approval before execution~~ **FULLY EXECUTED.**
+
+> **Resolution (2026-08-10):** Every Phase 1 task (P1.1–P1.13) in this plan was
+> executed. v0.5.5 was released on 2026-08-04 (tag `v0.5.5`, commit `8e2bcbf`),
+> published to crates.io and docs.rs. All testing gaps (P1.8, P1.9, P1.12) were
+> closed; `examples/segment_tuning.rs` (P1.7) shipped; all doc-count corrections
+> (P1.4, P1.5) landed; the AGENTS.md verification-discipline update (P1.6)
+> shipped. The TODO_LIST was rebuilt with 7 genuinely open, bounded items.
+> **Archived.**
 
 ---
 

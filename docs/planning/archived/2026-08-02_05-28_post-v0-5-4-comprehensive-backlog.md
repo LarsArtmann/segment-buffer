@@ -1,7 +1,15 @@
 # Pareto Plan: Post-v0.5.4 Comprehensive Backlog
 
 **Date:** 2026-08-02 05-28 UTC
-**Status:** Planning document — point-in-time snapshot
+**Status:** ~~Planning document — point-in-time snapshot~~ **FULLY EXECUTED.**
+
+> **Resolution (2026-08-10):** Every Tier 0–3 task (M01–M24) in this plan was
+> executed by subsequent sessions (2026-08-02 through 2026-08-04). v0.5.5 was
+> released on 2026-08-04, delivering all accumulated work: panic-free API,
+> `segment_size_stats`, scan-cache TOCTOU fix, live `segment_count`, strict
+> Clippy architecture. The two deferred design decisions (D01 health-check
+> primitive → rejected in ROADMAP § Non-goals; D02 panic-free guarantee →
+> shipped as public contract in v0.5.5) are both resolved. **Archived.**
 **Scope:** ALL open work identified from TODO_LIST.md, recent status reports
 (2026-08-02 batch + 2026-07-22/23 gaps), and the docs-health audit findings.
 

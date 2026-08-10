@@ -5,6 +5,13 @@
 **Working tree at session end:** Clean (all changes auto-committed by daemon).
 **CI status (origin/master `04a28b7`):** **RED** — `CI` workflow `failure` (needless_collect on macOS+1.86). Nix workflow green. Fix exists locally but 6 commits unpushed.
 
+> **Resolution (2026-08-10):** ALL core work DONE. The ROADMAP→TODO_LIST
+> analysis was completed; the clobbered TODO_LIST item was restored by the
+> docs-health rebuild. CI was turned green by subsequent sessions. The CI-red
+> at session time (`needless_collect`) was fixed and pushed; v0.5.5 shipped
+> green. Remaining open items (live `segment_count`, `segment_size_stats`,
+> panic-free API) all shipped in v0.5.5. **Archived** — all work resolved.
+
 ---
 
 ## a) FULLY DONE
