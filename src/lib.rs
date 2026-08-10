@@ -51,6 +51,52 @@
 //! [Schema evolution](https://github.com/LarsArtmann/segment-buffer/blob/master/docs/DOMAIN_LANGUAGE.md#schema-evolution-of-t)
 //! section for compatible-change patterns and migration strategies.
 //!
+//! # Limitations
+//!
+//! Every limitation here is a deliberate design decision or accepted tradeoff,
+//! not an oversight. The full rationale lives in
+//! [LIMITATIONS.md](https://github.com/LarsArtmann/segment-buffer/blob/master/docs/LIMITATIONS.md).
+//!
+//! **Process model:**
+//! - **Single-process per directory** — enforced by `flock`; multiple threads
+//!   are fine, multiple processes get [`SegmentError::Locked`]. Use IPC if you
+//!   need multi-process access.
+//! - **Synchronous only** — no `async` methods, no hidden threads, no built-in
+//!   background flush worker. Decouple flush timing with `FlushPolicy::Manual`
+//!   and a caller-owned timer thread.
+//!
+//! **Delivery semantics:**
+//! - **At-least-once, not exactly-once** — server-side idempotency on
+//!   `(producer_id, seq)` is required for effectively-once delivery.
+//! - **No cursor persistence** — the crate does not own a cursor file; the
+//!   caller must persist the read cursor independently.
+//!
+//! **Durability:**
+//! - **Unflushed items are volatile** — the in-memory tail is lost on crash.
+//!   Call `flush()` at crash-sensitive boundaries.
+//! - **`DurabilityPolicy` trades durability for throughput** — `Segment`
+//!   (default) does not fsync the directory inode after rename; `Throughput`
+//!   skips fsync entirely. Only `Maximal` is fully crash-safe.
+//!
+//! **Concurrent reads** (the canonical single-consumer drain loop never hits
+//! these):
+//! - **Spurious `Io(NotFound)` under concurrent `delete_acked`** — the segment
+//!   was already acknowledged; retry the read.
+//! - **Transient gaps under concurrent `flush`** — items move to a new segment
+//!   file the directory scan already missed; a subsequent `read_from` observes
+//!   them.
+//!
+//! **Data model:**
+//! - **No schema evolution for `T`** — the CBOR payload is unversioned.
+//!   See [Schema evolution of `T`](#schema-evolution-of-t) above.
+//! - **No streaming cipher** — the whole segment is buffered during
+//!   encode and decode; a streaming AEAD is tracked under envelope v2.
+//!
+//! **Scope boundaries:**
+//! - **No cloud client, retry policy, or backpressure policy** — the crate
+//!   provides [`SegmentBuffer::store_pressure`] as a signal; the decision to
+//!   block, sample, drop, or crash is the caller's.
+//!
 //! # Example
 //!
 //! ```no_run

@@ -14,6 +14,17 @@
 #   scripts/verify-gate.sh --no-actionlint     # skip the GitHub workflow lint
 #   scripts/verify-gate.sh --no-changelog-links # skip the CHANGELOG tag-link check
 #
+# Selective run:
+#   scripts/verify-gate.sh --list               # print all gate names, exit 0
+#   scripts/verify-gate.sh --only=fmt,test      # run only the named gates
+#
+# Gate names for --only= (use commas, no spaces):
+#   fmt clippy-default clippy-encryption clippy-fuzz
+#   test-default test-encryption doc html-root-url
+#   cargo-lock msrv-consistency
+#   cargo-deny cargo-audit loom lychee changelog-links actionlint
+#   nix-flake-check
+#
 # Tool availability: cargo fmt/clippy/test/doc come with the toolchain.
 # cargo-deny, cargo-audit, lychee, and actionlint are invoked via
 # `nix run nixpkgs#...` so the script works on a plain `nix develop` shell
@@ -30,6 +41,9 @@ RUN_LOOM=1
 RUN_LYCHEE=1
 RUN_ACTIONLINT=1
 RUN_CHANGELOG_LINKS=1
+ONLY_MODE=0
+ONLY_GATES=()
+
 for arg in "$@"; do
 	case "$arg" in
 	-a | --all) STOP_ON_FIRST=0 ;;
@@ -38,6 +52,43 @@ for arg in "$@"; do
 	--no-lychee) RUN_LYCHEE=0 ;;
 	--no-actionlint) RUN_ACTIONLINT=0 ;;
 	--no-changelog-links) RUN_CHANGELOG_LINKS=0 ;;
+	--list)
+		cat <<-'LIST'
+			fmt
+			clippy-default
+			clippy-encryption
+			clippy-fuzz
+			test-default
+			test-encryption
+			doc
+			html-root-url
+			cargo-lock
+			msrv-consistency
+			cargo-deny
+			cargo-audit
+			loom
+			lychee
+			changelog-links
+			actionlint
+			nix-flake-check
+		LIST
+		exit 0
+		;;
+	--only=*)
+		ONLY_MODE=1
+		raw="${arg#--only=}"
+		IFS=',' read -ra ONLY_GATES <<<"$raw"
+		# Normalise: trim whitespace, lower-case is unnecessary (names are
+		# already lowercase). Warn on unknown names so typos are caught early.
+		known="fmt clippy-default clippy-encryption clippy-fuzz test-default test-encryption doc html-root-url cargo-lock msrv-consistency cargo-deny cargo-audit loom lychee changelog-links actionlint nix-flake-check"
+		for g in "${ONLY_GATES[@]}"; do
+			if [[ " $known " != *" $g "* ]]; then
+				echo "ERROR: unknown gate '$g' in --only." >&2
+				echo "Available gates: scripts/verify-gate.sh --list" >&2
+				exit 2
+			fi
+		done
+		;;
 	-h | --help)
 		# Print the header comment block (everything from line 2 up to the first
 		# non-comment line). Self-maintaining: no hardcoded line range to drift
@@ -51,6 +102,22 @@ for arg in "$@"; do
 		;;
 	esac
 done
+
+# should_run <slug>
+# Returns 0 (run) if:
+#   - --only is active AND the slug is in the --only list, OR
+#   - --only is NOT active (defer to --no-* flags checked at each call site)
+# Returns 1 (skip) if --only is active and the slug is not listed.
+should_run() {
+	local slug="$1"
+	if [[ "$ONLY_MODE" == "1" ]]; then
+		for g in "${ONLY_GATES[@]}"; do
+			[[ "$g" == "$slug" ]] && return 0
+		done
+		return 1
+	fi
+	return 0
+}
 
 PASS=0
 FAIL=0
@@ -86,25 +153,49 @@ run() {
 	return 0
 }
 
-run "fmt" cargo fmt --all -- --check
-run "clippy(default)" cargo clippy --all-targets -- -D warnings
-run "clippy(encryption)" cargo clippy --all-targets --features encryption -- -D warnings
-run "clippy(fuzz)" cargo clippy --all-targets --features fuzz -- -D warnings
-run "test(default)" cargo test --no-fail-fast
-run "test(encryption)" cargo test --no-fail-fast --features encryption
-run "doc" env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features encryption
-run "html_root_url" scripts/check-html-root-url.sh
+if should_run "fmt"; then
+	run "fmt" cargo fmt --all -- --check
+fi
+if should_run "clippy-default"; then
+	run "clippy(default)" cargo clippy --all-targets -- -D warnings
+fi
+if should_run "clippy-encryption"; then
+	run "clippy(encryption)" cargo clippy --all-targets --features encryption -- -D warnings
+fi
+if should_run "clippy-fuzz"; then
+	run "clippy(fuzz)" cargo clippy --all-targets --features fuzz -- -D warnings
+fi
+if should_run "test-default"; then
+	run "test(default)" cargo test --no-fail-fast
+fi
+if should_run "test-encryption"; then
+	run "test(encryption)" cargo test --no-fail-fast --features encryption
+fi
+if should_run "doc"; then
+	run "doc" env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features encryption
+fi
+if should_run "html-root-url"; then
+	run "html_root_url" scripts/check-html-root-url.sh
+fi
+if should_run "cargo-lock"; then
+	run "cargo-lock" cargo fetch --locked
+fi
+if should_run "msrv-consistency"; then
+	run "msrv-consistency" scripts/check-msrv.sh
+fi
 
-if [[ "$RUN_SUPPLY_CHAIN" == "1" ]]; then
+if should_run "cargo-deny" && [[ "$RUN_SUPPLY_CHAIN" == "1" ]]; then
 	run "cargo-deny" nix run nixpkgs#cargo-deny -- check
+fi
+if should_run "cargo-audit" && [[ "$RUN_SUPPLY_CHAIN" == "1" ]]; then
 	run "cargo-audit" nix run nixpkgs#cargo-audit -- audit
 fi
 
-if [[ "$RUN_LOOM" == "1" ]]; then
+if should_run "loom" && [[ "$RUN_LOOM" == "1" ]]; then
 	run "loom" env RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release
 fi
 
-if [[ "$RUN_LYCHEE" == "1" ]]; then
+if should_run "lychee" && [[ "$RUN_LYCHEE" == "1" ]]; then
 	# Link-check every markdown file CI checks. Mirrors .github/workflows/ci.yml's
 	# lychee job so anchor/link drift is caught locally, not just in CI.
 	#
@@ -118,7 +209,7 @@ if [[ "$RUN_LYCHEE" == "1" ]]; then
 	run "lychee" nix run nixpkgs#lychee -- --config .github/lychee.toml '*.md' 'docs/**/*.md' 'fuzz/README.md'
 fi
 
-if [[ "$RUN_CHANGELOG_LINKS" == "1" ]]; then
+if should_run "changelog-links" && [[ "$RUN_CHANGELOG_LINKS" == "1" ]]; then
 	# Validate that every version link in CHANGELOG.md resolves to a real GitHub
 	# tag. Catches the drift where a release entry points at a tag that was never
 	# pushed (or was renamed). Hits the GitHub API — skip with
@@ -126,15 +217,16 @@ if [[ "$RUN_CHANGELOG_LINKS" == "1" ]]; then
 	run "changelog-links" scripts/check-changelog-links.sh
 fi
 
-# actionlint: YAML parse is the floor. Catches ${{ }} expression syntax errors,
-# `needs:` cycle detection, deprecated/outdated action versions, and runner/os
-# typos that the YAML parser accepts silently. Mirrors the CI `actionlint` job.
-# Skip locally with --no-actionlint (e.g. offline run).
-if [[ "$RUN_ACTIONLINT" == "1" ]]; then
+if should_run "actionlint" && [[ "$RUN_ACTIONLINT" == "1" ]]; then
+	# actionlint: YAML parse is the floor. Catches ${{ }} expression syntax errors,
+	# `needs:` cycle detection, deprecated/outdated action versions, and runner/os
+	# typos that the YAML parser accepts silently. Mirrors the CI `actionlint` job.
 	run "actionlint" nix run nixpkgs#actionlint -- .github/workflows/*.yml
 fi
 
-run "nix flake check" nix flake check --no-build
+if should_run "nix-flake-check"; then
+	run "nix flake check" nix flake check --no-build
+fi
 
 printf '\n========================================\n'
 printf 'verify-gate: %d passed, %d failed\n' "$PASS" "$FAIL"

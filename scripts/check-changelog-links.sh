@@ -6,7 +6,18 @@
 # a tag that hasn't been pushed yet (or was renamed).
 #
 # Usage: scripts/check-changelog-links.sh
-# Exits non-zero if any link is broken.
+#        GITHUB_TOKEN=... scripts/check-changelog-links.sh
+#
+# Exits non-zero if any link is broken. Exits zero (with a warning) if the
+# GitHub API rate limit is exhausted — this is an infrastructure issue, not
+# a broken link, so it degrades gracefully instead of failing CI.
+#
+# Rate limits:
+#   Unauthenticated:  60 requests/hour per IP
+#   With GITHUB_TOKEN: 5000 requests/hour per token
+#
+# CI automatically provides GITHUB_TOKEN via secrets.GITHUB_TOKEN. For local
+# runs, set it manually if you hit the 60/hour limit.
 
 set -euo pipefail
 
@@ -17,6 +28,12 @@ CHANGELOG="CHANGELOG.md"
 if [[ ! -f "$CHANGELOG" ]]; then
 	echo "ERROR: $CHANGELOG not found" >&2
 	exit 1
+fi
+
+# Build curl auth args if GITHUB_TOKEN is set.
+AUTH_ARGS=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+	AUTH_ARGS+=(-H "Authorization: Bearer $GITHUB_TOKEN")
 fi
 
 # Extract GitHub compare/tag URLs from CHANGELOG.md
@@ -35,6 +52,43 @@ fi
 PASS=0
 FAIL=0
 
+# check_tag <tag> <source_url>
+# Queries the GitHub git/ref API. Returns 0 on success, 1 on failure.
+# On HTTP 403 (rate limit), warns and exits the script with 0 (graceful
+# degradation) — a rate limit is not a broken link.
+check_tag() {
+	local tag="$1"
+	local source_url="$2"
+	local http_code
+	http_code=$(curl -sSL -o /dev/null -w '%{http_code}' \
+		"${AUTH_ARGS[@]}" \
+		"https://api.github.com/repos/LarsArtmann/segment-buffer/git/ref/tags/$tag" \
+		2>/dev/null || echo "000")
+
+	case "$http_code" in
+		200)
+			PASS=$((PASS + 1))
+			;;
+		403)
+			# Rate-limited. Degrade gracefully — this is an infrastructure
+			# issue, not a broken link. The link will be checked on the next
+			# run with a fresh budget.
+			echo "WARN: GitHub API returned 403 (rate limit likely exhausted)." >&2
+			if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+				echo "  Tip: set GITHUB_TOKEN to bump from 60/hr to 5000/hr." >&2
+			fi
+			echo "  Skipping remaining tag checks." >&2
+			echo ""
+			echo "CHANGELOG link check: $PASS passed, $FAIL failed (rate-limited, degraded)"
+			exit 0
+			;;
+		*)
+			echo "FAIL: tag '$tag' not found (HTTP $http_code) — referenced in $source_url"
+			FAIL=$((FAIL + 1))
+			;;
+	esac
+}
+
 for url in "${URLS[@]}"; do
 	# Use the GitHub API to check if the tag(s) exist
 	# For compare URLs, extract both tags
@@ -50,25 +104,11 @@ for url in "${URLS[@]}"; do
 			if [[ "$tag" == "HEAD" ]]; then
 				continue
 			fi
-			http_code=$(curl -sSL -o /dev/null -w '%{http_code}' \
-				"https://api.github.com/repos/LarsArtmann/segment-buffer/git/ref/tags/$tag" 2>/dev/null || echo "000")
-			if [[ "$http_code" == "200" ]]; then
-				PASS=$((PASS + 1))
-			else
-				echo "FAIL: tag '$tag' not found (HTTP $http_code) — referenced in $url"
-				FAIL=$((FAIL + 1))
-			fi
+			check_tag "$tag" "$url"
 		done
 	elif [[ "$url" == *"/releases/tag/"* ]]; then
 		tag="${url##*/releases/tag/}"
-		http_code=$(curl -sSL -o /dev/null -w '%{http_code}' \
-			"https://api.github.com/repos/LarsArtmann/segment-buffer/git/ref/tags/$tag" 2>/dev/null || echo "000")
-		if [[ "$http_code" == "200" ]]; then
-			PASS=$((PASS + 1))
-		else
-			echo "FAIL: tag '$tag' not found (HTTP $http_code) — referenced in $url"
-			FAIL=$((FAIL + 1))
-		fi
+		check_tag "$tag" "$url"
 	fi
 done
 

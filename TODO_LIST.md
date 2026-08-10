@@ -45,24 +45,24 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## CI / process
 
-- `[ ]` **Audit CI vs local gate parity.** Enumerate every check in `ci.yml`
-  and every check in `scripts/verify-gate.sh`, diff the two lists, document or
-  fix every divergence. Source:
-  `docs/status/archived/2026-08-04_00-07_*`.
+All CI / process items from this section were resolved in the post-v0.5.6
+CI-hardening session:
 
-- `[ ]` **Add clippy with full lint stack to the MSRV CI job.** Currently the
-  MSRV job only runs `cargo check`, not `cargo clippy` with the full
-  `[lints.clippy]` deny set. Source:
-  `docs/status/archived/2026-08-04_01-03_*`.
-
-- `[ ]` **Improve `check-changelog-links.sh` robustness.** Add rate-limit
-  detection (HTTP 403 → warn + degrade gracefully) and `GITHUB_TOKEN` support
-  (bumps GitHub API rate limit from 60/hour to 5000/hour). Source:
-  `docs/status/archived/2026-08-04_00-07_*`.
-
-- `[ ]` **Add `--list` and `--only=` options to `verify-gate.sh`.** `--list`
-  prints all gate names without running; `--only=X,Y,Z` runs a subset for faster
-  iteration. Source: `docs/status/archived/2026-08-04_00-07_*`.
+- ~~**Audit CI vs local gate parity.~~ Fixed four divergences:
+  - Added `clippy(fuzz)` to CI `test` job (was local-only).
+  - Added `RUSTDOCFLAGS="-D warnings"` to CI doc build (local was stricter).
+  - Added `cargo-lock` (`cargo fetch --locked`) and `msrv-consistency`
+    (`check-msrv.sh`) to `verify-gate.sh` (were CI-only).
+  - Updated gate count from 15 to 17 in AGENTS.md.
+- ~~**Add clippy with full lint stack to the MSRV CI job.~~ Added `components:
+  clippy` and two clippy steps (default + encryption) to the `msrv` job.
+- ~~**Improve `check-changelog-links.sh` robustness.~~ Added `GITHUB_TOKEN`
+  support (60/hr → 5000/hr), HTTP 403 rate-limit detection with graceful
+  degradation (exit 0 + warning), and a `check_tag()` helper to DRY the
+  curl logic. CI `changelog-links` job now passes `secrets.GITHUB_TOKEN`.
+- ~~**Add `--list` and `--only=` options to `verify-gate.sh`.~~ Implemented
+  with a `should_run()` gate filter, slug-based matching, unknown-name
+  validation, and full `--help` documentation.
 
 ---
 

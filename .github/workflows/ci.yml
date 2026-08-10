@@ -43,11 +43,19 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (encryption)
         run: cargo clippy --all-targets --features encryption -- -D warnings
+      - name: Clippy (fuzz)
+        # Lint the fuzz_hooks module exposed under --features fuzz. Without this
+        # step the module is never linted in CI — verify-gate.sh runs it locally.
+        run: cargo clippy --all-targets --features fuzz -- -D warnings
       - name: Test (default)
         run: cargo test --no-fail-fast
       - name: Test (encryption)
         run: cargo test --no-fail-fast --features encryption
       - name: Doc build
+        # RUSTDOCFLAGS="-D warnings" mirrors the local verify-gate.sh doc step.
+        # Without it, broken intra-doc links and missing doc warnings are silent.
+        env:
+          RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --features encryption
       - name: Cargo.lock up to date
         run: cargo fetch --locked
@@ -60,9 +68,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: "1.86"
+          components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Type-check AND lint on the MSRV toolchain. The `test` matrix already
+      # runs clippy on 1.86, but this job gives faster feedback (no test
+      # compilation) and makes the MSRV job self-contained — a regression in
+      # clippy compatibility on 1.86 shows up here without waiting for the
+      # full test matrix.
       - name: cargo check
         run: cargo check --all-targets --features encryption
+      - name: Clippy (MSRV, default)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (MSRV, encryption)
+        run: cargo clippy --all-targets --features encryption -- -D warnings
 
   msrv-consistency:
     name: MSRV consistency guard
@@ -93,9 +111,10 @@ jobs:
         # Catches the drift where a CHANGELOG entry references a tag that was
         # never pushed (or was renamed). Mirrors the scripts/verify-gate.sh
         # "changelog-links" step so the local gate is not stricter than CI.
-        # `curl` is preinstalled on ubuntu-latest runners. The script hits the
-        # GitHub tags API (unauthenticated, ~16 requests — well under the
-        # 60/hr-per-IP budget, same class of live-network check as lychee).
+        # GITHUB_TOKEN bumps the API rate limit from 60/hr to 5000/hr.
+        # The script degrades gracefully (exit 0) on 403 rate-limit anyway.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/check-changelog-links.sh
 
   supply-chain:

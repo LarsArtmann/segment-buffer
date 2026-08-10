@@ -231,6 +231,8 @@ remaining filenames. No WAL, no metadata database.
 - **Single-process per directory** — enforced by an exclusive `flock` at `open`.
 - **Crash recovery by filename** — no WAL, no metadata database.
 
+> **Limitations:** single-process, synchronous, at-least-once (not exactly-once), no cursor persistence, no cloud client. See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full list and the rationale behind each.
+
 ## Crash behavior (configurable)
 
 > **Shipped in v0.5.0.** The default remains `Segment` (today's behavior) for one release for backward compatibility; cloud-sync deployments should switch to `Throughput` once the cloud endpoint holds the durable copy. Pick the policy at construction: `SegmentConfig::builder().durability(DurabilityPolicy::Throughput).build()`.
