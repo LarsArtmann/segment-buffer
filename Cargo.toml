@@ -131,3 +131,12 @@ harness = false
 [[bench]]
 name = "bench_durability_policy"
 harness = false
+
+[[bench]]
+name = "bench_segment_size_stats"
+harness = false
+
+[[bench]]
+name = "bench_cipher"
+harness = false
+required-features = ["encryption"]

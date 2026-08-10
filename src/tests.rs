@@ -3555,7 +3555,6 @@ fn segment_size_stats_works_with_encrypted_segments() {
     assert!(s.p50_bytes <= s.p90_bytes);
     assert!(s.p90_bytes <= s.max_bytes);
 }
-
 #[cfg(feature = "encryption")]
 #[test]
 fn segment_size_stats_works_with_xchacha20_encrypted_segments() {
@@ -3606,4 +3605,126 @@ fn segment_size_stats_works_with_xchacha20_encrypted_segments() {
     assert!(s.min_bytes <= s.p50_bytes);
     assert!(s.p50_bytes <= s.p90_bytes);
     assert!(s.p90_bytes <= s.max_bytes);
+}
+
+/// `segment_size_stats` is an `O(n_segments)` scan performed **outside the
+/// buffer mutex**. Under concurrent `flush` (which creates new segments) and
+/// `delete_acked` (which removes old ones), the scan may see segments that
+/// are deleted between the directory scan and the per-file `segment_size`
+/// call — producing a transient `min_bytes` of 0 for the missing file.
+///
+/// This test proves:
+/// 1. **No panic** — `segment_size_stats` is panic-free under arbitrary
+///    concurrent mutation (the library has zero panic paths since v0.5.5).
+/// 2. **Structural invariants always hold** — when the call returns `Ok`,
+///    `min <= p50 <= p90 <= max` and `count == 0` implies all fields are 0.
+/// 3. **Exact correctness after settling** — once concurrent mutation stops,
+///    every field matches a brute-force directory scan.
+#[test]
+fn segment_size_stats_safe_under_concurrent_flush_and_delete() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let tmp = TempDir::new().unwrap();
+    let buf = Arc::new(
+        SegmentBuffer::open(
+            tmp.path(),
+            SegmentConfig {
+                flush_policy: FlushPolicy::Manual,
+                ..test_config(100 * 1024 * 1024)
+            },
+        )
+        .unwrap(),
+    );
+
+    // Pre-seed 5 segments so the deleter has something to remove while the
+    // writer is still producing new ones.
+    for round in 0..5u64 {
+        for j in 0..4u64 {
+            buf.append(test_item(round * 10 + j)).unwrap();
+        }
+        buf.flush().unwrap();
+    }
+
+    let structural_violations = Arc::new(AtomicU64::new(0));
+
+    thread::scope(|s| {
+        // Reader: hammer segment_size_stats in a tight loop.
+        let buf_r = Arc::clone(&buf);
+        let violations = Arc::clone(&structural_violations);
+        s.spawn(move || {
+            for _ in 0..200 {
+                if let Ok(stats) = buf_r.segment_size_stats() {
+                    let ok = stats.min_bytes <= stats.p50_bytes
+                        && stats.p50_bytes <= stats.p90_bytes
+                        && stats.p90_bytes <= stats.max_bytes
+                        && (stats.count == 0 || stats.min_bytes > 0 || stats.max_bytes > 0);
+                    // Note: min_bytes can transiently be 0 when a segment is
+                    // deleted between scan and size. The invariant we check is
+                    // that the ordering holds and count==0 implies all-zero.
+                    let all_zero_ok = stats.count != 0
+                        || (stats.min_bytes == 0 && stats.max_bytes == 0 && stats.mean_bytes == 0);
+                    if !(ok && all_zero_ok) {
+                        violations.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                // Err is acceptable: a transient directory read failure under
+                // extreme concurrency. No panic = pass.
+            }
+        });
+
+        // Writer: flush new segments.
+        let buf_w = Arc::clone(&buf);
+        s.spawn(move || {
+            for round in 0..20u64 {
+                for j in 0..4u64 {
+                    let id = 1000 + round * 10 + j;
+                    buf_w.append(test_item(id)).unwrap();
+                }
+                buf_w.flush().unwrap();
+                thread::sleep(Duration::from_micros(30));
+            }
+        });
+
+        // Deleter: remove old segments from the front.
+        let buf_d = Arc::clone(&buf);
+        s.spawn(move || {
+            for _ in 0..20 {
+                let stats = buf_d.stats();
+                if stats.segment_count > 0 && stats.pending_count == 0 {
+                    let _ = buf_d.delete_acked(stats.latest_sequence);
+                }
+                thread::sleep(Duration::from_micros(30));
+            }
+        });
+    });
+
+    // After settling, stats must exactly match the directory.
+    buf.sync_disk_bytes().unwrap();
+    let s = buf.segment_size_stats().unwrap();
+    let on_disk = count_disk_segments(tmp.path());
+    assert_eq!(
+        s.count, on_disk,
+        "after settling, segment_size_stats count must match directory"
+    );
+
+    if on_disk > 0 {
+        let mut sizes: Vec<u64> = fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".zst"))
+            .map(|e| e.metadata().map_or(0, |m| m.len()))
+            .collect();
+        sizes.sort();
+        assert_eq!(s.min_bytes, *sizes.first().unwrap());
+        assert_eq!(s.max_bytes, *sizes.last().unwrap());
+        assert!(s.min_bytes <= s.p50_bytes);
+        assert!(s.p50_bytes <= s.p90_bytes);
+        assert!(s.p90_bytes <= s.max_bytes);
+    }
+
+    assert_eq!(
+        structural_violations.load(Ordering::SeqCst),
+        0,
+        "segment_size_stats returned structurally invalid stats during concurrent mutation"
+    );
 }

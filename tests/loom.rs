@@ -12,6 +12,10 @@
 //!    by the stress test `concurrency_4_writers_1_reader_10k_events`. Loom
 //!    now covers it *exhaustively*: every interleaving of two threads with
 //!    a handful of sync ops is explored.
+//! 3. **`for_each_from` Phase 2 snapshot + `iter_from`** (the v0.5.5
+//!    expansion) — the snapshot-then-release-lock pattern introduced by the
+//!    panic-free refactor. Proves the in-memory window snapshot is never torn
+//!    across every interleaving with a concurrent `append`.
 //!
 //! ## What this does NOT cover
 //!
@@ -931,6 +935,168 @@ fn segment_count_self_heals_after_concurrent_flush_and_delete() {
             "after sync, segment_count ({}) must match the real on-disk count ({})",
             buf.stats().segment_count,
             on_disk,
+        );
+    });
+}
+
+// ===========================================================================
+// for_each_from Phase 2 snapshot + iter_from — v0.5.5 concurrency surface
+// ===========================================================================
+//
+// Since v0.5.5, `for_each_from` snapshots the in-memory pending window under
+// the lock, RELEASES the lock, then invokes the callback on the snapshot.
+// This eliminates the only panic path (re-entrant deadlock) but introduces a
+// new concurrency surface: the snapshot is a consistent prefix taken under one
+// lock, but the callback runs unlocked while a concurrent `append` / `flush` /
+// `delete_acked` may mutate state.
+//
+// `iter_from` delegates to `for_each_from` internally (it materialises the
+// callback's items into a `Vec<(u64, T)>`), so its concurrency surface is
+// identical. A dedicated loom test guards against future refactors that
+// decouple `iter_from` from `for_each_from`.
+//
+// What is under proof:
+//
+// 1. The snapshot is never torn — every item the callback sees is valid,
+//    strictly ascending, and unique.
+// 2. No deadlock or panic across every interleaving.
+// 3. After both threads settle, `stats()` is self-consistent.
+
+/// `for_each_from` Phase 2 (in-memory snapshot) racing `append` must never
+/// visit a torn, phantom, or out-of-order item.
+///
+/// Setup: append items 0..=2 in-memory (`FlushPolicy::Manual`, no flush so all
+/// items stay in Phase 2). Thread A: `for_each_from(0, 100, callback)`.
+/// Thread B: `append(item3)`. Loom explores every interleaving of the Phase 2
+/// lock + snapshot + release against the append's lock + push.
+#[test]
+fn for_each_from_snapshot_under_concurrent_append() {
+    loom::model(|| {
+        let dir = tempfile::tempdir().unwrap();
+        let buf: Arc<SegmentBuffer<Item>> =
+            Arc::new(SegmentBuffer::open(dir.path(), loom_config()).unwrap());
+
+        // Pre-populate: 3 items in-memory (Phase 2 territory).
+        buf.append(Item { id: 0 }).unwrap();
+        buf.append(Item { id: 1 }).unwrap();
+        buf.append(Item { id: 2 }).unwrap();
+
+        let b1 = buf.clone();
+        let h1 = thread::spawn(move || {
+            let mut visited: Vec<u64> = Vec::new();
+            let n = b1
+                .for_each_from(0, 100, |_seq, item| {
+                    visited.push(item.id);
+                })
+                .expect("for_each_from must succeed");
+            (n, visited)
+        });
+
+        let b2 = buf.clone();
+        let h2 = thread::spawn(move || {
+            b2.append(Item { id: 3 }).unwrap();
+        });
+
+        let (n, visited) = h1.join().unwrap();
+        h2.join().unwrap();
+
+        // The returned count must match the items visited.
+        assert_eq!(
+            n,
+            visited.len(),
+            "for_each_from returned count {n} but callback visited {} items",
+            visited.len()
+        );
+
+        // Every visited item must be valid (id < 4), strictly ascending, unique.
+        let mut prev: Option<u64> = None;
+        for &id in &visited {
+            assert!(
+                id < 4,
+                "phantom item in for_each_from callback: id={} (valid 0..=3)",
+                id
+            );
+            if let Some(p) = prev {
+                assert!(
+                    id > p,
+                    "out-of-order or duplicate in for_each_from: {} after {}",
+                    id,
+                    p
+                );
+            }
+            prev = Some(id);
+        }
+
+        // After settling, all 4 items must be accounted for.
+        let s = buf.stats();
+        assert_eq!(s.pending_count, 4, "all items must be counted after settle");
+        assert_eq!(
+            s.pending_count,
+            s.next_sequence.saturating_sub(s.head_sequence),
+            "stats() snapshot is torn"
+        );
+    });
+}
+
+/// `iter_from` (materialising iterator) under concurrent `append` must return
+/// valid, ordered, unique `(seq, item)` pairs with correct seq→item mapping.
+/// `iter_from` delegates to `for_each_from`, so this test catches corruption
+/// introduced by the materialisation layer and guards against future refactors
+/// that decouple `iter_from` from `for_each_from`.
+#[test]
+fn iter_from_under_concurrent_append() {
+    loom::model(|| {
+        let dir = tempfile::tempdir().unwrap();
+        let buf: Arc<SegmentBuffer<Item>> =
+            Arc::new(SegmentBuffer::open(dir.path(), loom_config()).unwrap());
+
+        buf.append(Item { id: 0 }).unwrap();
+        buf.append(Item { id: 1 }).unwrap();
+        buf.append(Item { id: 2 }).unwrap();
+
+        let b1 = buf.clone();
+        let h1 = thread::spawn(move || {
+            let iter = b1.iter_from(0, 100).expect("iter_from must succeed");
+            iter.map(|(seq, item)| (seq, item.id)).collect::<Vec<_>>()
+        });
+
+        let b2 = buf.clone();
+        let h2 = thread::spawn(move || {
+            b2.append(Item { id: 3 }).unwrap();
+        });
+
+        let pairs = h1.join().unwrap();
+        h2.join().unwrap();
+
+        // Every pair must have correct seq→id mapping and be strictly ascending.
+        let mut prev: Option<u64> = None;
+        for (seq, id) in &pairs {
+            assert_eq!(
+                *seq, *id,
+                "iter_from seq→item mapping broken: seq={seq} id={id}"
+            );
+            assert!(
+                *id < 4,
+                "phantom item in iter_from: id={} (valid 0..=3)",
+                id
+            );
+            if let Some(p) = prev {
+                assert!(
+                    *id > p,
+                    "out-of-order or duplicate in iter_from: {} after {}",
+                    id,
+                    p
+                );
+            }
+            prev = Some(*id);
+        }
+
+        let s = buf.stats();
+        assert_eq!(s.pending_count, 4);
+        assert_eq!(
+            s.pending_count,
+            s.next_sequence.saturating_sub(s.head_sequence),
+            "stats() snapshot is torn"
         );
     });
 }

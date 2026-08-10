@@ -37,6 +37,10 @@ path = "fuzz_targets/fuzz_append_all.rs"
 name = "fuzz_flush_policy"
 path = "fuzz_targets/fuzz_flush_policy.rs"
 
+[[bin]]
+name = "fuzz_for_each_from"
+path = "fuzz_targets/fuzz_for_each_from.rs"
+
 # Keep the fuzz crate out of the parent workspace so it builds independently
 # (it requires nightly + -Zsanitizer).
 [workspace]

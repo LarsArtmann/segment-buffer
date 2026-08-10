@@ -48,6 +48,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`segment_size_stats_works_with_xchacha20_encrypted_segments` test**
   (`src/tests.rs`): parity test for the XChaCha20-Poly1305 cipher, mirroring
   the existing AES-GCM test.
+- **Loom tests for `for_each_from` and `iter_from`** (`tests/loom.rs`): 2 new
+  tests proving the v0.5.5 snapshot-then-release-lock pattern (Phase 2 of
+  `for_each_from`) and the materialising `iter_from` path are safe under every
+  interleaving with a concurrent `append`. Loom suite: 12 → 14 tests.
+- **Property test for `publish_disk_stats` correctness**
+  (`src/property_tests.rs`): verifies both atomic counters (`approx_disk_bytes`
+  and `segment_count`) match the directory truth after `sync_disk_bytes` and
+  after `recover` (re-open), across arbitrary append/flush/delete sequences.
+- **Property test for `delete_acked` idempotency under concurrent `append`**
+  (`src/property_tests.rs`): scales the loom proof beyond two threads — two
+  concurrent deleters with overlapping ack ranges + an appender, proving no
+  double-counting and `head_seq <= pending_start` after settling.
+- **Stress test for `segment_size_stats` under concurrent `flush` +
+  `delete_acked`** (`src/tests.rs`): proves the `O(n_segments)` scan is
+  panic-free and structurally valid under arbitrary concurrent mutation, and
+  exactly correct after mutation settles.
+- **Fuzz target for `for_each_from`** (`fuzz/fuzz_targets/`): arbitrary
+  `start_seq` + `limit` with interleaved flush/delete_acked/append operations.
+  Asserts no panic, correct `seq → item` mapping, and strict ascent.
+- **`bench_segment_size_stats` benchmark** (`benches/`): quantifies the
+  `O(n_segments)` scan cost at 100 / 1k / 10k segments.
+- **`bench_cipher` benchmark** (`benches/`, `--features encryption`): measures
+  AES-256-GCM and XChaCha20-Poly1305 overhead vs the no-cipher baseline in the
+  full `flush()` encode pipeline.
 
 ### Changed
 

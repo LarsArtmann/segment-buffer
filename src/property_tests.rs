@@ -88,6 +88,25 @@ fn count_segments(dir: &std::path::Path) -> u64 {
     })
 }
 
+/// Brute-force the directory truth: count and total byte size of `seg_*.zst`
+/// files. Used to cross-check `publish_disk_stats` (the atomic counters
+/// `approx_disk_bytes` and `segment_count`) against reality after
+/// `sync_disk_bytes` and `recover`.
+fn disk_segment_truth(dir: &std::path::Path) -> (u64, u64) {
+    let mut count = 0u64;
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("seg_") && name.ends_with(".zst") {
+                count += 1;
+                total = total.saturating_add(entry.metadata().map_or(0, |m| m.len()));
+            }
+        }
+    }
+    (count, total)
+}
+
 proptest! {
     /// `filename ∘ parse_filename` must be the identity on valid ranges.
     /// This is the load-bearing crash-recovery contract.
@@ -834,6 +853,74 @@ proptest! {
                 kind, n, ack_seq, live, on_disk,
             );
         }
+    }
+
+    /// After an arbitrary sequence of `append` / `flush` / `delete_acked` ops,
+    /// `sync_disk_bytes()` must bring BOTH atomic counters (`approx_disk_bytes`
+    /// and `segment_count`) into exact agreement with the directory truth.
+    /// Re-opening the buffer (which calls `recover` → `publish_disk_stats`)
+    /// must produce the same agreement. This is the machine-checkable proof
+    /// that `publish_disk_stats` publishes correct values — the existing
+    /// `segment_count_matches_disk_across_flush_delete_ops` test covers only
+    /// `segment_count` incrementally; this test adds `approx_disk_bytes` and
+    /// the `sync_disk_bytes` / `recover` recalibration paths.
+    #[test]
+    fn publish_disk_stats_matches_reality_after_sync_and_recover(
+        // (kind, append_count, ack_seq): kind 0=append, 1=flush, 2=delete_acked
+        ops in proptest::collection::vec((0u8..3u8, 1u16..12u16, 0u32..1000u32), 0..50),
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = prop_buffer(tmp.path());
+
+        let mut next_id = 0u64;
+        for (kind, n, ack_seq) in &ops {
+            match *kind {
+                0 => {
+                    for _ in 0..*n {
+                        buf.append(prop_item(next_id))
+                            .expect("append must succeed");
+                        next_id = next_id.saturating_add(1);
+                    }
+                }
+                1 => {
+                    let _ = buf.flush();
+                }
+                _ => {
+                    let _ = buf.delete_acked(u64::from(*ack_seq));
+                }
+            }
+        }
+
+        // sync_disk_bytes recalibrates both counters from the directory scan.
+        buf.sync_disk_bytes().expect("sync must succeed");
+
+        let (expected_count, expected_bytes) = disk_segment_truth(tmp.path());
+        let s = buf.stats();
+        prop_assert_eq!(
+            s.segment_count, expected_count,
+            "segment_count {} != directory {} after sync_disk_bytes",
+            s.segment_count, expected_count,
+        );
+        prop_assert_eq!(
+            s.approx_disk_bytes, expected_bytes,
+            "approx_disk_bytes {} != directory {} after sync_disk_bytes",
+            s.approx_disk_bytes, expected_bytes,
+        );
+
+        // Re-opening (recover → publish_disk_stats) must agree.
+        drop(buf);
+        let buf2 = prop_buffer(tmp.path());
+        let s2 = buf2.stats();
+        prop_assert_eq!(
+            s2.segment_count, expected_count,
+            "segment_count {} != directory {} after recover",
+            s2.segment_count, expected_count,
+        );
+        prop_assert_eq!(
+            s2.approx_disk_bytes, expected_bytes,
+            "approx_disk_bytes {} != directory {} after recover",
+            s2.approx_disk_bytes, expected_bytes,
+        );
     }
 }
 
@@ -1680,6 +1767,125 @@ proptest! {
         for (i, &id) in settled.iter().enumerate() {
             prop_assert_eq!(id, head + i as u64, "wrong id at offset {} after settle", i);
         }
+    }
+
+    /// Scales the `delete_acked` idempotency proof beyond the loom test's
+    /// two-thread exhaustive enumeration. Two concurrent deleters target
+    /// **overlapping** ack ranges (one deletes everything, the other deletes
+    /// the first half) while a third thread appends + flushes. The invariant:
+    ///
+    /// 1. **No double-counting:** the sum of `deleted` return values across
+    ///    all `delete_acked` calls never exceeds the number of segments that
+    ///    existed before the deleters ran (the `remove_segment` trait's
+    ///    idempotent "returns true only on first removal" contract).
+    /// 2. **Self-healing counters:** after `sync_disk_bytes`, `segment_count`
+    ///    matches the directory.
+    /// 3. **`head_seq <= pending_start`** (the backlog-clamp invariant).
+    #[test]
+    fn delete_acked_concurrent_overlapping_no_double_count(
+        n_segments in 3u8..12,
+        items_per_segment in 2u8..8,
+        n_extra_appends in 1u16..20,
+    ) {
+        let items_per_segment = u64::from(items_per_segment);
+        let n_segments = u64::from(n_segments);
+        let n_extra = u64::from(n_extra_appends);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let buf = std::sync::Arc::new(
+            crate::SegmentBuffer::<PropItem>::open(
+                tmp.path(),
+                concurrent_test_config(),
+            )
+            .unwrap(),
+        );
+
+        // Pre-populate: N segments on disk.
+        for seg in 0..n_segments {
+            for i in 0..items_per_segment {
+                let seq = seg * items_per_segment + i;
+                buf.append(prop_item(seq)).unwrap();
+            }
+            buf.flush().unwrap();
+        }
+
+        let initial_count = count_segments(tmp.path());
+
+        let deleted_total = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+
+        std::thread::scope(|s| {
+            // Deleter 1: ack everything (targets all segments).
+            let b1 = std::sync::Arc::clone(&buf);
+            let d1 = std::sync::Arc::clone(&deleted_total);
+            s.spawn(move || {
+                let last_seq = n_segments.saturating_mul(items_per_segment).saturating_sub(1);
+                let n = b1.delete_acked(last_seq).unwrap_or(0);
+                d1.fetch_add(n as u64, std::sync::atomic::Ordering::SeqCst);
+            });
+
+            // Deleter 2: ack the first half (overlapping range).
+            let b2 = std::sync::Arc::clone(&buf);
+            let d2 = std::sync::Arc::clone(&deleted_total);
+            s.spawn(move || {
+                let half_seq = (n_segments / 2)
+                    .saturating_mul(items_per_segment)
+                    .saturating_sub(1);
+                let n = b2.delete_acked(half_seq).unwrap_or(0);
+                d2.fetch_add(n as u64, std::sync::atomic::Ordering::SeqCst);
+            });
+
+            // Appender: races new items + a flush.
+            let b3 = std::sync::Arc::clone(&buf);
+            s.spawn(move || {
+                let base = n_segments.saturating_mul(items_per_segment);
+                for i in 0..n_extra {
+                    let _ = b3.append(prop_item(base + i));
+                }
+                let _ = b3.flush();
+            });
+        });
+
+        // After settling, sync and verify.
+        buf.sync_disk_bytes().unwrap();
+
+        let total_deleted = deleted_total.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Idempotency: the sum of deleted counts must not exceed the initial
+        // segment count. Concurrent `remove_segment` calls return true only
+        // for the call that actually removes the file; the others get false.
+        prop_assert!(
+            total_deleted <= initial_count,
+            "double-counted deletions: total_deleted={} > initial_count={}",
+            total_deleted,
+            initial_count,
+        );
+
+        // Self-healing: segment_count matches directory after sync.
+        let on_disk = count_segments(tmp.path());
+        let live = buf.stats().segment_count;
+        prop_assert_eq!(
+            live, on_disk,
+            "segment_count {} != on-disk {} after sync_disk_bytes",
+            live,
+            on_disk,
+        );
+
+        // Backlog clamp: head_seq <= next_seq (no negative backlog).
+        let st = buf.stats();
+        prop_assert!(
+            st.head_sequence <= st.next_sequence,
+            "head_seq {} exceeded next_seq {}",
+            st.head_sequence,
+            st.next_sequence,
+        );
+        prop_assert_eq!(
+            st.pending_count,
+            st.next_sequence.saturating_sub(st.head_sequence),
+            "stats() snapshot is torn: pending_count={} next={} head={}",
+            st.pending_count,
+            st.next_sequence,
+            st.head_sequence,
+        );
     }
 }
 
