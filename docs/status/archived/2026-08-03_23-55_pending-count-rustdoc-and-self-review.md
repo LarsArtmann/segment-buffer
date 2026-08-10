@@ -206,7 +206,7 @@ leave them.
 This directly addresses the discoverability failure mode that caused the
 confusion in the first place — a user searching rustdoc for "backlog" finds
 nothing today. It's a one-liner with no downside, but it's slightly beyond
-"document the distinction" and edges toward "improve discoverability," which
+"document the distinction" and edges toward "improve discoverability", which
 wasn't explicitly in the task scope.
 
 ### Q3: The auto-git daemon committed my work mixed into multi-scope commits (`359cea8`, `b149bfa`) with unrelated scan-cache/loom/ROADMAP changes. Do you want me to do anything about that, or is this expected daemon behavior?

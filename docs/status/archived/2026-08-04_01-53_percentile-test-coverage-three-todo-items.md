@@ -153,7 +153,7 @@ did NOT run `scripts/verify-gate.sh`, which also includes:
 **Justification (not excuse):** I only added test code — no new dependencies,
 no doc link changes, no concurrency code. The supply-chain and link gates
 cannot be affected by adding test functions. The loom gate exercises
-concurrency code I didn't touch. But the rule says "run the gate," not "run the
+concurrency code I didn't touch. But the rule says "run the gate", not "run the
 gate when you think it matters."
 
 ### d.3 — Did NOT check `gh run list --limit 4`

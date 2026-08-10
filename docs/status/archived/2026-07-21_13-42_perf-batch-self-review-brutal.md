@@ -132,7 +132,7 @@ Sorted roughly by impact/effort. Numbers in brackets are my honest uncertainty, 
 39. **Review whether `examples/cloud_sync.rs`** should reference the background_flush pattern for the producer side.
 40. **Consider a property test for the tuning guide's code snippets** — compile-check them as doctests so they don't rot.
 41. **Add a `cargo doc` linkcheck** for the new AGENTS.md cross-links to ensure they resolve.
-42. **Review the `docs/DOMAIN_LANGUAGE.md`** — does "flush," "worker," "backpressure" need glossary entries given the new pattern doc?
+42. **Review the `docs/DOMAIN_LANGUAGE.md`** — does "flush", "worker", "backpressure" need glossary entries given the new pattern doc?
 43. **Consider whether the "Flush offloading" AGENTS.md section** should be in `docs/DOMAIN_LANGUAGE.md` instead (it's domain terminology, not non-obvious context).
 44. **Audit the plan doc's §3 table** — update statuses to "shipped/cancelled" so a future reader doesn't think the worker is still pending.
 45. **Consider archiving the plan doc** under `docs/planning/done/` once v0.6.0 ships, with a resolution note.

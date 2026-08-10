@@ -370,7 +370,7 @@ README.md` (do NOT use `git reset`).
 2. **"How it works" diagram disposition.** Should the pipeline diagram
    (a) stay in README as marketing, (b) be shortened to a one-liner, or
    (c) be moved to `docs/INTERNALS.md` and linked? The docs-health
-   template says "internal architecture does not belong in README," but
+   template says "internal architecture does not belong in README", but
    the diagram is also doing real sales work (it visually proves the
    mutex-never-held-across-I/O invariant). This is a judgment call that
    needs your call on the README's audience.

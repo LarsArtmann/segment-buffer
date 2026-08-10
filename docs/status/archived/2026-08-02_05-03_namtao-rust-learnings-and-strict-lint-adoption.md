@@ -256,7 +256,7 @@ rewrite, cipher `new()` infallible constructors, cloud-sync example
 
 Open items tracked in:
 
-- **TODO_LIST.md**: "Update CONTRIBUTING.md lint commands," "Document
+- **TODO_LIST.md**: "Update CONTRIBUTING.md lint commands", "Document
   panic-free guarantee as public API contract?"
 - **ROADMAP.md**: "Lint evolution — incremental `pedantic` / `nursery`"
 

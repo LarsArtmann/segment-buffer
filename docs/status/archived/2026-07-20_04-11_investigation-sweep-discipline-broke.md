@@ -219,7 +219,7 @@ applied to a docs.rs behavior claim.)
    it blocks the session._
 3. **CI-red is a stop-work condition.** Add to the checklist: if `gh run
 list` shows red on the target branch, the first work item is "turn it
-   green," not "add features on top."
+   green", not "add features on top."
 
 ### 5.2 Documentation drift
 

@@ -13,7 +13,7 @@
 **Root cause:** CI run [30855036471](https://github.com/LarsArtmann/segment-buffer/actions/runs/30855036471) failed on the `1.86` matrix entries (ubuntu + macos) with three clippy errors:
 
 1. **`unknown lint: clippy::unchecked_time_subtraction`** — This lint was renamed from `unchecked_duration_subtraction` to `unchecked_time_subtraction` sometime after MSRV 1.86. On 1.86, clippy does not recognize the new name and emits `E0602` (unknown lint), which is promoted to a hard error by `RUSTFLAGS=-D warnings`. The lint was explicitly listed in both `Cargo.toml` and `fuzz/Cargo.toml` `[lints.clippy]` sections.
-2. **`missing_const_for_fn`** on `SegmentBuffer::path()` — MSRV 1.86's clippy nursery group flags this method as "could be const fn," but the `&PathBuf → &Path` deref coercion is not const-evaluable. This is a known false positive on older toolchains.
+2. **`missing_const_for_fn`** on `SegmentBuffer::path()` — MSRV 1.86's clippy nursery group flags this method as "could be const fn", but the `&PathBuf → &Path` deref coercion is not const-evaluable. This is a known false positive on older toolchains.
 3. **`needless_collect`** on `iter_from` — already fixed in commit `0e1a332` (prior session); not present in current tree.
 
 **Fixes applied:**
@@ -46,7 +46,7 @@ _Extracted from [monitor365](https://github.com/LarsArtmann/monitor365) (private
 ## License
 ```
 
-This moves the social-proof line from "first thing after badges" to "quiet closer before license," matching the user's request.
+This moves the social-proof line from "first thing after badges" to "quiet closer before license", matching the user's request.
 
 ### 3. ASCII diagram converted to Mermaid
 

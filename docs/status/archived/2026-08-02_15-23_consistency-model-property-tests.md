@@ -285,7 +285,7 @@ The deterministic tests do not have this problem. The concurrent ones are
 
 2. **Is the DOMAIN_LANGUAGE.md "a retry sees them" claim a guarantee you
    want to keep?** If yes, the scan cache must be fixed. If it's acceptable
-   to weaken it to "a retry sees them after the next directory mutation,"
+   to weaken it to "a retry sees them after the next directory mutation",
    the docs can be updated and the fix deferred. This is a product
    decision, not a technical one.
 

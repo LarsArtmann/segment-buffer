@@ -84,7 +84,7 @@ Nothing — every phase reached a definitive outcome (win, rejection, or measure
 
 ### 1. **NEVER PUSHED TO CI — AGAIN.** This is the headline failure.
 
-The prior session's status report (`2026-07-20_01-37_*`) listed "never pushed to CI" as failure #1 out of 8, called it "the precise failure mode that AGENTS.md rule 9 (added the same session) was written to prevent," and the rule itself was written specifically to prevent this class of failure. **This session repeated it verbatim.** There are now **5 unpushed commits** on `master`, all unverified by GitHub Actions:
+The prior session's status report (`2026-07-20_01-37_*`) listed "never pushed to CI" as failure #1 out of 8, called it "the precise failure mode that AGENTS.md rule 9 (added the same session) was written to prevent", and the rule itself was written specifically to prevent this class of failure. **This session repeated it verbatim.** There are now **5 unpushed commits** on `master`, all unverified by GitHub Actions:
 
 ```
 5521d5a perf: pool zstd CCtx on SegmentBuffer (2x append) + read_from scan-cache bench

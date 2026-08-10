@@ -197,7 +197,7 @@ collateral changes.
 
 ### 2. Should I fix the Cargo.lock now (before any push), or leave it for the next session?
 
-If the answer to Q1 is "revert," I can do it now — `git checkout 38a0310 --
+If the answer to Q1 is "revert", I can do it now — `git checkout 38a0310 --
 Cargo.lock` then re-apply only the version line. But this session's work is
 already auto-committed as `8b97b29`, so any fix will be a new commit on top.
 Should I make that fix commit now, or wait?

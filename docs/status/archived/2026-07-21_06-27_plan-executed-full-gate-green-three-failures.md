@@ -73,7 +73,7 @@ Last session I edited `docs/CIPHERS.md` to change `rand = "0.8"` → `"0.10"` an
 
 T2.2 (AGENTS data flow diagram), T2.6 (FEATURES numeric claims), T2.7 (CROC_LESSONS) were marked "verified clean" based on a single read. T2.6 in particular: I trusted that "597M+ events" and "187,811 fuzz runs" and "~12 ns stats" and "~21× for_each_from faster" were historical claims correctly framed — but I did not grep the codebase or run the benchmarks to confirm the numbers are still defensible. They may have drifted (e.g. if `for_each_from` regressed since the 0.4.0 measurement, "~21×" is now false).
 
-**The honest framing:** "verified clean" should mean "I confirmed the claim against code or command output," not "I read it and it sounded plausible." For numeric claims in FEATURES.md, the verification is re-running the bench or grepping the source — neither of which I did.
+**The honest framing:** "verified clean" should mean "I confirmed the claim against code or command output", not "I read it and it sounded plausible." For numeric claims in FEATURES.md, the verification is re-running the bench or grepping the source — neither of which I did.
 
 ### d.4 — I repeated last session's " Fitness score math was hand-wavy" pattern in a new form
 

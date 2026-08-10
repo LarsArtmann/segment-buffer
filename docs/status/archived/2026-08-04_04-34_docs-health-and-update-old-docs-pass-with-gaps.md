@@ -124,7 +124,7 @@ closes this.
 The user said **"View ALL `**/2026-08-*` files!"** I read 6 (the 2 planning
 docs + the 4 most-recent status reports). I did **not** read the other 26
 status reports from 2026-08-02 through 2026-08-04. The docs-health HARVEST
-mode says "most recent 1–3," and I leaned on that — but the user explicitly
+mode says "most recent 1–3", and I leaned on that — but the user explicitly
 overrode it with "ALL." The unread reports may carry open items that should
 have been harvested into TODO_LIST, and unresolved numbered items that should
 have been annotated.
@@ -151,7 +151,7 @@ commit-hash markers. Not started.
 The script hits the GitHub tags API without a `User-Agent` header. GitHub
 returns HTTP 403 (not 404) for requests without a User-Agent — the **exact
 same bug class** as the crates.io `publish.yml` fix (`ac629b8`). Result:
-13 of 14 tag lookups "fail," the gate is effectively dead. The status report
+13 of 14 tag lookups "fail", the gate is effectively dead. The status report
 `2026-08-04_03-45_v0-5-5-released-with-cleanup-gaps.md` flagged this as an
 improvement item; I noted it but did not fix it.
 
@@ -227,7 +227,7 @@ with proper messages per the git-commits format.
 ## e) WHAT WE SHOULD IMPROVE
 
 1. **Follow the user's literal instructions over skill defaults.** When the
-   user says "ALL," read ALL. The skill's "most recent 1–3" is a default for
+   user says "ALL", read ALL. The skill's "most recent 1–3" is a default for
    the _unsupervised_ case; an explicit user override wins.
 
 2. **Run the full `scripts/verify-gate.sh`, not the minimal subset, before any

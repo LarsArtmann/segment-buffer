@@ -2,7 +2,7 @@
 
 What segment-buffer does **not** do, and why. Every limitation here is a
 deliberate design decision or an accepted tradeoff, not an oversight. If a
-limitation says "by design," it means changing it would break a core invariant
+limitation says "by design", it means changing it would break a core invariant
 or re-introduce a problem the crate was created to solve.
 
 > See also: [DOMAIN_LANGUAGE.md](./DOMAIN_LANGUAGE.md) for the consistency

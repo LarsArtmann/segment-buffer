@@ -242,7 +242,7 @@ one pass.
    This session is the first to actually run it. The four prior sessions that
    hand-reconstructed the gate had no excuse — the script with `--no-*` flags
    for blocked checks takes 30 seconds. The discipline failure was not "the
-   gate is too slow," it was "nobody ran the script." This is now proven; future
+   gate is too slow", it was "nobody ran the script." This is now proven; future
    sessions have no excuse.
 
 4. **Doc-count claims should cite `grep -c` commands, not hardcoded numbers.**

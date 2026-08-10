@@ -104,7 +104,7 @@ filesystem where mtime advances), but I did not:
   not model — but the `MockStore` injected via `open_with_store` could in
   principle stub `scan()`, and I did not even investigate that.
 
-**The honest claim is: "fixed and 40× stable on my machine," not "proven
+**The honest claim is: "fixed and 40× stable on my machine", not "proven
 race-free."**
 
 ### 2. The `mtime_supported == false` path is still racy — documented, not fixed
@@ -160,7 +160,7 @@ warn against.
 ### 2. I declared "all 14 gates green" without pushing
 
 The verification-discipline rules (this repo, AGENTS.md) are explicit: rule
-10 — "CI-red is a stop-work condition," and the spirit of rule 9 — require
+10 — "CI-red is a stop-work condition", and the spirit of rule 9 — require
 `gh run list` to validate the _actual commits_, not just local equivalents.
 I ran `gh run list`, saw green on **old** master, and then declared done
 with **7 unpushed commits.** The local gate is not a CI-green claim. My
@@ -175,7 +175,7 @@ mtime is stale iff something mutated during readdir; the guard then forces a
 re-scan; coarse-FS edge handled by the mtime_supported probe returning
 false) is sound, but I put only a code comment in `scan_segments`, not a
 proper analysis anywhere durable. If the next maintainer asks "are you sure
-this is race-free?", the answer is "40 release runs and a comment," not a
+this is race-free?", the answer is "40 release runs and a comment", not a
 proof. For a concurrency fix in a durability substrate, that is below the
 bar.
 
@@ -184,7 +184,7 @@ bar.
 The prior session's report ends with a brutal self-assessment. I added a
 "Resolution" appendix — which is the _correct_ non-destructive pattern per
 the update-old-docs philosophy. But I framed everything as "the prior
-session's open items," when _I am a continuation of that same work_ and several
+session's open items", when _I am a continuation of that same work_ and several
 of its failures (skipped gate, hidden bug) are only partially redressed. The
 framing distances me from accountability I should own.
 
@@ -216,7 +216,7 @@ framing distances me from accountability I should own.
    either a real fix (re-validate via a second mechanism on that path) or a
    tracked known-issue entry, not a subordinate clause.
 
-6. **When a task says "run the full gate," run `scripts/verify-gate.sh`, not
+6. **When a task says "run the full gate", run `scripts/verify-gate.sh`, not
    a hand-reconstructed subset.** I hand-ran the 14 gates individually this
    time (correct outcome), but the script exists to prevent exactly the
    "I'll just run the ones I remember" drift that bit the prior session.

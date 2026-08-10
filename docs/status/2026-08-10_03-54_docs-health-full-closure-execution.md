@@ -257,7 +257,7 @@ session instead of closing it out when done.
 
 5. **Annotate `2026-08-04_01-37_buildflow-formatter-fixes`** — 50 numbered
    brainstorm items, header-only today. Either annotate the 5 core fixes
-   inline and classify the rest as "brainstorm, not tracked," or add a
+   inline and classify the rest as "brainstorm, not tracked", or add a
    clearer header note.
 6. **Annotate `2026-08-04_04-15_dedup-refactor-complete`** — header-only
    today. Strike the completed refactor items inline.

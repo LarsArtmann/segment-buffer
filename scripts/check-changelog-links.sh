@@ -66,26 +66,26 @@ check_tag() {
 		2>/dev/null || echo "000")
 
 	case "$http_code" in
-		200)
-			PASS=$((PASS + 1))
-			;;
-		403)
-			# Rate-limited. Degrade gracefully — this is an infrastructure
-			# issue, not a broken link. The link will be checked on the next
-			# run with a fresh budget.
-			echo "WARN: GitHub API returned 403 (rate limit likely exhausted)." >&2
-			if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-				echo "  Tip: set GITHUB_TOKEN to bump from 60/hr to 5000/hr." >&2
-			fi
-			echo "  Skipping remaining tag checks." >&2
-			echo ""
-			echo "CHANGELOG link check: $PASS passed, $FAIL failed (rate-limited, degraded)"
-			exit 0
-			;;
-		*)
-			echo "FAIL: tag '$tag' not found (HTTP $http_code) — referenced in $source_url"
-			FAIL=$((FAIL + 1))
-			;;
+	200)
+		PASS=$((PASS + 1))
+		;;
+	403)
+		# Rate-limited. Degrade gracefully — this is an infrastructure
+		# issue, not a broken link. The link will be checked on the next
+		# run with a fresh budget.
+		echo "WARN: GitHub API returned 403 (rate limit likely exhausted)." >&2
+		if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+			echo "  Tip: set GITHUB_TOKEN to bump from 60/hr to 5000/hr." >&2
+		fi
+		echo "  Skipping remaining tag checks." >&2
+		echo ""
+		echo "CHANGELOG link check: $PASS passed, $FAIL failed (rate-limited, degraded)"
+		exit 0
+		;;
+	*)
+		echo "FAIL: tag '$tag' not found (HTTP $http_code) — referenced in $source_url"
+		FAIL=$((FAIL + 1))
+		;;
 	esac
 }
 
