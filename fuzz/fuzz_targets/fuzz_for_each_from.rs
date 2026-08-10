@@ -68,15 +68,9 @@ fuzz_target!(|data: &[u8]| {
                 // must be strictly ascending. An Err is acceptable (Io race).
                 let mut prev: Option<u64> = None;
                 let result = buf.for_each_from(start_seq, limit, |seq, item| {
-                    assert_eq!(
-                        seq, *item,
-                        "seq→item mapping broken: seq={seq} item={item}"
-                    );
+                    assert_eq!(seq, *item, "seq→item mapping broken: seq={seq} item={item}");
                     if let Some(p) = prev {
-                        assert!(
-                            *item > p,
-                            "out-of-order item: {item} after {p}"
-                        );
+                        assert!(*item > p, "out-of-order item: {item} after {p}");
                     }
                     prev = Some(*item);
                 });
