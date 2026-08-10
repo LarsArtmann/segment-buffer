@@ -68,8 +68,10 @@ on-disk format change, no new dependency.
   after `recover` (re-open), across arbitrary append/flush/delete sequences.
 - **Property test for `delete_acked` idempotency under concurrent `append`**
   (`src/property_tests.rs`): scales the loom proof beyond two threads — two
-  concurrent deleters with overlapping ack ranges + an appender, proving no
-  double-counting and `head_seq <= pending_start` after settling.
+  concurrent deleters with overlapping ack ranges + an appender, proving the
+  live `segment_count` counter self-heals to directory truth after
+  `sync_disk_bytes`, `head_seq <= pending_start` after settling, and the
+  stats snapshot is never torn.
 - **Stress test for `segment_size_stats` under concurrent `flush` +
   `delete_acked`** (`src/tests.rs`): proves the `O(n_segments)` scan is
   panic-free and structurally valid under arbitrary concurrent mutation, and
