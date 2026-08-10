@@ -25,6 +25,25 @@ use crate::DurabilityPolicy;
 /// Mirrors the constant that lived in `segment.rs` before the I/O split.
 const TMP_SUFFIX: &str = ".tmp";
 
+/// Sealed-trait marker for [`SegmentStore`].
+///
+/// This module is private: no downstream crate can name [`Sealed`] and
+/// therefore none can implement [`SegmentStore`]. The trait is re-exported
+/// under `#[cfg(any(test, feature = "loom"))]` so in-tree test helpers
+/// (`HookedStore`, loom `MockStore`) can opt in — see
+/// [`SegmentStoreSealed`](crate::store::SegmentStoreSealed).
+mod private {
+    /// Marker trait that seals [`SegmentStore`] against external
+    /// implementation.
+    pub trait Sealed {}
+}
+
+/// Re-export of the sealed marker for in-tree test helpers and loom mock
+/// stores. Not reachable by external crates: the `store` module is private
+/// and this re-export only exists under test/loom configurations.
+#[cfg(any(test, feature = "loom"))]
+pub use private::Sealed as SegmentStoreSealed;
+
 /// I/O boundary for [`crate::SegmentBuffer`]: owns the on-disk representation
 /// of segment files.
 ///
@@ -55,7 +74,13 @@ const TMP_SUFFIX: &str = ".tmp";
 /// # Errors
 ///
 /// All fallible methods return [`Result<T>`](crate::error::Result).
-pub trait SegmentStore: Send + Sync {
+///
+/// # Sealed
+///
+/// This trait is **sealed**: it cannot be implemented outside this crate.
+/// The seal is enforced by the private [`Sealed`](SegmentStoreSealed)
+/// supertrait. Only [`RealStore`] and in-tree test mocks implement it.
+pub trait SegmentStore: private::Sealed + Send + Sync {
     /// Create the segment directory and all parents. Idempotent.
     ///
     /// # Errors
@@ -155,6 +180,8 @@ impl RealStore {
         self.dir.join(filename(range.start, range.end))
     }
 }
+
+impl private::Sealed for RealStore {}
 
 impl SegmentStore for RealStore {
     fn create_dir_all(&self) -> Result<()> {

@@ -159,7 +159,7 @@ pub use error::{IoSite, Result, SegmentError};
 #[cfg(feature = "loom")]
 pub use segment::SegmentRange;
 #[cfg(feature = "loom")]
-pub use store::{RealStore, SegmentStore};
+pub use store::{RealStore, SegmentStore, SegmentStoreSealed};
 
 /// Internal helpers exposed for in-tree fuzz targets and deep integration tests.
 ///
@@ -322,6 +322,43 @@ impl std::fmt::Display for FlushPolicy {
 }
 
 impl FlushPolicy {
+    /// Check internal constraints that, if violated, make the policy behave
+    /// incorrectly (e.g. an interval trigger that can never fire).
+    ///
+    /// Currently validates:
+    ///
+    /// - [`BatchOrIntervalMin`](Self::BatchOrIntervalMin): `min_batch <= batch_size`
+    ///   and `interval <= max_interval`.
+    ///
+    /// In debug builds, violations panic via `debug_assert!`. In release
+    /// builds this method is a no-op — the policy is still usable but may
+    /// behave surprisingly if the constraints are violated. Call this from
+    /// any construction path that receives caller-supplied values.
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if a constraint is violated.
+    pub fn validate(&self) {
+        if let Self::BatchOrIntervalMin {
+            batch_size,
+            min_batch,
+            interval,
+            max_interval,
+        } = self
+        {
+            debug_assert!(
+                min_batch <= batch_size,
+                "min_batch ({min_batch}) must not exceed batch_size ({batch_size}) — \
+                 otherwise the interval trigger is unreachable"
+            );
+            debug_assert!(
+                interval <= max_interval,
+                "interval ({interval:?}) must not exceed max_interval ({max_interval:?}) — \
+                 otherwise the gated interval is unreachable"
+            );
+        }
+    }
+
     /// Returns `true` when the policy says the buffer should flush now.
     ///
     /// `pending_len` is the current length of the in-memory `unflushed` Vec;
@@ -502,6 +539,37 @@ impl std::fmt::Display for SegmentConfig {
     }
 }
 
+impl PartialEq for SegmentConfig {
+    /// Compare all configuration knobs by value and the cipher by pointer
+    /// identity ([`Arc::ptr_eq`]).
+    ///
+    /// The cipher field (`Option<Arc<dyn SegmentCipher + Send + Sync>>`)
+    /// cannot be compared by value because the `SegmentCipher` trait does not
+    /// require `PartialEq` (comparing key material is a security concern).
+    /// Instead, two configs are equal when all scalar knobs match **and**:
+    ///
+    /// - both ciphers are `None`, or
+    /// - both ciphers point to the **same** [`Arc`] (pointer identity).
+    ///
+    /// Two separately-constructed ciphers wrapping the same key compare as
+    /// **not equal**. This is intentional — it prevents false positives from
+    /// shallow key comparison while still supporting the common test pattern
+    /// of cloning a config or sharing a cipher `Arc`.
+    fn eq(&self, other: &Self) -> bool {
+        self.flush_policy == other.flush_policy
+            && self.max_size_bytes == other.max_size_bytes
+            && self.compression_level == other.compression_level
+            && self.durability == other.durability
+            && match (&self.cipher, &other.cipher) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+    }
+}
+
+impl Eq for SegmentConfig {}
+
 impl Default for SegmentConfig {
     fn default() -> Self {
         Self {
@@ -584,16 +652,13 @@ impl SegmentConfigBuilder {
         interval: std::time::Duration,
         max_interval: std::time::Duration,
     ) -> Self {
-        debug_assert!(
-            min_batch <= batch_size,
-            "min_batch ({min_batch}) must not exceed batch_size ({batch_size}) — \
-             otherwise the interval trigger is unreachable"
-        );
-        debug_assert!(
-            interval <= max_interval,
-            "interval ({interval:?}) must not exceed max_interval ({max_interval:?}) — \
-             otherwise the gated interval is unreachable"
-        );
+        FlushPolicy::BatchOrIntervalMin {
+            batch_size,
+            min_batch,
+            interval,
+            max_interval,
+        }
+        .validate();
         self.flush_policy(FlushPolicy::BatchOrIntervalMin {
             batch_size,
             min_batch,
@@ -686,6 +751,7 @@ impl SegmentConfigBuilder {
     /// Materialise the configured [`SegmentConfig`].
     #[must_use]
     pub fn build(self) -> SegmentConfig {
+        self.inner.flush_policy.validate();
         self.inner
     }
 }
@@ -1276,6 +1342,8 @@ where
         store: Arc<dyn store::SegmentStore + Send + Sync>,
         lock_file: Option<std::fs::File>,
     ) -> Result<(Self, RecoveryReport)> {
+        config.flush_policy.validate();
+
         // `create_dir_all` was already run by the caller if it owned the
         // store (production path). When the test harness passes a fresh
         // store, run it here for symmetry. Idempotent, so a second call is

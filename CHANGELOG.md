@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`PartialEq` + `Eq` impls for `SegmentConfig`** (`src/lib.rs`): enables
+  direct `assert_eq!` on configs instead of field-by-field comparison.
+  The cipher field is compared by `Arc::ptr_eq` (pointer identity) because
+  the `SegmentCipher` trait does not require `PartialEq` — comparing key
+  material is a security concern. Two configs sharing the same cipher
+  `Arc` are equal; two configs with distinct-but-equivalent cipher
+  instances are not.
+- **`FlushPolicy::validate()` method** (`src/lib.rs`): centralises the
+  `debug_assert!`s for `BatchOrIntervalMin` constraints (`min_batch <=
+  batch_size`, `interval <= max_interval`) into a reusable public method,
+  callable from both the builder and `open()`. The builder's
+  `flush_at_batch_or_interval_min` and `SegmentConfigBuilder::build` both
+  call it, and `open_internal` validates the final policy before use.
+- **Sealed `SegmentStore` trait** (`src/store.rs`): the trait now requires
+  a private `Sealed` supertrait marker, preventing downstream
+  implementations. Only `RealStore` and in-tree test mocks can implement
+  it. The seal marker (`SegmentStoreSealed`) is re-exported under the
+  `loom` feature so loom mock stores can opt in.
 - **`Display` impls for `DurabilityPolicy`, `BufferStats`, and `SegmentConfig`**
   (`src/lib.rs`): all three types were `Debug`-only. Now they produce stable,
   human-readable single-line summaries suitable for logging. `SegmentConfig`'s
@@ -50,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sync_disk_bytes` and `recover`. In the property-test module, `prop_item`,
   `prop_config`, `prop_buffer`, `concurrent_test_config`, and `count_segments`
   helpers replace ~100 lines of repeated inline construction. Behaviour is
-  unchanged; all 170 tests (default features) + 12 loom tests pass.
+  unchanged; all 145 tests (default features) + 12 loom tests pass.
 
 ### Documentation
 

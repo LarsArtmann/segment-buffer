@@ -68,27 +68,6 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ---
 
-## Code quality
-
-- `[ ]` **Derive `PartialEq` for `SegmentConfig`.** Would make test assertions
-  on config equality direct instead of field-by-field. Verify the cipher field
-  (`Arc<dyn SegmentCipher + Send + Sync>`) does not block the derive (it should
-  not — `Arc` of a non-`PartialEq` trait object does, so this may need
-  narrowing to the builder or a test-only comparison helper). Source:
-  `docs/status/archived/2026-08-04_04-15_*`.
-
-- `[ ]` **Add `FlushPolicy::validate()` method.** Move the `debug_assert!`s for
-  `min_batch <= batch_size` etc. into a reusable method callable from both the
-  builder and `open()`. Source:
-  `docs/status/archived/2026-08-02_06-15_*`.
-
-- `[ ]` **Seal the `SegmentStore` trait.** The trait is reachable under the
-  `loom` feature; the "not semver" claim currently relies on convention, not
-  enforcement. Standard supertrait-in-private-module pattern. Source:
-  `docs/status/archived/2026-08-04_04-15_*`.
-
----
-
 ## Benchmarks
 
 - `[ ]` **Add `bench_segment_size_stats`.** Quantify the `O(n_segments)` scan

@@ -98,7 +98,8 @@ use std::collections::HashMap;
 use loom::sync::{Arc, Mutex};
 use loom::thread;
 use segment_buffer::{
-    DurabilityPolicy, FlushPolicy, Result, SegmentBuffer, SegmentConfig, SegmentRange, SegmentStore,
+    DurabilityPolicy, FlushPolicy, Result, SegmentBuffer, SegmentConfig, SegmentRange,
+    SegmentStore, SegmentStoreSealed,
 };
 use serde::{Deserialize, Serialize};
 
@@ -145,6 +146,8 @@ impl MockStore {
         }
     }
 }
+
+impl SegmentStoreSealed for MockStore {}
 
 impl SegmentStore for MockStore {
     fn create_dir_all(&self) -> Result<()> {

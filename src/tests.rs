@@ -810,6 +810,8 @@ impl HookedStore {
     }
 }
 
+impl store::SegmentStoreSealed for HookedStore {}
+
 impl store::SegmentStore for HookedStore {
     fn create_dir_all(&self) -> super::Result<()> {
         self.inner.create_dir_all()
@@ -1063,7 +1065,7 @@ fn batch_or_interval_min_flushes_at_batch_size() {
         SegmentConfig {
             flush_policy: FlushPolicy::BatchOrIntervalMin {
                 batch_size: 4,
-                min_batch: 100,
+                min_batch: 3,
                 interval: std::time::Duration::from_secs(30),
                 max_interval: std::time::Duration::from_secs(60),
             },
@@ -1148,6 +1150,76 @@ fn batch_or_interval_min_min_batch_equals_batch_size() {
 // =========================================================================
 
 #[test]
+fn flush_policy_validate_accepts_all_valid_variants() {
+    FlushPolicy::Batch(1).validate();
+    FlushPolicy::Batch(0).validate();
+    FlushPolicy::Interval(Duration::from_secs(1)).validate();
+    FlushPolicy::BatchOrInterval {
+        batch_size: 100,
+        interval: Duration::from_secs(5),
+    }
+    .validate();
+    FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 10,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    }
+    .validate();
+    FlushPolicy::Manual.validate();
+}
+
+#[test]
+fn flush_policy_validate_accepts_boundary_values() {
+    // min_batch == batch_size is valid (just means interval needs full batch).
+    FlushPolicy::BatchOrIntervalMin {
+        batch_size: 100,
+        min_batch: 100,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    }
+    .validate();
+    // interval == max_interval is valid (safety valve fires at same time).
+    FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 10,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(5),
+    }
+    .validate();
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "min_batch")]
+fn flush_policy_validate_rejects_min_batch_exceeding_batch_size() {
+    FlushPolicy::BatchOrIntervalMin {
+        batch_size: 10,
+        min_batch: 100,
+        interval: Duration::from_secs(5),
+        max_interval: Duration::from_secs(60),
+    }
+    .validate();
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "interval")]
+fn flush_policy_validate_rejects_interval_exceeding_max_interval() {
+    FlushPolicy::BatchOrIntervalMin {
+        batch_size: 256,
+        min_batch: 10,
+        interval: Duration::from_secs(60),
+        max_interval: Duration::from_secs(5),
+    }
+    .validate();
+}
+
+// =========================================================================
+// FlushPolicy Display tests
+// =========================================================================
+
+#[test]
 fn flush_policy_display_formats_each_variant() {
     assert_eq!(FlushPolicy::Batch(256).to_string(), "batch(256)");
     assert_eq!(
@@ -1198,7 +1270,10 @@ fn buffer_stats_display_formats_all_fields() {
     assert!(s.contains("pending=42"), "missing pending_count: {s}");
     assert!(s.contains("head=50"), "missing head_sequence: {s}");
     assert!(s.contains("next=101"), "missing next_sequence: {s}");
-    assert!(s.contains("disk=4.0KB/1.0MB"), "missing human-readable bytes: {s}");
+    assert!(
+        s.contains("disk=4.0KB/1.0MB"),
+        "missing human-readable bytes: {s}"
+    );
     assert!(s.contains("in 4 segments"), "missing segment_count: {s}");
     assert!(s.contains("pressure=0.00"), "missing store_pressure: {s}");
 }
@@ -1230,6 +1305,116 @@ fn segment_config_display_masks_cipher_when_set() {
     assert!(
         !s.contains("cipher=None"),
         "Display must not leak cipher internals: {s}"
+    );
+}
+
+// =========================================================================
+// Error-path tests (no encryption)
+// =========================================================================
+
+// =========================================================================
+// SegmentConfig PartialEq tests
+// =========================================================================
+
+#[test]
+fn segment_config_partial_eq_matching_defaults() {
+    let a = SegmentConfig::default();
+    let b = SegmentConfig::default();
+    assert_eq!(a, b, "two default configs must be equal");
+}
+
+#[test]
+fn segment_config_partial_eq_different_fields() {
+    let a = SegmentConfig::default();
+    let b = SegmentConfig {
+        compression_level: 6,
+        ..SegmentConfig::default()
+    };
+    assert_ne!(a, b, "different compression_level must not be equal");
+    let b = SegmentConfig {
+        max_size_bytes: 1024,
+        ..SegmentConfig::default()
+    };
+    assert_ne!(a, b, "different max_size_bytes must not be equal");
+    let b = SegmentConfig {
+        durability: DurabilityPolicy::Throughput,
+        ..SegmentConfig::default()
+    };
+    assert_ne!(a, b, "different durability must not be equal");
+}
+
+#[test]
+fn segment_config_partial_eq_different_flush_policy() {
+    let a = SegmentConfig::builder().flush_at_batch_size(64).build();
+    let b = SegmentConfig::builder().flush_at_batch_size(128).build();
+    assert_ne!(a, b);
+}
+
+#[test]
+fn segment_config_partial_eq_cipher_none_vs_some_not_equal() {
+    let plain = SegmentConfig::default();
+    struct NopCipher;
+    impl crate::SegmentCipher for NopCipher {
+        fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+            Ok(plaintext.to_vec())
+        }
+        fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+            Ok(ciphertext.to_vec())
+        }
+    }
+    let with_cipher = SegmentConfig {
+        cipher: Some(std::sync::Arc::new(NopCipher)),
+        ..SegmentConfig::default()
+    };
+    assert_ne!(plain, with_cipher, "None vs Some must not be equal");
+    assert_ne!(with_cipher, plain, "Some vs None must not be equal");
+}
+
+#[test]
+fn segment_config_partial_eq_cipher_same_arc_is_equal() {
+    struct NopCipher;
+    impl crate::SegmentCipher for NopCipher {
+        fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+            Ok(plaintext.to_vec())
+        }
+        fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+            Ok(ciphertext.to_vec())
+        }
+    }
+    let cipher = std::sync::Arc::new(NopCipher);
+    let a = SegmentConfig {
+        cipher: Some(cipher.clone()),
+        ..SegmentConfig::default()
+    };
+    let b = SegmentConfig {
+        cipher: Some(cipher),
+        ..SegmentConfig::default()
+    };
+    assert_eq!(a, b, "configs sharing the same Arc must be equal");
+}
+
+#[test]
+fn segment_config_partial_eq_cipher_different_arcs_not_equal() {
+    struct NopCipher;
+    impl crate::SegmentCipher for NopCipher {
+        fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+            Ok(plaintext.to_vec())
+        }
+        fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+            Ok(ciphertext.to_vec())
+        }
+    }
+    let a = SegmentConfig {
+        cipher: Some(std::sync::Arc::new(NopCipher)),
+        ..SegmentConfig::default()
+    };
+    let b = SegmentConfig {
+        cipher: Some(std::sync::Arc::new(NopCipher)),
+        ..SegmentConfig::default()
+    };
+    assert_ne!(
+        a, b,
+        "configs with distinct Arc instances must not be equal"
     );
 }
 
