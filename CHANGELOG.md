@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-08-10
+
+Performance tuning and documentation. The default zstd compression level
+changes from 3 to 1 based on a full compression-level sweep — level 1 is
+~2x faster to encode with negligible ratio loss (3.2x vs 3.1x on text
+payloads). For a throughput buffer where segments are short-lived, encode
+speed matters more than ratio. New benchmarks, a LIMITATIONS page visible
+on docs.rs, and CI/gate hardening round out the release.
+
+### Changed
+
+- **Default `compression_level` changed from 3 to 1** (`src/lib.rs`):
+  the compression-level sweep (`docs/perf/2026-08-10_compression-level-sweep.tsv`)
+  proved level 1 is ~2x faster than level 3 across all payload kinds
+  (uniform, text, json, random) with negligible ratio loss. This is a
+  behavioral change: existing segments at any level still decode correctly
+  (the level is encode-only), but new segments will use level 1 unless
+  explicitly overridden via `.compression_level(N)`. Users who need the
+  previous default should set `.compression_level(3)` explicitly.
+
+### Added
+
+- **`docs/LIMITATIONS.md`** — comprehensive documentation of all design
+  limitations (no WAL, no cursor persistence, no backpressure policy, etc.)
+  with rationale. Linked from the crate-level rustdoc `# Limitations`
+  section (renders on docs.rs) and from the README.
+- **`benches/bench_concurrent_append.rs`** — MPMC throughput benchmark
+  covering 1/2/4/8 threads with both `append` and `append_all`. Key
+  finding: `append_all` is 3.6x faster than `append` at 8 threads because
+  it acquires the mutex once per batch.
+- **Latency percentiles (p50/p95/p99) in `examples/scaling.rs`** —
+  surfaces tail latency from inline flush for both load and drain phases.
+- **`--dir`, `--encrypted`, and `--keep` flags in `examples/scaling.rs`**
+  — enables real-disk (non-tmpfs) testing, XChaCha20-Poly1305 encryption
+  at scale, and keeping the buffer directory for inspection after runs.
+- **`scripts/compression-sweep.sh`** — sweeps all 22 zstd levels across
+  4 payload kinds, outputs TSV for analysis.
+- **Expanded benchmark ranges**: `bench_append_all` batch sizes expanded
+  to 10/50/100/500/1k/5k/10k; `bench_read_from` scan cache segment counts
+  expanded to 10/100/1k/10k.
+- **Benchmark baseline snapshot** in `docs/PERFORMANCE.md` with all 10
+  criterion targets' medians.
+- **CI hardening**: clippy(fuzz) added to test job,
+  `RUSTDOCFLAGS=-D warnings` on doc build, clippy components on MSRV job.
+- **`scripts/verify-gate.sh`** rewritten with `--list` and `--only=`
+  flags, 17 gates (was 15), slug validation.
+- **`scripts/check-changelog-links.sh`** — GITHUB_TOKEN support, HTTP 403
+  graceful degradation.
+
 ## [0.5.6] - 2026-08-10
 
 API polish and test-coverage expansion. The `SegmentStore` trait is now sealed
@@ -1351,7 +1400,8 @@ shape and `CipherError` field visibility changed; bump your dependency with
 
 - Extracted from monitor365 and proven on 597M+ events in production.
 
-[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.7...HEAD
+[0.5.7]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/LarsArtmann/segment-buffer/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/LarsArtmann/segment-buffer/releases/tag/v0.5.4

@@ -168,7 +168,7 @@
 // docs.rs page for this exact version, not whatever rustdoc guessed. Keeps
 // `[\`SegmentBuffer\`]`-style links stable across local and docs.rs builds.
 // Bump the version segment when cutting a release.
-#![doc(html_root_url = "https://docs.rs/segment-buffer/0.5.6")]
+#![doc(html_root_url = "https://docs.rs/segment-buffer/0.5.7")]
 // On docs.rs (nightly), enable the `doc_cfg` feature so feature-gated items
 // show an "Available on feature `encryption` only" badge. Inert on local
 // builds (stable) where `docsrs` is never set.
