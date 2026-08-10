@@ -1337,7 +1337,7 @@ fn segment_config_partial_eq_different_fields() {
     };
     assert_ne!(a, b, "different max_size_bytes must not be equal");
     let b = SegmentConfig {
-        durability: DurabilityPolicy::Throughput,
+        durability: DurabilityPolicy::Maximal,
         ..SegmentConfig::default()
     };
     assert_ne!(a, b, "different durability must not be equal");
