@@ -1,3 +1,13 @@
+> **Resolution (2026-08-10):** FULLY EXECUTED. All three TODO items (f.5, f.6,
+> f.7) shipped — the parametrized property test, 5 edge-case unit tests, and
+> the encrypted `segment_size_stats` test all landed in this session and are
+> present in the v0.5.5 release. The concurrent-agent items (f.4 segment_tuning
+> example, f.8 loom-absence docs) also shipped at `50782dd`. Forward-looking
+> items in section f that remain open (f.5 duplicate-values property test, f.6
+> n=0 property test, f.7 concurrent stress test, f.8 bench, f.9 XChaCha20
+> variant) are tracked in `TODO_LIST.md` under "Testing & concurrency coverage"
+> and "Benchmarks."
+
 # Status Report: Percentile Test Coverage — 2026-08-04 01:53
 
 > Session scope: implement three deferred TODO_LIST testing items (f.5, f.6, f.7)
@@ -93,8 +103,8 @@ The following items from the same TODO batch (f.4, f.8) were **not** part of my
 session scope — they were completed by a concurrent agent (commit `50782dd`).
 Listed here for completeness:
 
-- f.4 — `examples/segment_tuning.rs` (done by concurrent agent)
-- f.8 — loom absence documentation (done by concurrent agent)
+- ~~f.4 — `examples/segment_tuning.rs` (done by concurrent agent)~~ shipped at `50782dd`
+- ~~f.8 — loom absence documentation (done by concurrent agent)~~ shipped at `50782dd`
 
 ---
 
@@ -229,8 +239,8 @@ Prioritized by impact × effort (Pareto).
 9. **XChaCha20 variant of the encrypted `segment_size_stats` test** — the new
    test only covers AES-GCM. XChaCha20 is the recommended cipher for new
    buffers. Belt-and-braces parity.
-10. **Verify `examples/segment_tuning.rs` compiles and runs** — added by
-    concurrent agent; I have not verified it.
+10. ~~**Verify `examples/segment_tuning.rs` compiles and runs** — added by~~
+    ~~~~concurrent agent; I have not verified it.~~ done — shipped in v0.5.5,
 11. **Direct test of `SegmentSizeStats` `#[non_exhaustive]` enforcement** —
     struct field construction is currently tested via `segment_size_stats()`;
     a test asserting the struct cannot be constructed externally (only via the
@@ -243,12 +253,13 @@ Prioritized by impact × effort (Pareto).
 13. **Update `percentile_of_sorted` doc comment** to name both property tests.
 14. **Add a comment to `encrypted_buffer` helper** documenting its `Batch(4)`
     flush policy and when NOT to use it.
-15. **CHANGELOG.md** — verify the concurrent agent's entries are accurate.
-16. **TODO_LIST.md** — verify the concurrent agent's removal of f.4/f.8 items
-    is correct (they may have left behind stale cross-references).
-17. **`docs/status/2026-08-04_01-01_*`** — this status doc is the source of
-    items f.5/f.6/f.7. It should be annotated to reflect they are now done
-    (the `update-old-docs` skill does this non-destructively).
+15. ~~**CHANGELOG.md** — verify the concurrent agent's entries are accurate.~~ done
+16. ~~**TODO_LIST.md** — verify the concurrent agent's removal of f.4/f.8 items~~
+    ~~~~is correct (they may have left behind stale cross-references).~~ done —
+    TODO_LIST fully rebuilt 2026-08-10
+17. ~~**`docs/status/2026-08-04_01-01_*`** — this status doc is the source of~~
+    ~~~~items f.5/f.6/f.7. It should be annotated to reflect they are now done~~
+    ~~~~(the `update-old-docs` skill does this non-destructively).~~ done —
 
 ### Architecture / code quality
 

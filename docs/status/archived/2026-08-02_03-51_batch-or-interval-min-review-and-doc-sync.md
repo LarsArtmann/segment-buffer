@@ -88,17 +88,17 @@ variant (`BatchOrIntervalMin`), bumping the version to `0.6.0`, and refreshing
 
 ### Must-do (before release)
 
-1. **Decide: is `0.6.0` the right version, or should it be `0.5.4`?** Non-breaking addition to a `#[non_exhaustive]` enum = minor bump by Rust semver.
-2. **Fix `AGENTS.md` test count**: "82 unit tests" → "88 unit tests" (or make it dynamic/omit the number).
-3. **Run the loom gate**: `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.
-4. **Run `nix flake check`** to verify the `flake.lock` bump doesn't break the Nix sandbox build.
-5. **Add a property test for `BatchOrIntervalMin`** — assert the core invariant: "never flushes when `pending < min_batch` AND `elapsed < max_interval`" (unless `batch_size` is met).
-6. **Check `gh run list --limit 4`** before any release tag (rule 9).
+1. ~~**Decide: is `0.6.0` the right version, or should it be `0.5.4`?** Non-breaking addition to a `#[non_exhaustive]` enum = minor bump by Rust semver.~~ done — corrected to `0.5.4` in follow-up session
+2. ~~**Fix `AGENTS.md` test count**: "82 unit tests" → "88 unit tests" (or make it dynamic/omit the number).~~ done — replaced with dynamic `grep -c` reference
+3. ~~**Run the loom gate**: `RUSTFLAGS="--cfg loom" cargo test --features loom --test loom --release`.~~ done — 9/9 pass in follow-up
+4. ~~**Run `nix flake check`** to verify the `flake.lock` bump doesn't break the Nix sandbox build.~~ done — all checks passed (8/8) in follow-up
+5. ~~**Add a property test for `BatchOrIntervalMin`** — assert the core invariant: "never flushes when `pending < min_batch` AND `elapsed < max_interval`" (unless `batch_size` is met).~~ done — `batch_or_interval_min_flush_decision_matches_spec` in follow-up
+6. **Check `gh run list --limit 4`** before any release tag (rule 9). ← open
 
 ### Should-do (quality hardening)
 
-7. **Add builder validation or debug-assert** for `min_batch <= batch_size` and `interval <= max_interval` in `FlushPolicy::BatchOrIntervalMin`.
-8. **Update `docs/PERFORMANCE.md` tuning guide** to mention `BatchOrIntervalMin` as the recommendation for low-throughput / mixed-throughput deployments.
+7. ~~**Add builder validation or debug-assert** for `min_batch <= batch_size` and `interval <= max_interval` in `FlushPolicy::BatchOrIntervalMin`.~~ done — `debug_assert!`s added in follow-up
+8. ~~**Update `docs/PERFORMANCE.md` tuning guide** to mention `BatchOrIntervalMin` as the recommendation for low-throughput / mixed-throughput deployments.~~ done — callout added in follow-up
 9. **Consider a doc example** showing `flush_at_batch_or_interval_min` in a realistic scenario (not just the rustdoc on the method).
 10. **Add `BatchOrIntervalMin` to the `examples/background_flush.rs` or a new example** showing the anti-tiny-segment pattern.
 11. **Audit all time-based tests for CI flakiness** — consider increasing margins or using a mock clock (if one exists, or add one).
@@ -108,12 +108,12 @@ variant (`BatchOrIntervalMin`), bumping the version to `0.6.0`, and refreshing
 
 ### Nice-to-have (polish)
 
-15. **Consider whether `BatchOrIntervalMin` should be the default** in a future release (the "tiny segments" problem is the most common complaint with `BatchOrInterval`).
-16. **Add a fuzz target** that randomizes flush policy parameters + append patterns.
-17. **Consider a `FlushPolicy::batch_or_interval_min()` constructor** (associated function, not just builder method) for ergonomic construction without the builder.
-18. **The `Caution` doc on `BatchOrInterval` now points to `BatchOrIntervalMin` — verify the intra-doc link resolves on docs.rs** (it should, since both are in the same enum).
-19. **Update `docs/planning/` docs** that reference "4 flush policies" to say "5".
-20. **Consider whether `FlushPolicy` needs a `Display` impl** — currently it only has `Debug`. Users logging the active policy get `Debug` output, which is fine but not polished.
+15. **Consider whether `BatchOrIntervalMin` should be the default** in a future release (the "tiny segments" problem is the most common complaint with `BatchOrInterval`). ← open
+16. **Add a fuzz target** that randomizes flush policy parameters + append patterns. ← open
+17. **Consider a `FlushPolicy::batch_or_interval_min()` constructor** (associated function, not just builder method) for ergonomic construction without the builder. ← open
+18. ~~**The `Caution` doc on `BatchOrInterval` now points to `BatchOrIntervalMin` — verify the intra-doc link resolves on docs.rs** (it should, since both are in the same enum).~~ done — shipped in v0.5.4, links resolve
+19. ~~**Update `docs/planning/` docs** that reference "4 flush policies" to say "5".~~ done
+20. ~~**Consider whether `FlushPolicy` needs a `Display` impl** — currently it only has `Debug`. Users logging the active policy get `Debug` output, which is fine but not polished.~~ done — `FlushPolicy` now has `Display`
 21. **Audit the `should_flush` expression for short-circuit correctness** — the `||` chain means `batch_size` is checked first (most common case), then `max_interval`, then the compound `min_batch && interval`. Verify this ordering is optimal for the hot path.
 22. **Consider documenting the interaction between `BatchOrIntervalMin` and `flush()`** — an explicit `flush()` always drains regardless of the policy. The doc on the variant should mention this.
 23. **Check if `Cargo.lock` version field for segment-buffer matches `Cargo.toml`** (it does: both say 0.6.0 — verified in the diff).

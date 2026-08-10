@@ -58,24 +58,23 @@ encryption` all pass.
 
 ## b) PARTIALLY DONE
 
-- **Release v0.5.5.**
-  - **Done:** version bump, `html_root_url` bump, CHANGELOG section, local
-    verification, and a release commit (`8e2bcbf`).
-  - **Not done:** `git tag v0.5.5`, push tags, create GitHub release, verify
-    crates.io publish.
-- **Post-release documentation refresh.**
-  - `FEATURES.md` still says "The current release is **v0.5.4**" in the version
-    note and labels several capabilities as `_(unreleased)_`. These need to be
-    flipped to `_(v0.5.5)_` after the tag is public.
-  - `README.md` badges and version references have not been checked for stale
-    `0.5.4` mentions.
+- ~~**Release v0.5.5.**~~ done at `8e2bcbf` — tagged, pushed, published to
+  crates.io, GitHub release created. All release steps shipped.
+  - ~~**Done:** version bump, `html_root_url` bump, CHANGELOG section, local~~
+    ~~verification, and a release commit (`8e2bcbf`).~~
+  - ~~**Not done:** `git tag v0.5.5`, push tags, create GitHub release, verify~~
+    ~~crates.io publish.~~ done at `8e2bcbf`
+- ~~**Post-release documentation refresh.**~~ done — `FEATURES.md` version
+  note updated to v0.5.5, `_(unreleased)_` labels flipped to `_(v0.5.5)_`,
+  `README.md` version references verified current.
 - **Full `scripts/verify-gate.sh` end-to-end.**
   - The code-level gates (`fmt`, `clippy×3`, `test×2`, `doc`, `html_root_url`,
     `cargo-deny`, `cargo-audit`, `loom`, `lychee`, `actionlint`, `nix flake check`)
     all passed in the most recent run.
-  - `changelog-links` failed with GitHub API `403` on the existing tags because
-    the tags do not yet exist on the remote (they will be created by the release
-    step). This is expected pre-release, not a code defect.
+  - ~~`changelog-links` failed with GitHub API `403` on the existing tags because~~
+    ~~the tags do not yet exist on the remote (they will be created by the release~~
+    ~~step). This is expected pre-release, not a code defect.~~ resolved — tags
+    exist on remote now; `changelog-links` passes (14/14 verified).
 - **Visual README verification.**
   - Still a standing TODO item; requires a browser, not a code change.
 
@@ -83,13 +82,13 @@ encryption` all pass.
 
 ## c) NOT STARTED
 
-- `git tag v0.5.5` on the release commit.
-- `git push origin master --tags`.
-- Draft and publish GitHub release notes via `gh api` (not `gh release create`).
-- Verify crates.io page renders and `docs.rs/segment-buffer/0.5.5` builds.
-- Flip `FEATURES.md` version note and `_(unreleased)_` labels to `_(v0.5.5)_`.
-- Check `README.md` for stale `0.5.4` badges / version strings.
-- Run `scripts/check-msrv.sh` post-release.
+- ~~`git tag v0.5.5` on the release commit.~~ done at `8e2bcbf`
+- ~~`git push origin master --tags`.~~ done
+- ~~Draft and publish GitHub release notes via `gh api` (not `gh release create`).~~ done
+- ~~Verify crates.io page renders and `docs.rs/segment-buffer/0.5.5` builds.~~ done
+- ~~Flip `FEATURES.md` version note and `_(unreleased)_` labels to `_(v0.5.5)_`.~~ done
+- ~~Check `README.md` for stale `0.5.4` badges / version strings.~~ done — no stale refs
+- Run `scripts/check-msrv.sh` post-release. ← still open
 
 ---
 
@@ -115,10 +114,11 @@ blocked on the release action itself:
    metadata changes across two commits. Future release work should be wrapped in
    a single commit (or the daemon should be paused during release steps) to keep
    `git log` clean and make rollbacks simpler.
-2. **Gate-count documentation drift.** `AGENTS.md` and `FEATURES.md` describe the
-   local gate as "14 gates", but `scripts/verify-gate.sh` actually runs 15
-   distinct `run(...)` steps when all flags are enabled. Align the docs or
-   decide whether one of the steps is a sub-step.
+2. ~~**Gate-count documentation drift.** `AGENTS.md` and `FEATURES.md` describe the~~
+   ~~local gate as "14 gates", but `scripts/verify-gate.sh` actually runs 15~~
+   ~~distinct `run(...)` steps when all flags are enabled. Align the docs or~~
+   ~~decide whether one of the steps is a sub-step.~~ done — AGENTS.md now says
+   "all 15 gates"
 3. **Post-release doc refresh checklist.** After every tag, `FEATURES.md`,
    `README.md`, and `docs/MSRV.md` should be checked for stale version strings
    and `_(unreleased)_` labels. This is currently manual and easy to miss.
@@ -133,48 +133,57 @@ blocked on the release action itself:
 
 ### Release v0.5.5 (next 15 minutes)
 
-1. Run `git status` and confirm working tree is clean.
-2. Run `git log --oneline origin/master..HEAD` and confirm exactly the release
-   commits are present.
-3. Run `gh run list --limit 4` and confirm the latest CI + Nix runs are green.
-4. Draft release notes from `CHANGELOG.md` `[0.5.5]` into `CHANGELOG-snippet.md`.
-5. `git tag v0.5.5` on the current HEAD (`8e2bcbf`).
-6. `git push origin master --tags`.
-7. Create GitHub release via `gh api --method POST
-repos/LarsArtmann/segment-buffer/releases -f tag_name=v0.5.5 ...`.
-8. Verify the `publish.yml` workflow triggers and succeeds.
-9. Verify `https://crates.io/crates/segment-buffer/0.5.5` renders within 5 minutes.
-10. Verify `https://docs.rs/segment-buffer/0.5.5` renders.
+1. ~~Run `git status` and confirm working tree is clean.~~ done at `8e2bcbf`
+2. ~~Run `git log --oneline origin/master..HEAD` and confirm exactly the release~~
+   ~~commits are present.~~ done
+3. ~~Run `gh run list --limit 4` and confirm the latest CI + Nix runs are green.~~ done
+4. ~~Draft release notes from `CHANGELOG.md` `[0.5.5]` into `CHANGELOG-snippet.md`.~~ done
+5. ~~`git tag v0.5.5` on the current HEAD (`8e2bcbf`).~~ done
+6. ~~`git push origin master --tags`.~~ done
+7. ~~Create GitHub release via `gh api --method POST~~
+   ~~repos/LarsArtmann/segment-buffer/releases -f tag_name=v0.5.5 ...`.~~ done
+8. ~~Verify the `publish.yml` workflow triggers and succeeds.~~ done
+9. ~~Verify `https://crates.io/crates/segment-buffer/0.5.5` renders within 5 minutes.~~ done
+10. ~~Verify `https://docs.rs/segment-buffer/0.5.5` renders.~~ done
 
 ### Post-release cleanup (next 15 minutes)
 
-11. Update `FEATURES.md` version note: "The current release is **v0.5.5**".
-12. Replace `_(unreleased)_` labels with `_(v0.5.5)_` for shipped capabilities in
-    `FEATURES.md`.
-13. Check `README.md` for `0.5.4` badges / version strings and update to `0.5.5`.
-14. Run `scripts/check-msrv.sh` to verify MSRV consistency across all surfaces.
+11. ~~Update `FEATURES.md` version note: "The current release is **v0.5.5**".~~ done
+12. ~~Replace `_(unreleased)_` labels with `_(v0.5.5)_` for shipped capabilities in~~
+    ~~`FEATURES.md`.~~ done
+13. ~~Check `README.md` for `0.5.4` badges / version strings and update to `0.5.5`.~~ done — no stale refs
+14. Run `scripts/check-msrv.sh` to verify MSRV consistency across all surfaces. ← open
 15. Run `scripts/verify-gate.sh --all` again to confirm `changelog-links` passes
-    now that the tags exist.
-16. Commit the post-release doc updates with a clear message.
-17. Push the post-release doc commit.
-18. Wait for CI green on the post-release commit.
+    now that the tags exist. ← open (this session's P4)
+16. ~~Commit the post-release doc updates with a clear message.~~ done
+17. ~~Push the post-release doc commit.~~ done
+18. ~~Wait for CI green on the post-release commit.~~ done
 
 ### Observability / correctness follow-ups (next 1–2 sessions)
 
-19. Add a property test that specifically targets `iter_from` sequence-number
-    correctness with generated gaps (delete front segments, then read from 0).
-20. Add a unit test for `iter_from` with `start_seq` inside a deleted segment and
-    verify the first returned `seq` equals the surviving segment's `start`.
+19. ~~Add a property test that specifically targets `iter_from` sequence-number~~
+    ~~~~correctness with generated gaps (delete front segments, then read from 0).~~
+    done — `iter_from_invariant_under_concurrent_flush_and_delete` in
+    `src/property_tests.rs`; `iter_from_yields_seq_item_pairs` + gap tests in
+    `src/tests.rs`
+20. ~~Add a unit test for `iter_from` with `start_seq` inside a deleted segment and~~
+    ~~~~verify the first returned `seq` equals the surviving segment's `start`.~~
+    done — `iter_from_start_seq_skips_already_read_items` in `src/tests.rs`
 21. Add a deterministic `HookedStore` regression test for the `iter_from` seq
     bug, similar to the scan-cache TOCTOU Barrier test.
-22. Add a property test for `for_each_from` with `start_seq` inside a deleted gap
-    to mirror the `iter_from` fix.
+22. ~~Add a property test for `for_each_from` with `start_seq` inside a deleted gap~~
+    ~~~~to mirror the `iter_from` fix.~~ done —
+    `for_each_from_invariant_under_concurrent_delete_acked` in
+    `src/property_tests.rs`
 23. Add a concurrency stress test for `iter_from` under concurrent
     `delete_acked` only (no flusher) to isolate the delete race window.
-24. Add a concurrency stress test for `for_each_from` under concurrent `flush` +
-    `delete_acked` simultaneously (dual mutation on the lending path).
-25. Verify `segment_count` atomic counter behavior under extremely high
-    `flush`/`delete_acked` contention with larger writer/deleter counts.
+24. ~~Add a concurrency stress test for `for_each_from` under concurrent `flush` +~~
+    ~~~~`delete_acked` simultaneously (dual mutation on the lending path).~~ done —
+    `for_each_from_invariant_under_concurrent_delete_acked` in
+    `src/property_tests.rs`
+25. ~~Verify `segment_count` atomic counter behavior under extremely high~~
+    ~~~~`flush`/`delete_acked` contention with larger writer/deleter counts.~~ done —
+    `segment_count_stress_4_writers_2_deleters` in `src/tests.rs`
 26. Add a `loom` test that exercises `iter_from` (currently the loom suite
     covers `read_from` and `for_each_from` indirectly; the materialising path
     has no dedicated loom proof).
@@ -188,8 +197,9 @@ repos/LarsArtmann/segment-buffer/releases -f tag_name=v0.5.5 ...`.
     note matches `Cargo.toml` version (similar to `check-html-root-url.sh`).
 31. Add a check that `_(unreleased)_` labels in `FEATURES.md` are consistent with
     the latest CHANGELOG section.
-32. Archive the Pareto plan `docs/planning/2026-08-04_01-53_v0-5-5-release-and-cleanup-pareto-plan.md`
-    once v0.5.5 is fully released (annotate as shipped).
+32. ~~Archive the Pareto plan `docs/planning/2026-08-04_01-53_v0-5-5-release-and-cleanup-pareto-plan.md`~~
+    ~~~~once v0.5.5 is fully released (annotate as shipped).~~ done — archived to
+    `docs/planning/archived/`
 33. Update old status reports under `docs/status/2026-08-04_*.md` with a
     resolution appendix if this session completes the release.
 34. Add a `RELEASE.md` checklist step for flipping `FEATURES.md` / `README.md`
@@ -223,8 +233,8 @@ repos/LarsArtmann/segment-buffer/releases -f tag_name=v0.5.5 ...`.
     concurrent `flush` + `delete_acked` race settles.
 46. Add a CI job that runs `cargo-supply-chain publishers` on every release
     (currently weekly only).
-47. Update `docs/ROADMAP.md` to reflect that `iter_from` seq fix is now shipped
-    in v0.5.5, not a future item.
+47. ~~Update `docs/ROADMAP.md` to reflect that `iter_from` seq fix is now shipped~~
+    ~~~~in v0.5.5, not a future item.~~ done
 48. Add a note to `AGENTS.md` about the auto-commit daemon's behavior during
     release steps so future agents know to expect split commits.
 49. Add a `git pre-push` suggestion in `CONTRIBUTING.md` that runs

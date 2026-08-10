@@ -104,22 +104,22 @@ The conversation flow was:
 
 ### Must-do (before release tag)
 
-1. **Push uncommitted changes** (`src/tests.rs` + `Cargo.lock`) to master.
-2. **Wait for CI to go green** on the pushed commit (`gh run list --limit 4`).
-3. **Update `CHANGELOG.md`** — change `[Unreleased]` to `[0.5.4] - YYYY-MM-DD`.
-4. **Remove `_(unreleased)_` tags from `FEATURES.md`** (lines 24, 36, 110, 111).
-5. **Draft GitHub release notes** BEFORE tagging (AGENTS.md checklist).
-6. **Tag `v0.5.4`** — only after CI + Nix are green on the target commit.
-7. **Publish to crates.io** — `cargo publish --dry-run --features encryption` first, then `cargo publish --features encryption`.
-8. **Create GitHub release** — use `gh api` not `gh release create` (known scope issue).
+1. ~~**Push uncommitted changes** (`src/tests.rs` + `Cargo.lock`) to master.~~ done
+2. ~~**Wait for CI to go green** on the pushed commit (`gh run list --limit 4`).~~ done
+3. ~~**Update `CHANGELOG.md`** — change `[Unreleased]` to `[0.5.4] - YYYY-MM-DD`.~~ done at v0.5.4
+4. ~~**Remove `_(unreleased)_` tags from `FEATURES.md`** (lines 24, 36, 110, 111).~~ done at v0.5.4
+5. ~~**Draft GitHub release notes** BEFORE tagging (AGENTS.md checklist).~~ done at v0.5.4
+6. ~~**Tag `v0.5.4`** — only after CI + Nix are green on the target commit.~~ done
+7. ~~**Publish to crates.io** — `cargo publish --dry-run --features encryption` first, then `cargo publish --features encryption`.~~ done at v0.5.4
+8. ~~**Create GitHub release** — use `gh api` not `gh release create` (known scope issue).~~ done at v0.5.4
 
 ### Should-do (quality hardening)
 
-9. **Add a CHANGELOG entry** for the test rewrite (under `[0.5.4] → Changed` or `[Unreleased] → Changed`): "FlushPolicy time-based tests rewritten as pure `should_flush()` calls — eliminated CI flakiness from wall-clock dependency."
-10. **Run `cargo supply-chain publishers`** before tagging — check for unexpected new publishers.
-11. **Consider adding a Cargo.lock check to CI** — fail if non-segment-buffer versions change without explicit `cargo update -p <crate>`.
-12. **Document the `last_flush` initialization timing** in the `FlushPolicy` doc or AGENTS.md — note that `recover()` time eats into the first interval window.
-13. **Consider renaming `batch_or_interval_flushes_after_interval` back to `time_based_auto_flush`** for grep continuity — or add a comment noting the rename.
+9. ~~**Add a CHANGELOG entry** for the test rewrite (under `[0.5.4] → Changed` or `[Unreleased] → Changed`): "FlushPolicy time-based tests rewritten as pure `should_flush()` calls — eliminated CI flakiness from wall-clock dependency."~~ done at v0.5.4
+10. **Run `cargo supply-chain publishers`** before tagging — check for unexpected new publishers. ← open (weekly CI workflow now exists)
+11. **Consider adding a Cargo.lock check to CI** — fail if non-segment-buffer versions change without explicit `cargo update -p <crate>`. ← open
+12. **Document the `last_flush` initialization timing** in the `FlushPolicy` doc or AGENTS.md — note that `recover()` time eats into the first interval window. ← open
+13. **Consider renaming `batch_or_interval_flushes_after_interval` back to `time_based_auto_flush`** for grep continuity — or add a comment noting the rename. ← open
 14. **Add edge-case unit tests** for `BatchOrIntervalMin`: `min_batch == 0` (behaves like `BatchOrInterval`), `max_interval == interval`, `min_batch == batch_size`.
 
 ### Nice-to-have (polish)

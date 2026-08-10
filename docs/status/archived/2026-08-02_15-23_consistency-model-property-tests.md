@@ -207,20 +207,11 @@ The deterministic tests do not have this problem. The concurrent ones are
 
 ### Correctness — scan cache TOCTOU (HIGH PRIORITY)
 
-1. **Reproduce the scan cache TOCTOU deterministically.** Write a focused
-   test that forces the `scan → flush invalidate → scan overwrite`
-   interleaving using barriers, not sleeps.
-2. **Fix `scan_segments` to be race-safe under concurrent flush.** Hold the
-   cache lock across `store.scan()` + cache populate, or re-validate mtime
-   post-population.
-3. **Update DOMAIN_LANGUAGE.md** "Transient gaps under concurrent flush"
-   bullet to either (a) remove "a retry sees them" if unfixed, or (b)
-   document the scan-cache retry requirement if the fix needs a
-   re-scan trigger.
-4. **Restore the completeness assertion** in
-   `read_from_invariant_under_concurrent_flush` once the cache race is fixed.
-5. **Add a TODO_LIST.md entry** for the scan cache TOCTOU as a known issue
-   until fixed.
+1. ~~**Reproduce the scan cache TOCTOU deterministically.** Write a focused test that forces the `scan → flush invalidate → scan overwrite` interleaving using barriers, not sleeps.~~ done — `scan_cache_toctou_mtime_guard_forces_rescan_after_mid_scan_rename` in `src/tests.rs` uses `HookedStore` with two `Barrier` sync points
+2. ~~**Fix `scan_segments` to be race-safe under concurrent flush.** Hold the cache lock across `store.scan()` + cache populate, or re-validate mtime post-population.~~ done — mtime now captured _before_ `readdir`, so mid-scan rename leaves cached mtime stale
+3. ~~**Update DOMAIN_LANGUAGE.md** "Transient gaps under concurrent flush" bullet to either (a) remove "a retry sees them" if unfixed, or (b) document the scan-cache retry requirement if the fix needs a re-scan trigger.~~ done — DOMAIN_LANGUAGE.md reconciled
+4. ~~**Restore the completeness assertion** in `read_from_invariant_under_concurrent_flush` once the cache race is fixed.~~ done — restored with bounded (10×) retry, 40/40 release runs
+5. ~~**Add a TODO_LIST.md entry** for the scan cache TOCTOU as a known issue until fixed.~~ done — resolved, no longer a known issue
 
 ### Verification gaps
 
@@ -238,12 +229,8 @@ The deterministic tests do not have this problem. The concurrent ones are
 11. **Replace `thread::sleep` in concurrent property tests** with
     `std::sync::Barrier` or `parking_lot::Condvar` for deterministic
     interleaving.
-12. **Add a concurrent property test for `delete_acked` + `flush`
-    interleaving** (both mutations racing the reader simultaneously — the
-    two existing concurrent tests cover one mutation each).
-13. **Add a property test for `for_each_from` under concurrent flush** — the
-    lending iterator has the same Phase 1 / Phase 2 gap but a different
-    code path.
+12. ~~**Add a concurrent property test for `delete_acked` + `flush`** interleaving (both mutations racing the reader simultaneously — the two existing concurrent tests cover one mutation each).~~ done — `read_from_invariant_under_concurrent_delete_acked_and_flush` in `src/property_tests.rs`
+13. ~~**Add a property test for `for_each_from` under concurrent flush** — the lending iterator has the same Phase 1 / Phase 2 gap but a different code path.~~ done — `for_each_from_invariant_under_concurrent_delete_acked` in `src/property_tests.rs`
 14. **Add a property test verifying `read_from` never returns items from a
     _partially_ deleted segment** (delete mid-read of a multi-segment
     result).
@@ -252,10 +239,8 @@ The deterministic tests do not have this problem. The concurrent ones are
 
 ### Documentation
 
-16. **Reconcile DOMAIN_LANGUAGE.md with the scan cache finding** — the
-    "what always holds" section must not cite tests that fail to hold.
-17. **Add a "Known limitations" subsection** to DOMAIN_LANGUAGE.md
-    "Concurrent operation" for the scan cache if unfixed.
+16. ~~**Reconcile DOMAIN_LANGUAGE.md with the scan cache finding** — the "what always holds" section must not cite tests that fail to hold.~~ done
+17. ~~**Add a "Known limitations" subsection** to DOMAIN_LANGUAGE.md "Concurrent operation" for the scan cache if unfixed.~~ done — scan-cache refresh behaviour documented
 18. **Update the verification-discipline rules in AGENTS.md** with a note:
     "When a new test finds a bug, the bug is filed before the assertion is
     relaxed."
@@ -268,10 +253,8 @@ The deterministic tests do not have this problem. The concurrent ones are
     direction per AGENTS.md.
 21. **Envelope v2 design doc** — cipher-type marker in the envelope (needed
     before a third cipher can be added safely).
-22. **Flip default `DurabilityPolicy` from `Segment` to `Throughput`** with
-    deprecation note (post-v0.5.0 plan).
-23. **Adopt `as_conversions` / `arithmetic_side_effects` pedantic lints** —
-    the ~475-error migration (aspirational per AGENTS.md).
+22. ~~**Flip default `DurabilityPolicy` from `Segment` to `Throughput`** with deprecation note (post-v0.5.0 plan).~~ open — tracked in TODO_LIST.md (highest priority durability item)
+23. ~~**Adopt `as_conversions` / `arithmetic_side_effects` pedantic lints** — the ~475-error migration (aspirational per AGENTS.md).~~ done — full strict lint stack shipped
 24. **`cargo-nextest` in CI** — suite is ~4s so low priority, but cleaner
     output.
 25. **Fuzz target for concurrent flush + read** — `fuzz_recovery` covers

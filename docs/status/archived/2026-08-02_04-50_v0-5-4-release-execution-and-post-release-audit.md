@@ -94,23 +94,23 @@ FEATURES.md, push, tag, publish.
 
 ### Must-do (fix the red CI)
 
-1. **Acknowledge or fix the failed `publish.yml` run.** The crate is published correctly, but CI shows red. Options: (a) re-run the workflow (will fail the same way), (b) document that it's a known double-publish false-failure, (c) make `publish.yml` idempotent (check if version exists before publishing).
+1. ~~**Acknowledge or fix the failed `publish.yml` run.** The crate is published correctly, but CI shows red. Options: (a) re-run the workflow (will fail the same way), (b) document that it's a known double-publish false-failure, (c) make `publish.yml` idempotent (check if version exists before publishing).~~ done — `publish.yml` is now idempotent (checks if version already exists)
 
 ### Should-do (release cleanup)
 
-2. **Make `publish.yml` idempotent** — add a pre-step that checks `cargo info segment-buffer@$VERSION` and skips publish if it already exists. This prevents future double-publish failures.
-3. **Verify docs.rs built the v0.5.4 docs** — check `https://docs.rs/segment-buffer/0.5.4` renders correctly with all features.
-4. **Check `docs/RELEASE.md`** — if it exists, add v0.5.4 to any version table.
-5. **Clean up git history noise** — the 3 auto-commits (`9854ec5`, `2d9de5d`, `901c2de`) could be squashed. But `v0.5.4` already points at `901c2de`, so this would require retagging — probably not worth it.
-6. **Run `cargo supply-chain publishers`** — informational post-release check.
+2. ~~**Make `publish.yml` idempotent** — add a pre-step that checks `cargo info segment-buffer@$VERSION` and skips publish if it already exists. This prevents future double-publish failures.~~ done
+3. **Verify docs.rs built the v0.5.4 docs** — check `https://docs.rs/segment-buffer/0.5.4` renders correctly with all features. ← likely done (v0.5.5 is current)
+4. **Check `docs/RELEASE.md`** — if it exists, add v0.5.4 to any version table. ← likely done
+5. ~~**Clean up git history noise** — the 3 auto-commits (`9854ec5`, `2d9de5d`, `901c2de`) could be squashed. But `v0.5.4` already points at `901c2de`, so this would require retagging — probably not worth it.~~ not done — squashing a published tag is too risky; accepted
+6. **Run `cargo supply-chain publishers`** — informational post-release check. ← open (weekly CI workflow now exists)
 
 ### Nice-to-have (polish)
 
 7. **Add a CHANGELOG link-validation script** — checks that every `[X.Y.Z]:` ref resolves to a valid GitHub URL.
 8. **Consider squashing release-prep commits** in a pre-release branch before tagging, to keep history clean.
 9. **Add a release checklist script** — automates the: finalize CHANGELOG → remove unreleased tags → verify gate → push → wait CI → tag → publish → release flow.
-10. **Document the "don't double-publish" lesson in AGENTS.md** — add a note under Releases: "The workflow auto-publishes. Do NOT run `cargo publish` manually unless the workflow is broken."
-11. **Consider a `--no-auto-commit` flag** for the commit daemon during release-prep sessions.
+10. ~~**Document the "don't double-publish" lesson in AGENTS.md** — add a note under Releases: "The workflow auto-publishes. Do NOT run `cargo publish` manually unless the workflow is broken."~~ done — documented in AGENTS.md release runbook
+11. **Consider a `--no-auto-commit` flag** for the commit daemon during release-prep sessions. ← open
 12. **Add the time-based test rewrite to ROADMAP.md** if there's a quality roadmap section.
 
 ### Testing improvements (from prior sessions, still open)

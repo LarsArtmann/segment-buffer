@@ -69,6 +69,17 @@ Will not land until one of those features becomes painful. See
 [`docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`](docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md)
 for the full layout, migration path, and trigger conditions.
 
+### Tooling direction
+
+- **Nightly benchmark CI workflow.** Run `cargo bench` on a schedule and persist
+  criterion results so perf regressions surface. Deferred until a regression-
+  detection strategy (result storage, comparison baseline, alert thresholds) is
+  defined — running benches without a comparison story is noise.
+- **Code-duplication gate (jscpd).** Wire jscpd (or equivalent) into
+  `scripts/verify-gate.sh` with a threshold. Deferred until the crate grows
+  enough duplication to make the gate signal-out-of-noise worthwhile; today the
+  dedup refactor has already eliminated the major hotspots.
+
 ---
 
 ## Non-goals (by design)
