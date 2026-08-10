@@ -48,7 +48,7 @@ pub fn config(flush_at_batch: usize) -> SegmentConfig {
     SegmentConfig::builder()
         .flush_at_batch_size(flush_at_batch)
         .max_size_bytes(u64::MAX)
-        .compression_level(3)
+        .compression_level(1)
         .build()
 }
 

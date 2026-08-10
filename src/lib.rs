@@ -533,7 +533,7 @@ pub struct SegmentConfig {
     pub flush_policy: FlushPolicy,
     /// Max total disk usage before the buffer reports overload pressure (default: 10 GB).
     pub max_size_bytes: u64,
-    /// zstd compression level (1-22; default **3**, fast with a good ratio).
+    /// zstd compression level (1-22; default **1**, fastest encode with negligible ratio loss).
     pub compression_level: i32,
     /// Per-flush fsync behavior. See [`DurabilityPolicy`] for the three
     /// policies and their crash-loss tradeoffs. Default is
@@ -621,7 +621,7 @@ impl Default for SegmentConfig {
         Self {
             flush_policy: FlushPolicy::default(),
             max_size_bytes: 10 * 1024 * 1024 * 1024,
-            compression_level: 3,
+            compression_level: 1,
             durability: DurabilityPolicy::default(),
             cipher: None,
         }
@@ -726,7 +726,7 @@ impl SegmentConfigBuilder {
         self
     }
 
-    /// Override the zstd compression level (1-22; default 3, fast with a good ratio).
+    /// Override the zstd compression level (1-22; default 1, fastest encode).
     #[must_use]
     pub const fn compression_level(mut self, compression_level: i32) -> Self {
         self.inner.compression_level = compression_level;

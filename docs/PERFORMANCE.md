@@ -199,23 +199,24 @@ acquisition; `flush()` then writes one segment file. This beats N individual
 > // Flush at 256 items; every 5s only if 10+ pending; every 60s regardless.
 > ```
 
-### 3. `compression_level(1)` (faster encode, marginal ratio loss)
+### 3. `compression_level` tuning
 
-The default zstd level is **3** (fast with a good ratio). Level **1** is
-roughly 2–3× faster to encode with a marginal compression-ratio loss. For a
-local throughput buffer where ratio is secondary — segments are short-lived,
-drained to the cloud and deleted within hours — the encode speed often matters
-more:
+The default zstd level is **1** (fastest encode). The compression-level sweep
+(see `docs/perf/2026-08-10_compression-level-sweep.tsv`) showed level 1 is
+**2x faster** than level 3 on realistic payloads with negligible ratio loss
+(3.2x vs 3.1x for text). For a throughput buffer where segments are short-lived,
+encode speed matters more than ratio.
 
 ```rust
+// Default is already 1 — override only if you need higher ratio:
 let config = SegmentConfig::builder()
-    .compression_level(1)
+    .compression_level(3)
     .build();
 ```
 
-Range is 1–22; higher levels trade encode speed for ratio. Level 1 is the
-practical floor for fastest encode; levels above ~10 are rarely worth the
-encode cost for a spooling buffer.
+Range is 1-22; higher levels trade encode speed for ratio. Levels above 10
+collapse load throughput to single-digit K items/s for negligible ratio gain
+(level 22 on text: 3.9x ratio but 200x slower than level 1).
 
 ### 4. `for_each_from` vs `read_from` (callback vs owned `Vec<T>`)
 

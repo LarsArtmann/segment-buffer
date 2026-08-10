@@ -313,7 +313,9 @@ struct LatencyHistogram {
 
 impl LatencyHistogram {
     fn new() -> Self {
-        Self { samples: Vec::new() }
+        Self {
+            samples: Vec::new(),
+        }
     }
 
     fn record(&mut self, elapsed: Duration) {
@@ -381,14 +383,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(5_000);
-    let compression: i32 = positional
-        .get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3);
-    let payload_mult: usize = positional
-        .get(3)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1);
+    let compression: i32 = positional.get(2).and_then(|s| s.parse().ok()).unwrap_or(3);
+    let payload_mult: usize = positional.get(3).and_then(|s| s.parse().ok()).unwrap_or(1);
     let payload_kind = match positional.get(4) {
         Some(s) => PayloadKind::parse(s)?,
         None => PayloadKind::Uniform,
@@ -419,7 +415,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "payload: {payload_kind} {payload_len} B/item ({payload_mult}x base-64) | uncompressed: {bytes_per_item} B/item"
     );
-    let encrypted_label = if encrypted { "yes (XChaCha20-Poly1305)" } else { "no" };
+    let encrypted_label = if encrypted {
+        "yes (XChaCha20-Poly1305)"
+    } else {
+        "no"
+    };
     println!("encrypted: {encrypted_label}");
     println!("dir: {}", dir.display());
     let is_tmpfs = dir_override.is_none();

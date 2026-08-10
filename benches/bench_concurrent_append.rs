@@ -81,9 +81,10 @@ fn bench_concurrent_append(c: &mut Criterion) {
                             barrier.wait();
                             for i in 0..ITEMS_PER_THREAD as u64 {
                                 buf.append(Item {
-                    id: offset + i,
-                    payload: format!("payload-{}", offset + i),
-                }).unwrap();
+                                    id: offset + i,
+                                    payload: format!("payload-{}", offset + i),
+                                })
+                                .unwrap();
                             }
                         }));
                     }
