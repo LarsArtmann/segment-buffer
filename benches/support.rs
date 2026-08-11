@@ -40,6 +40,32 @@ pub fn item(n: u64) -> Item {
     }
 }
 
+/// Build a text-like [`Item`] with realistic English-prose-shaped payload.
+#[allow(dead_code)] // only bench_append_realistic uses this
+#[must_use]
+pub fn text_item(n: u64) -> Item {
+    Item {
+        id: n,
+        payload: format!(
+            "Event {n}: The system collected metrics at the configured interval. \
+             CPU usage was nominal, memory remained within bounds, and all \
+             subsystems reported healthy status. Timestamp: 2026-08-11T{n:06}."
+        ),
+    }
+}
+
+/// Build a JSON-like [`Item`] with structured payload.
+#[allow(dead_code)] // only bench_append_realistic uses this
+#[must_use]
+pub fn json_item(n: u64) -> Item {
+    Item {
+        id: n,
+        payload: format!(
+            r#"{{"id":{n},"ts":"2026-08-11T12:00:{n:06}","level":"info","module":"collector","msg":"metric tick","cpu":42.5,"mem":1073741824,"disk":8589934592,"net":{{"rx":1234567,"tx":9876543}}}}"#
+        ),
+    }
+}
+
 /// The shared benchmark config. The `flush_at_batch` argument is the only knob
 /// that varies between benchmarks, so it is the single parameter; everything
 /// else is pinned for cross-target consistency.

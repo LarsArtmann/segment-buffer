@@ -51,6 +51,12 @@ test, not the buffer construction.
 | `bench_durability_policy` | _(v0.5.0)_ A/B/C `Maximal` vs `Segment` vs `Throughput` on a 1000-event flush                          |
 | `bench_segment_size_stats`| _(v0.5.5)_ `segment_size_stats()` scan cost at 100, 1k, 10k segments                                   |
 | `bench_cipher`            | _(v0.5.0)_ Flush encode pipeline: no cipher vs AES-256-GCM vs XChaCha20-Poly1305 (requires `--features encryption`) |
+| `bench_concurrent_append` | _(v0.5.7)_ `append` vs `append_all` under 1/2/4/8 concurrent threads                                  |
+| `bench_iter_from`         | `iter_from` (materialising iterator) vs `for_each_from` vs `read_from` on 1k and 10k items            |
+| `bench_flush`             | Isolates the `flush()` encode pipeline (CBOR + zstd + write) at 100/1k/10k items                      |
+| `bench_concurrent_read`   | `read_from` throughput under 1/2/4/8 concurrent reader threads                                        |
+| `bench_mixed_read_write`  | Producer + consumer threads concurrently (1/2/4 producers, 1 consumer) — cloud-sync workload model     |
+| `bench_append_realistic`  | `append` with uniform/text/JSON payloads to quantify payload-entropy cost                             |
 
 ## Scaling test (end-to-end, 1M–100M scale)
 

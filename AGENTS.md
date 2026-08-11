@@ -93,7 +93,7 @@ cargo run --example basic_usage
 cargo run --example backpressure
 cargo run --example encrypted --features encryption   # REQUIRES the feature flag
 
-# Benchmarks (criterion, 11 separate targets declared in Cargo.toml)
+# Benchmarks (criterion, 16 separate targets declared in Cargo.toml)
 cargo bench --bench bench_append
 cargo bench --bench bench_read_from
 cargo bench --bench bench_delete_acked
@@ -105,6 +105,11 @@ cargo bench --bench bench_durability_policy
 cargo bench --bench bench_segment_size_stats
 cargo bench --bench bench_cipher --features encryption   # REQUIRES the feature flag
 cargo bench --bench bench_concurrent_append
+cargo bench --bench bench_iter_from
+cargo bench --bench bench_flush
+cargo bench --bench bench_concurrent_read
+cargo bench --bench bench_mixed_read_write
+cargo bench --bench bench_append_realistic
 
 # Docs (CI builds with the feature so AesGcmCipher is visible)
 cargo doc --no-deps --features encryption
@@ -274,7 +279,7 @@ src/
   tests.rs         `mod tests` — unit tests (141 tests; `grep -c '#[test]' src/tests.rs`)
   property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / segment_size_stats / FlushPolicy / consistency-model race-window invariants, publish_disk_stats correctness, delete_acked idempotency (38 properties; `grep -c '#[test]' src/property_tests.rs`)
 examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput), batch_or_interval_min (tiny-segment suppression demo), segment_tuning (segment_size_stats batch-size tuning loop)
-benches/           11 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy, segment_size_stats, cipher[encryption], concurrent_append) + shared support.rs
+benches/           16 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy, segment_size_stats, cipher[encryption], concurrent_append, iter_from, flush, concurrent_read, mixed_read_write, append_realistic) + shared support.rs
 fuzz/              cargo-fuzz scaffold (fuzz_corrupted_read, fuzz_recovery, fuzz_parse_filename, fuzz_envelope, fuzz_append_all, fuzz_flush_policy, fuzz_for_each_from); requires nightly
 FEATURES.md        Honest capability inventory by status
 TODO_LIST.md       Short/mid-term improvement tasks with status

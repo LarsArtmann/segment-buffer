@@ -144,3 +144,23 @@ required-features = ["encryption"]
 [[bench]]
 name = "bench_concurrent_append"
 harness = false
+
+[[bench]]
+name = "bench_iter_from"
+harness = false
+
+[[bench]]
+name = "bench_flush"
+harness = false
+
+[[bench]]
+name = "bench_concurrent_read"
+harness = false
+
+[[bench]]
+name = "bench_mixed_read_write"
+harness = false
+
+[[bench]]
+name = "bench_append_realistic"
+harness = false
