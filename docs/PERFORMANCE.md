@@ -258,81 +258,98 @@ For the cloud-sync deployment target, the levers rank roughly:
 If the cloud endpoint is the bottleneck (the common case), even lever 1 alone
 is enough — the buffer is no longer on the critical path.
 
-## Baseline snapshot (2026-08-10, v0.5.6, `--features encryption`)
+## Baseline snapshot (2026-08-11, v0.6.0, compression level 1, `--features encryption`)
 
-Single-run, single-machine, tmpfs-backed. Absolute numbers are indicative;
-ratios are durable. Run `cargo bench --features encryption` to reproduce.
+Single-run, single-machine, tmpfs-backed, 10-sample criterion. Absolute numbers
+are indicative; ratios are durable. Run `cargo bench --features encryption` to
+reproduce. Previous snapshot was v0.5.6 at compression level 3 — the level-1
+default (shipped v0.5.7) reduces zstd CPU cost on the flush path.
 
 ### Append throughput
 
 | Benchmark              | Median     | Throughput   |
 | ---------------------- | ---------- | ------------ |
-| `append/batch_1`       | 27.0 µs    | 37 Kelem/s   |
-| `append/batch_100`     | 48.4 µs    | 2.07 Melem/s |
-| `append/batch_1000`    | 157.4 µs   | 6.35 Melem/s |
-| `append/batch_10000`   | 1.19 ms    | 8.40 Melem/s |
-| `append_all/100`       | 45.0 µs    | 2.22 Melem/s |
-| `append_all/1000`      | 133.9 µs   | 7.47 Melem/s |
-| `append_all/10000`     | 1.19 ms    | 8.39 Melem/s |
+| `append/batch_1`       | 83.7 µs    | 12 Kelem/s   |
+| `append/batch_100`     | 112.7 µs   | 887 Kelem/s  |
+| `append/batch_1000`    | 204.2 µs   | 4.90 Melem/s |
+| `append/batch_10000`   | 1.73 ms    | 5.77 Melem/s |
+| `append_all/100`       | 66.1 µs    | 1.51 Melem/s |
+| `append_all/1000`      | 215.2 µs   | 4.65 Melem/s |
+| `append_all/10000`     | 1.05 ms    | 9.54 Melem/s |
+
+### Concurrent append throughput (append vs append_all)
+
+10 000 items per thread, `FlushPolicy::Manual` (no inline flush), 10-sample.
+
+| Threads | `append` median | `append_all` median | `append_all` speedup |
+| ------- | --------------- | ------------------- | -------------------- |
+| 1       | 2.27 ms         | 1.57 ms             | 1.44x                |
+| 2       | 4.26 ms         | 3.23 ms             | 1.32x                |
+| 4       | 10.0 ms         | 5.96 ms             | 1.68x                |
+| 8       | 36.6 ms         | 11.6 ms             | 3.16x                |
+
+`append_all` amortises lock acquisitions: one lock per batch vs one per item.
+The advantage widens with thread count because `append` serialises on every
+item while `append_all` holds the lock once per batch.
 
 ### Read path
 
 | Benchmark                          | Median     | Throughput   |
 | ---------------------------------- | ---------- | ------------ |
-| `read_from/limit_100`              | 1.51 ms    | 66 Kelem/s   |
-| `read_from/limit_1000`             | 1.45 ms    | 691 Kelem/s  |
-| `read_from/limit_10000`            | 1.50 ms    | 6.68 Melem/s |
-| `read_from_scan_cache/cold_10`     | 68.8 µs    | 1.45 Melem/s |
-| `read_from_scan_cache/warm_10`     | 51.4 µs    | 1.94 Melem/s |
-| `read_from_scan_cache/cold_100`   | 220.5 µs   | 453 Kelem/s  |
-| `read_from_scan_cache/warm_100`    | 230.4 µs   | 434 Kelem/s  |
-| `read_from_scan_cache/cold_1000`  | 2.74 ms    | 36.5 Kelem/s |
-| `read_from_scan_cache/warm_1000`  | 2.32 ms    | 43.1 Kelem/s |
+| `read_from/limit_100`              | 2.12 ms    | 47 Kelem/s   |
+| `read_from/limit_1000`             | 1.90 ms    | 526 Kelem/s  |
+| `read_from/limit_10000`            | 1.85 ms    | 5.40 Melem/s |
+| `read_from_scan_cache/cold_10`     | 85.4 µs    | 117 Kelem/s  |
+| `read_from_scan_cache/warm_10`     | 51.4 µs    | 195 Kelem/s  |
+| `read_from_scan_cache/cold_100`    | 240.6 µs   | 416 Kelem/s  |
+| `read_from_scan_cache/warm_100`    | 189.6 µs   | 527 Kelem/s  |
+| `read_from_scan_cache/cold_1000`   | 2.70 ms    | 371 Kelem/s  |
+| `read_from_scan_cache/warm_1000`   | 2.38 ms    | 421 Kelem/s  |
 
 ### `read_from` vs `for_each_from`
 
-| Benchmark                          | Median     |
-| ---------------------------------- | ---------- |
-| `read_vs_for_each/read_from/1000`     | 18.0 µs  |
-| `read_vs_for_each/for_each_from/1000` | 17.6 µs  |
-| `read_vs_for_each/read_from/10000`    | 183.9 µs |
-| `read_vs_for_each/for_each_from/10000` | 196.4 µs |
+| Benchmark                              | Median     |
+| -------------------------------------- | ---------- |
+| `read_vs_for_each/read_from/1000`      | 18.3 µs    |
+| `read_vs_for_each/for_each_from/1000`  | 17.7 µs    |
+| `read_vs_for_each/read_from/10000`     | 180.8 µs   |
+| `read_vs_for_each/for_each_from/10000` | 169.1 µs   |
 
 ### Delete, recovery, stats
 
 | Benchmark                    | Median     | Throughput   |
 | ---------------------------- | ---------- | ------------ |
-| `delete_acked/100_segments`  | 252.4 µs   | 396 Kelem/s  |
-| `delete_acked/10k_segments`  | 36.77 ms   | 272 Kelem/s  |
-| `recover/10_segments`         | 15.15 ms   | 660 elem/s   |
-| `recover/100_segments`        | 15.57 ms   | 6.42 Kelem/s |
-| `recover/1000_segments`       | 18.72 ms   | 53.4 Kelem/s |
-| `stats/stats_snapshot`       | 12.95 ns   | —            |
-| `stats/individual_accessors`  | 20.55 ns   | —            |
+| `delete_acked/100_segments`  | 278.1 µs   | 360 Kelem/s  |
+| `delete_acked/10k_segments`  | 42.7 ms    | 234 Kelem/s  |
+| `recover/10_segments`        | 15.2 ms    | 658 elem/s   |
+| `recover/100_segments`       | 15.5 ms    | 6.47 Kelem/s |
+| `recover/1000_segments`      | 18.6 ms    | 53.8 Kelem/s |
+| `stats/stats_snapshot`       | 13.5 ns    | —            |
+| `stats/individual_accessors` | 20.6 ns    | —            |
 
 ### Durability policy (1000-event flush)
 
-| Policy        | Median     | Throughput   |
-| ------------- | ---------- | ------------ |
-| `Maximal`     | 198.5 µs   | 5.04 Melem/s |
-| `Segment`     | 174.4 µs   | 5.74 Melem/s |
-| `Throughput`  | 193.6 µs   | 5.17 Melem/s |
+| Policy       | Median     | Throughput   |
+| ------------ | ---------- | ------------ |
+| `Maximal`    | 197.0 µs   | 5.08 Melem/s |
+| `Segment`    | 176.3 µs   | 5.67 Melem/s |
+| `Throughput` | 175.4 µs   | 5.70 Melem/s |
 
 ### Cipher overhead (flush encode pipeline)
 
-| Cipher               | Median     |
-| -------------------- | ---------- |
-| no cipher            | 51.2 µs    |
-| AES-256-GCM          | 54.8 µs    |
-| XChaCha20-Poly1305   | 61.7 µs    |
+| Cipher               | Median     | Throughput   |
+| -------------------- | ---------- | ------------ |
+| no cipher            | 79.9 µs    | 3.20 Melem/s |
+| AES-256-GCM          | 87.2 µs    | 2.94 Melem/s |
+| XChaCha20-Poly1305   | 114.5 µs   | 2.24 Melem/s |
 
 ### Segment size stats scan cost
 
 | Segments | Median     |
 | -------- | ---------- |
-| 100      | 47.1 µs    |
-| 1000     | 464.4 µs   |
-| 10000    | 6.18 ms    |
+| 100      | 57.5 µs    |
+| 1000     | 437.8 µs   |
+| 10000    | 10.2 ms    |
 
 ## When to re-bench
 
@@ -352,3 +369,10 @@ ratios are durable. Run `cargo bench --features encryption` to reproduce.
   scaling test (`cargo run --release --example scaling`) closes this gap for
   end-to-end lifecycle throughput, but micro-bench numbers still reflect tmpfs.
   Production numbers on spinning disk or networked storage will differ.
+  Internal testing confirms the flush path is **CPU-bound, not I/O-bound** at
+  level 1 — running the scaling example against `/dev/shm` vs a real SSD
+  produced throughput within 5% of each other. The zstd + CBOR encode pipeline
+  dominates; the file I/O (tmp → fsync → rename) is a rounding error at
+  `Throughput` durability (no fsync). Only at `Maximal` durability (double
+  fsync per flush) does I/O latency become measurable, and even then the
+  impact is <30% on this hardware.

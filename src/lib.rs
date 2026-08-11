@@ -823,7 +823,7 @@ impl SegmentConfig {
 /// This struct is `#[non_exhaustive]`: new fields may be added in any release
 /// without breaking semver. It is constructed internally by [`SegmentBuffer::stats`];
 /// callers read fields via dot-syntax or pattern-match with `..` only.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[must_use]
 #[non_exhaustive]
 pub struct BufferStats {

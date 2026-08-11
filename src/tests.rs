@@ -3761,3 +3761,60 @@ fn compression_level_default_is_one() {
          If this test fails, the default was unintentionally changed."
     );
 }
+
+// =========================================================================
+// BufferStats equality tests
+// =========================================================================
+
+#[test]
+fn buffer_stats_eq_same_values() {
+    let a = BufferStats {
+        pending_count: 10,
+        latest_sequence: 42,
+        head_sequence: 5,
+        next_sequence: 43,
+        approx_disk_bytes: 1024,
+        segment_count: 3,
+        max_size_bytes: 4096,
+        store_pressure: 0.25,
+    };
+    let b = a.clone();
+    assert_eq!(a, b, "identical BufferStats must be equal");
+}
+
+#[test]
+fn buffer_stats_ne_different_values() {
+    let a = BufferStats {
+        pending_count: 10,
+        latest_sequence: 42,
+        head_sequence: 5,
+        next_sequence: 43,
+        approx_disk_bytes: 1024,
+        segment_count: 3,
+        max_size_bytes: 4096,
+        store_pressure: 0.25,
+    };
+    let mut b = a.clone();
+    b.pending_count = 11;
+    assert_ne!(a, b, "BufferStats differing in any field must not be equal");
+}
+
+// =========================================================================
+// flock released on Drop test
+// =========================================================================
+
+#[test]
+fn flock_released_on_drop() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+
+    // First buffer acquires the lock.
+    {
+        let _buf = SegmentBuffer::<TestItem>::open(dir, test_config(1024 * 1024))
+            .expect("first open should succeed");
+    } // _buf dropped here — lock must be released.
+
+    // Second buffer in the same directory must succeed (not Locked).
+    let _buf2 = SegmentBuffer::<TestItem>::open(dir, test_config(1024 * 1024))
+        .expect("second open after drop should succeed — lock was released");
+}

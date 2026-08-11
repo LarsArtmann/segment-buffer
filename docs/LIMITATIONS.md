@@ -8,12 +8,16 @@ or re-introduce a problem the crate was created to solve.
 > See also: [DOMAIN_LANGUAGE.md](./DOMAIN_LANGUAGE.md) for the consistency
 > model and tradeoff matrix; [ROADMAP.md](../ROADMAP.md) for non-goals and
 > future direction.
+>
+> **Status tags:** _(Permanent)_ = core invariant, will not change.
+> _(Tradeoff)_ = deliberate engineering choice, changeable with significant
+> rework. _(Roadmap)_ = planned for a future release, tracked in ROADMAP.md.
 
 ---
 
 ## Process model
 
-### Single-process only
+### Single-process only _(Permanent)_
 
 One owner process per buffer directory, enforced by an exclusive `flock` on a
 `.segment-buffer.lock` sidecar (since v0.5.0). A second process calling `open`
@@ -29,7 +33,7 @@ socket, HTTP, etc.).
 items, and corrupt `head_seq` / `next_seq`. The lock is the crate's identity
 boundary.
 
-### Synchronous API only
+### Synchronous API only _(Tradeoff)_
 
 All I/O is synchronous. There are no `async fn` methods and no hidden threads.
 The mutex is never held across file I/O.
@@ -38,7 +42,7 @@ The mutex is never held across file I/O.
 invariant under cancellation — a large design surface with no current consumer.
 See [ROADMAP.md](../ROADMAP.md) for the async direction.
 
-### No built-in background flush worker
+### No built-in background flush worker _(Tradeoff)_
 
 The crate does not spawn a flush thread. `FlushPolicy::Batch(N)` runs the
 encode pipeline inline on the threshold-crossing `append()`. For p99-sensitive
@@ -54,7 +58,7 @@ achieves.
 
 ## Delivery semantics
 
-### At-least-once, not exactly-once
+### At-least-once, not exactly-once _(Permanent)_
 
 The crate guarantees **at-least-once** delivery. Between `read_from(start, ...)`
 and `delete_acked(start + count - 1)`, a crash leaves the batch on disk. On
@@ -62,7 +66,7 @@ restart, `read_from(start, ...)` returns it again. Making this **effectively
 once** requires server-side idempotency on `(producer_id, seq)` — see
 `examples/idempotent_server.rs`.
 
-### No cursor persistence
+### No cursor persistence _(Permanent)_
 
 The crate does not own a cursor file. After a crash, the caller's cursor is
 lost unless the caller persists it independently. The starting cursor after
@@ -78,7 +82,7 @@ cardinality. See the layer-split table in [AGENTS.md](../AGENTS.md).
 
 ## Durability
 
-### Unflushed items are volatile
+### Unflushed items are volatile _(Permanent)_
 
 Items in the in-memory `unflushed` buffer are lost on crash. The crate does not
 fsync the in-memory tail. Call `flush()` at crash-sensitive boundaries or use a
@@ -116,7 +120,7 @@ The canonical usage pattern — one consumer thread running `read_from` -> uploa
 They only manifest under concurrent readers, background flushers, or parallel
 consumers.
 
-### Spurious Io errors under concurrent `delete_acked`
+### Spurious Io errors under concurrent `delete_acked` _(Tradeoff)_
 
 `read_from` scans the directory unlocked, then reads each segment file unlocked.
 If `delete_acked` removes a segment between scan and read, `read_from` returns
@@ -126,7 +130,7 @@ is spurious. Retry the read; the next scan reflects the deletion.
 **Why not fixed:** making `read_bytes` swallow `NotFound` would mask genuine
 corruption (a missing segment that was NOT acked).
 
-### Transient gaps under concurrent `flush`
+### Transient gaps under concurrent `flush` _(Tradeoff)_
 
 `read_from`'s Phase 1 (directory scan) and Phase 2 (read `unflushed` under lock)
 are separated by an unlocked gap. If `flush()` completes during that gap, items
@@ -137,7 +141,7 @@ subsequent `read_from` observes them.
 **Why not fixed:** holding the mutex across the scan-to-read gap would serialize
 I/O and break the "never held across file I/O" invariant.
 
-### No transactional multi-segment reads
+### No transactional multi-segment reads _(Tradeoff)_
 
 `read_from` is not atomic across segments. Each segment is read individually; a
 failure on segment N aborts the read (returns `Err`) without returning segments
@@ -147,7 +151,7 @@ failure on segment N aborts the read (returns `Err`) without returning segments
 
 ## Data model
 
-### No schema evolution support for `T`
+### No schema evolution support for `T` _(Tradeoff)_
 
 The CBOR payload inside the envelope is `serde`'s serialization of your `T`.
 This layer is completely unversioned. If you change `T` in a
@@ -157,7 +161,7 @@ no way to detect or migrate this — it does not know the shape of `T`.
 See [DOMAIN_LANGUAGE.md](./DOMAIN_LANGUAGE.md) "Schema evolution of T" for
 strategies (versioned enum, upcaster in drain loop, fresh buffer).
 
-### No multi-`T` coexistence
+### No multi-`T` coexistence _(Roadmap: envelope v2)_
 
 Segments from multiple `T` versions cannot coexist in the same directory with
 auto-detection. This requires envelope v2 (cipher id + metadata block), which
@@ -183,7 +187,7 @@ in the consumer. This is a verified design boundary, not a TODO.
 
 ## Format
 
-### No streaming cipher (whole segment buffered)
+### No streaming cipher (whole segment buffered) _(Roadmap: envelope v2)_
 
 The entire segment is buffered in memory during encode (CBOR -> zstd -> encrypt
 as a blob) and decode (decrypt -> decompress -> deserialize as a blob). A
@@ -191,7 +195,7 @@ streaming AEAD (e.g. RFC 8450 chunked format) would bound memory on large
 segments and enable early-stop-at-`limit` reads of encrypted data. This is a
 format change tracked under envelope v2.
 
-### No cipher auto-detection
+### No cipher auto-detection _(Roadmap: envelope v2)_
 
 The cipher type is not stored in the segment envelope. If you open a buffer with
 the wrong cipher, encrypted segments will fail authentication (GCM/Poly1305 tag
@@ -199,7 +203,7 @@ mismatch) or produce garbage. The crate cannot tell you which cipher was used.
 Cipher auto-detection (cipher id byte in the envelope) is an envelope v2
 feature.
 
-### No per-segment checksum
+### No per-segment checksum _(Roadmap: envelope v2)_
 
 There is no standalone integrity checksum on segment files. Bit-rot detection
 relies on the cipher's AEAD tag (if encryption is enabled) or on CBOR decode
@@ -207,7 +211,7 @@ failure (if not). A standalone Blake3 checksum would catch bit-rot on plaintext
 buffers distinct from cipher authentication failures. This is an envelope v2
 feature.
 
-### No compression negotiation
+### No compression negotiation _(Roadmap: envelope v2)_
 
 Segments are always zstd-compressed. There is no per-file compression algorithm
 selection (lz4, snappy, none). Compression negotiation is an envelope v2
@@ -217,7 +221,7 @@ feature.
 
 ## Operational
 
-### No built-in health check
+### No built-in health check _(Tradeoff)_
 
 There is no `health()` method. The canonical health check is `stats()` for
 pressure plus a trial `append()` + explicit `flush()` to probe writability.
@@ -226,13 +230,13 @@ statfs/GetDiskFreeSpace) were rejected as Verschlimmbessern — redundant,
 disk-harmful on a near-full filesystem, or a platform dependency for something
 `store_pressure()` already approximates.
 
-### No metrics export
+### No metrics export _(Tradeoff)_
 
 The crate exposes `BufferStats` (a snapshot struct) and `store_pressure()` (a
 ratio). It does not export Prometheus metrics, OpenTelemetry spans, or any
 other observability signal. Wiring those is the consumer's job.
 
-### No monitoring hooks
+### No monitoring hooks _(Tradeoff)_
 
 There are no callback hooks for monitoring flush events, segment writes, or
 deletion events. The `tracing` crate is used internally for debug-level spans,

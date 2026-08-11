@@ -271,7 +271,7 @@ src/
   store.rs         SegmentStore trait + RealStore impl: the I/O boundary. create_dir_all / scan / clean_tmp / segment_size / remove_segment / write_atomic / read_bytes
   cipher.rs        SegmentCipher trait, CipherError (opaque: private fields + `Arc<dyn Error + Send + Sync>` source for chaining), AesGcmCipher + XChaCha20Poly1305Cipher (both feature-gated, impls in `mod private`)
   error.rs         SegmentError (typed: path + phase + reason), Result alias
-  tests.rs         `mod tests` — unit tests (132 tests; `grep -c '#[test]' src/tests.rs`)
+  tests.rs         `mod tests` — unit tests (141 tests; `grep -c '#[test]' src/tests.rs`)
   property_tests.rs proptest: filename/payload/envelope bijections, encrypted roundtrip, corrupted/recovery fuzz analogues, append_all / sync_disk_bytes / segment_size_stats / FlushPolicy / consistency-model race-window invariants, publish_disk_stats correctness, delete_acked idempotency (38 properties; `grep -c '#[test]' src/property_tests.rs`)
 examples/          basic_usage, backpressure, background_flush, crash_recovery, mpmc, hotpath_profile, cloud_sync, cloud_sync_disk_full, idempotent_server, encrypted (feature-gated), bring_your_own_cipher (feature-gated), scaling (end-to-end 1M–100M lifecycle throughput), batch_or_interval_min (tiny-segment suppression demo), segment_tuning (segment_size_stats batch-size tuning loop)
 benches/           11 criterion targets (append, read_from, read_vs_for_each, delete_acked, recover, stats, append_all, durability_policy, segment_size_stats, cipher[encryption], concurrent_append) + shared support.rs
