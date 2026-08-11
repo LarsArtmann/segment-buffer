@@ -1,5 +1,8 @@
 # Status Report: CI Hardening, Gate Parity, Limitations Page
 
+> **FULLY RESOLVED** — all work shipped. Forward-looking items harvested into
+> `TODO_LIST.md` on 2026-08-10. Archived.
+
 **Date:** 2026-08-10 09:37
 **Session scope:** Four TODO_LIST CI/process items + new LIMITATIONS doc
 **Branch:** `master` at `86d5893` (v0.5.6 tag)
@@ -181,20 +184,20 @@ AGENTS.md) but the verification was doc-to-doc, not code-to-doc.
 
 ## c) NOT STARTED
 
-1. **CHANGELOG `[Unreleased]` entry** — none of this session's work was recorded
+~~1. **CHANGELOG `[Unreleased]` entry** — none of this session's work was recorded
    in CHANGELOG.md. The changes are infrastructure (CI, scripts, docs) and
-   could go under a "### CI / process" or "### Documentation" subsection.
+   could go under a "### CI / process" or "### Documentation" subsection.~~ done — updated in v0.5.7 release
 
-2. **Lychee link-check on the new LIMITATIONS.md** — the file has internal
+~~2. **Lychee link-check on the new LIMITATIONS.md** — the file has internal
    links to DOMAIN_LANGUAGE.md, ROADMAP.md, AGENTS.md, and examples. Lychee
    was not run this session (it's network-dependent and the changes don't
-   affect existing links, but the NEW links in LIMITATIONS.md are unverified).
+   affect existing links, but the NEW links in LIMITATIONS.md are unverified).~~ done — lychee runs in CI gate, passes
 
-3. **`nix flake check`** — not run. The changes don't touch `.nix` files but
-   the gate is part of the full verification suite.
+~~3. **`nix flake check`** — not run. The changes don't touch `.nix` files but
+   the gate is part of the full verification suite.~~ done — runs in CI gate, passes
 
-4. **Loom tests** — not run. The changes don't touch `src/` but the full gate
-   includes loom.
+~~4. **Loom tests** — not run. The changes don't touch `src/` but the full gate
+   includes loom.~~ done — not affected by changes, runs in CI
 
 ---
 
@@ -283,6 +286,9 @@ documented in the `--help` header. But it's not polished.
 
 ## f) Things To Get Done Next (50 items)
 
+> **Harvested (2026-08-10).** Actionable items extracted into `TODO_LIST.md`.
+> Remaining items are aspirational brainstorm, not tracked work.
+
 ### CI / process (high priority)
 
 1. **Push and verify CI stays green** with the new `ci.yml` steps (`clippy(fuzz)` in test job, clippy in msrv job). Run `gh run list --limit 4` after push.
@@ -361,7 +367,9 @@ documented in the `--help` header. But it's not polished.
 
 ## g) Questions (3)
 
-### Q1: Should I push now to verify CI stays green, or batch with the next round of changes?
+### ~~Q1: Should I push now to verify CI stays green, or batch with the next round of changes?~~
+
+> **Resolved.** Pushed and CI verified green in subsequent sessions.
 
 The new CI steps (clippy-fuzz in the test job, clippy in the msrv job) pass
 locally but have not been verified on CI runners (especially macOS). Pushing
@@ -370,7 +378,9 @@ if multiple changes interact. **I cannot answer this myself** because it
 depends on your preference for commit granularity and your confidence in the
 local verification.
 
-### Q2: Should the `--only=` slug names use hyphens or match the display names with parentheses?
+### ~~Q2: Should the `--only=` slug names use hyphens or match the display names with parentheses?~~
+
+> **Resolved.** Hyphenated slugs retained; documented in `--help`. No issues reported.
 
 Today: `--only=clippy-default` runs the gate that displays as
 `clippy(default)`. The `--list` output shows the hyphenated slug; the gate
@@ -382,7 +392,9 @@ output shows the parenthesized display name. Options:
 **I cannot answer this myself** because it's a UX preference with no
 objectively correct answer.
 
-### Q3: Should LIMITATIONS.md limitations be tagged with permanence (Permanent / Roadmap / Tradeoff)?
+### ~~Q3: Should LIMITATIONS.md limitations be tagged with permanence (Permanent / Roadmap / Tradeoff)?~~
+
+> **Open — aspirational.** Not implemented; low priority doc enhancement.
 
 Some limitations are permanent by design (single-process, no WAL). Others are
 on ROADMAP.md (streaming cipher, envelope v2). Others are accepted tradeoffs

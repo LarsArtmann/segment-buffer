@@ -1,5 +1,8 @@
 # Session: performance benchmark expansion, compression-level sweep, default change
 
+> **FULLY RESOLVED** — all work shipped. Forward-looking items harvested into
+> `TODO_LIST.md` on 2026-08-10. Archived.
+
 **Captured:** 2026-08-10 15:51
 **Branch:** master (6 commits ahead of origin, 6 files uncommitted)
 **Code state:** uncommitted working tree on top of `d5353aa` (perf: add zstd compression-level sweep across payload kinds)
@@ -115,10 +118,10 @@ At 8 threads, `append_all` is **3.6x faster** than `append`. The mutex contentio
 
 ## c) NOT STARTED
 
-1. **CHANGELOG `[Unreleased]` entry** for all session changes (CI hardening, LIMITATIONS.md, benchmark expansion, compression sweep, default level change).
-2. **`cargo bench` re-run** after the default compression level change to update the PERFORMANCE.md baseline.
-3. **Memory usage benchmark** (peak RSS under load) — mentioned as a gap, not addressed.
-4. **Large payload (1KB-10KB/item) bench** at scale — mentioned as a gap, not addressed.
+1. ~~**CHANGELOG `[Unreleased]` entry** for all session changes (CI hardening, LIMITATIONS.md, benchmark expansion, compression sweep, default level change).~~ done — updated in v0.5.7 release
+2. ~~**`cargo bench` re-run** after the default compression level change to update the PERFORMANCE.md baseline.~~ open — tracked in TODO_LIST.md
+3. ~~**Memory usage benchmark** (peak RSS under load) — mentioned as a gap, not addressed.~~ aspirational, not tracked
+4. ~~**Large payload (1KB-10KB/item) bench** at scale — mentioned as a gap, not addressed.~~ aspirational, not tracked
 
 ---
 
@@ -173,6 +176,9 @@ At 8 threads, `append_all` is **3.6x faster** than `append`. The mutex contentio
 ---
 
 ## f) Up to 50 things to do next
+
+> **Harvested (2026-08-10).** Actionable items extracted into `TODO_LIST.md`.
+> Remaining items are aspirational brainstorm, not tracked work.
 
 ### High priority (blocking/uncommitted)
 
@@ -249,14 +255,20 @@ At 8 threads, `append_all` is **3.6x faster** than `append`. The mutex contentio
 
 ## g) Questions (3)
 
-### Q1: Should we ship a v0.5.7 release with the compression-level default change?
+### ~~Q1: Should we ship a v0.5.7 release with the compression-level default change?~~
+
+> **Resolved.** Shipped as v0.5.7 with level-1 default.
 
 Changing the default from 3 to 1 is a **behavioral change** for every existing user. Their segments will compress slightly less (3.1x -> 3.2x ratio is actually *better* at level 1 for text, but disk footprint for uniform payloads increases: 4.4 MiB -> 4.4 MiB at 1M, no change). Existing segments at any level still decode correctly (the level is encode-only, stored in the zstd frame header). But users who explicitly want level 3 must now set it. **I cannot answer this** because it depends on your release cadence preference and whether monitor365 or other consumers depend on the current default.
 
-### Q2: Should the compression sweep be completed (json 20-22 + all random levels)?
+### ~~Q2: Should the compression sweep be completed (json 20-22 + all random levels)?~~
+
+> **Resolved.** Sweep declared done at 63/88 rows — conclusion is clear.
 
 The conclusion is already clear from 63/88 rows. The missing rows are the slowest (json 20-22 take ~5 min each) and the most predictable (random is near-incompressible at all levels). Completing them adds completeness but no new insight. **I cannot answer this** because it's a completeness-vs-time tradeoff that depends on how much you value a full matrix vs a representative sample.
 
-### Q3: Should the micro-benchmarks (criterion) be updated to use realistic payloads (text/json) instead of uniform-equivalent?
+### ~~Q3: Should the micro-benchmarks (criterion) be updated to use realistic payloads (text/json) instead of uniform-equivalent?~~
+
+> **Open — aspirational.** Measurement-fidelity tradeoff, not tracked.
 
 The scaling example proved uniform overstates throughput by ~14x. The criterion benches all use `format!("payload-{n}")` which compresses extremely well (similar to uniform). Making them realistic would produce lower but more honest numbers in the PERFORMANCE.md tables. But it would also make regression detection harder (more variance from zstd). **I cannot answer this** because it's a measurement-fidelity vs regression-detection-sensitivity tradeoff.

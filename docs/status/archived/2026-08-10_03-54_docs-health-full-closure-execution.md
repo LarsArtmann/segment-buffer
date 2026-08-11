@@ -1,5 +1,8 @@
 # Status Report: Docs-Health Full Closure — Pareto Plan Execution
 
+> **FULLY RESOLVED** — all work shipped. Forward-looking items harvested into
+> `TODO_LIST.md` on 2026-08-10. Archived.
+
 **Date:** 2026-08-10 03:54 CEST
 **Session scope:** Execute the Pareto plan
 (`docs/planning/2026-08-10_02-42_*.md`) — close the three gaps from the prior
@@ -146,7 +149,7 @@ adds more cases.
 
 ## c) NOT STARTED
 
-### The 02:37 status report was not itself annotated
+### ~~The 02:37 status report was not itself annotated~~ done — annotated and archived in subsequent session
 
 `docs/status/2026-08-10_02-37_docs-health-full-sweep-with-annotation-gaps.md`
 and `docs/planning/2026-08-10_02-42_docs-health-full-closure-pareto-plan.md`
@@ -154,7 +157,7 @@ are both still in the un-archived `docs/status/` and `docs/planning/`
 directories respectively. They are now resolved (this session executed the
 plan and closed the gaps). They should be annotated and archived.
 
-### CHANGELOG `[Unreleased]` not updated with this session's doc work
+### ~~CHANGELOG `[Unreleased]` not updated with this session's doc work~~ done — updated in subsequent sessions
 
 The `### Documentation` sub-entry added by the prior session covers version-
 label corrections. This session's work (CONTRIBUTING lint fix, TODO_LIST
@@ -240,6 +243,9 @@ session instead of closing it out when done.
 ---
 
 ## f) Up to 50 things to get done next
+
+> **Harvested (2026-08-10).** Actionable items extracted into `TODO_LIST.md`.
+> Remaining items are aspirational brainstorm, not tracked work.
 
 ### Session immediate cleanup (next 10 minutes)
 
@@ -359,7 +365,7 @@ session instead of closing it out when done.
 
 ## g) Questions I CANNOT answer myself
 
-### 1. Should I annotate and archive the 02:37 + 02:42 docs NOW, or is that too much self-referential churn?
+### ~~1. Should I annotate and archive the 02:37 + 02:42 docs NOW, or is that too much self-referential churn?~~ done — annotated and archived in subsequent session
 
 The 02:37 status report and 02:42 Pareto plan are both fully resolved. The
 docs-health discipline says "archive what you resolve." But annotating and
@@ -369,7 +375,7 @@ archived, skip." Is this the right level of discipline, or should session
 docs stay in `docs/status/` / `docs/planning/` until a FUTURE session's
 docs-health pass archives them?
 
-### 2. The 12 remaining partially-annotated files: annotate them all, or accept the header-only annotation for low-value files?
+### ~~2. The 12 remaining partially-annotated files: annotate them all, or accept the header-only annotation for low-value files?~~ done — resolved: actionable items harvested into TODO_LIST.md; header-only accepted for low-value files
 
 The Pareto plan says "NOT every item gets strikethrough" and I applied that
 to pick the 6 highest-value files. But 12 files with 1–4 markers is still
@@ -379,7 +385,7 @@ test." For files like `01-37` (50 brainstorm items) or `23-55` (a 3-item
 rustdoc polish report), full inline annotation adds noise without value.
 Where should the bar be?
 
-### 3. Should this session's doc changes (CONTRIBUTING fix, TODO_LIST rebuild) go into CHANGELOG `[Unreleased]`?
+### ~~3. Should this session's doc changes (CONTRIBUTING fix, TODO_LIST rebuild) go into CHANGELOG `[Unreleased]`?~~ done — updated in subsequent sessions
 
 The prior session established the `### Documentation` sub-entry pattern. This
 session's changes are doc-only (no code changes, no published-crate impact).

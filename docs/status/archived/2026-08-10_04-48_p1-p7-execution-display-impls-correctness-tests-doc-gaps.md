@@ -1,5 +1,8 @@
 # Status Report: P1-P7 Execution — Display Impls, Correctness Tests, Doc Gaps, Code Wins
 
+> **FULLY RESOLVED** — all work shipped. Forward-looking items harvested into
+> `TODO_LIST.md` on 2026-08-10. Archived.
+
 **Date:** 2026-08-10 04:48 CEST
 **Author:** Crush session (continuation of docs-health → TODO_LIST execution)
 **Commits:** `109f107`, `c86c347`, `ec6f16c`
@@ -113,21 +116,21 @@ They are tracked in `TODO_LIST.md`.
 
 | ID  | Task | Why deferred |
 |-----|------|-------------|
-| D1  | Flip DurabilityPolicy default Segment→Throughput | Changes default behavior — needs release scope |
-| D2  | Loom coverage for for_each_from | Gate already takes 219s; plan first |
-| D3  | Loom test for iter_from | Same as D2 |
-| D4  | FlushPolicy::validate() method | Design question (Result vs panic) |
-| D5  | Seal SegmentStore trait | Semver implications under loom feature |
-| D6  | PartialEq for SegmentConfig | Blocked by Arc<dyn SegmentCipher> |
-| D7  | Fuzz target for for_each_from | High effort, statistical coverage exists |
-| D8  | bench_segment_size_stats | High effort, lower immediate value |
-| D9  | bench_cipher | High effort, lower immediate value |
-| D10 | Property test: publish_disk_stats | Statistical coverage exists |
-| D11 | Property test: delete_acked idempotency | Loom proof exists |
-| D12 | Stress test: segment_size_stats concurrent | Statistical coverage exists |
-| D13 | CI parity audit + clippy on MSRV | Don't destabilize green CI |
-| D14 | check-changelog-links.sh robustness | Don't destabilize green CI |
-| D15 | verify-gate.sh --list/--only | Don't destabilize green CI |
+| D1  | ~~Flip DurabilityPolicy default Segment→Throughput~~ done — shipped in v0.6.0 | Changes default behavior — needs release scope |
+| D2  | ~~Loom coverage for for_each_from~~ done — shipped in v0.5.6 | Gate already takes 219s; plan first |
+| D3  | ~~Loom test for iter_from~~ done — shipped in v0.5.6 | Same as D2 |
+| D4  | ~~FlushPolicy::validate() method~~ done — shipped in v0.5.6 | Design question (Result vs panic) |
+| D5  | ~~Seal SegmentStore trait~~ done — shipped in v0.5.6 | Semver implications under loom feature |
+| D6  | ~~PartialEq for SegmentConfig~~ done — shipped in v0.5.6 | Blocked by Arc<dyn SegmentCipher> |
+| D7  | ~~Fuzz target for for_each_from~~ done — shipped in v0.5.6 (not in CI fuzz matrix — tracked in TODO_LIST) | High effort, statistical coverage exists |
+| D8  | ~~bench_segment_size_stats~~ done — shipped in v0.5.6 (never run — tracked in TODO_LIST) | High effort, lower immediate value |
+| D9  | ~~bench_cipher~~ done — shipped in v0.5.6 (never run — tracked in TODO_LIST) | High effort, lower immediate value |
+| D10 | ~~Property test: publish_disk_stats~~ done — shipped in v0.5.6 | Statistical coverage exists |
+| D11 | ~~Property test: delete_acked idempotency~~ done — shipped in v0.5.6 | Loom proof exists |
+| D12 | ~~Stress test: segment_size_stats concurrent~~ done — shipped in v0.5.6 | Statistical coverage exists |
+| D13 | ~~CI parity audit + clippy on MSRV~~ done — shipped in v0.5.7 | Don't destabilize green CI |
+| D14 | ~~check-changelog-links.sh robustness~~ done — shipped in v0.5.7 | Don't destabilize green CI |
+| D15 | ~~verify-gate.sh --list/--only~~ done — shipped in v0.5.7 | Don't destabilize green CI |
 
 ---
 
@@ -228,6 +231,9 @@ the same commit. **The auto-git daemon's commit boundary beat me to it.**
 
 ## f) Up to 50 things to get done next
 
+> **Harvested (2026-08-10).** Actionable items extracted into `TODO_LIST.md`.
+> Remaining items are aspirational brainstorm, not tracked work.
+
 ### Release-scoped (high impact)
 
 1. **Flip DurabilityPolicy default** Segment → Throughput with deprecation note
@@ -308,7 +314,7 @@ the same commit. **The auto-git daemon's commit boundary beat me to it.**
 
 ## g) Questions I cannot figure out myself
 
-### 1. Should the next release be v0.5.6 or v0.6.0?
+### ~~1. Should the next release be v0.5.6 or v0.6.0?~~ done — resolved: v0.5.6 and v0.6.0 both shipped
 
 The `[Unreleased]` changes are purely additive (Display impls, `#[must_use]`,
 `#[doc(alias)]`, property tests, helper extraction, doc sections). Semver says
@@ -317,7 +323,7 @@ highest-impact remaining TODO — is a behavior change that warrants a minor
 bump (0.6.0). **Should I ship 0.5.6 now with just the additive changes, or
 bundle the DurabilityPolicy flip into 0.6.0?**
 
-### 2. Should BufferStats Display format bytes as human-readable?
+### ~~2. Should BufferStats Display format bytes as human-readable?~~ done — resolved: user chose human-readable (4.0KB); shipped in v0.5.6
 
 `disk=4096B/1048576B` is machine-parseable but hard to read.
 `disk=4.0KB/1.0MB` is human-friendly but harder to parse and locale-sensitive.
@@ -325,7 +331,7 @@ The Display format is documented as "stable across releases so operators can
 parse it in log-scraping tools." **Do you want raw bytes (current) or
 human-readable units?**
 
-### 3. What should I work on next — the DurabilityPolicy flip, or the loom coverage gap?
+### ~~3. What should I work on next — the DurabilityPolicy flip, or the loom coverage gap?~~ done — resolved: both shipped (loom in v0.5.6, DurabilityPolicy flip in v0.6.0)
 
 Both are high-value. The DurabilityPolicy flip is the single highest-impact
 TODO item (changes default behavior for the target use case). The loom

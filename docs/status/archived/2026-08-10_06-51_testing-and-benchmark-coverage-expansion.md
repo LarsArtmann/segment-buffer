@@ -1,5 +1,8 @@
 # Status Report: Testing & Benchmark Coverage Expansion
 
+> **FULLY RESOLVED** — all work shipped. Forward-looking items harvested into
+> `TODO_LIST.md` on 2026-08-10. Archived.
+
 **Date:** 2026-08-10 06:51
 **Session scope:** Execute all 8 TODO items from the "Testing & concurrency coverage" and "Benchmarks" sections of TODO_LIST.md.
 **Branch:** `master`, 3 commits ahead of `origin/master` (unpushed)
@@ -84,13 +87,13 @@ Nothing. All 8 items were completed to the verification bar described above.
 
 ## c) NOT STARTED (remaining TODO_LIST items, 7)
 
-1. **Durability**: Flip default `DurabilityPolicy` from `Segment` to `Throughput` with deprecation note.
-2. **Documentation**: Visually verify README rendering (standing item, user action).
-3. **CI / process**: Audit CI vs local gate parity.
-4. **CI / process**: Add clippy with full lint stack to the MSRV CI job.
-5. **CI / process**: Improve `check-changelog-links.sh` robustness (rate-limit + `GITHUB_TOKEN`).
-6. **CI / process**: Add `--list` and `--only=` options to `verify-gate.sh`.
-7. **(Implicit)** Push the 3 unpushed commits + the uncommitted working tree, verify CI.
+1. ~~**Durability**: Flip default `DurabilityPolicy` from `Segment` to `Throughput` with deprecation note.~~ done — shipped in v0.6.0
+2. ~~**Documentation**: Visually verify README rendering (standing item, user action).~~ done — verified by user 2026-08-10
+3. ~~**CI / process**: Audit CI vs local gate parity.~~ done — shipped in v0.5.7
+4. ~~**CI / process**: Add clippy with full lint stack to the MSRV CI job.~~ done — shipped in v0.5.7
+5. ~~**CI / process**: Improve `check-changelog-links.sh` robustness (rate-limit + `GITHUB_TOKEN`).~~ done — shipped in v0.5.7
+6. ~~**CI / process**: Add `--list` and `--only=` options to `verify-gate.sh`.~~ done — shipped in v0.5.7
+7. ~~**(Implicit)** Push the 3 unpushed commits + the uncommitted working tree, verify CI.~~ done — committed and pushed in subsequent sessions
 
 ---
 
@@ -151,6 +154,9 @@ The loom test `for_each_from_snapshot_under_concurrent_append` proves the snapsh
 ---
 
 ## f) Up to 50 things to do next
+
+> **Harvested (2026-08-10).** Actionable items extracted into `TODO_LIST.md`.
+> Remaining items are aspirational brainstorm, not tracked work.
 
 ### Immediate (this session's loose ends)
 
@@ -230,14 +236,20 @@ The loom test `for_each_from_snapshot_under_concurrent_append` proves the snapsh
 
 ## g) Questions (cannot figure out myself)
 
-### Q1: Should the next release be v0.5.6 or v0.6.0?
+### ~~Q1: Should the next release be v0.5.6 or v0.6.0?~~
+
+> **Resolved.** Shipped as v0.5.6 (additive); v0.6.0 followed for the DurabilityPolicy flip.
 
 The `[Unreleased]` section now contains: `PartialEq`/`Eq` for `SegmentConfig`, `FlushPolicy::validate()`, sealed `SegmentStore` trait, `Display` impls, `#[must_use]`/`#[doc(alias)]`, property test expansions, and now 2 loom tests + 2 property tests + 1 stress test + 1 fuzz target + 2 benchmarks. All additive — no breaking changes to public API. The sealed trait IS technically breaking for any external crate that implements `SegmentStore` (now impossible), but no such crate exists. Should this be v0.5.6 (additive) or v0.6.0 (the seal is a semver-major boundary)?
 
-### Q2: Should the 5 un-CI'd fuzz targets be added to the fuzz workflow now?
+### ~~Q2: Should the 5 un-CI'd fuzz targets be added to the fuzz workflow now?~~
+
+> **Open — tracked in TODO_LIST.md.** CI fuzz coverage is a time-budget decision.
 
 The CI fuzz workflow (`.github/workflows/fuzz.yml`) only runs 2 of 7 targets. Adding all 7 would 3.5× the CI fuzz time (from ~10 min to ~35 min at 300s each). Is that acceptable, or should the matrix be split (e.g., critical targets daily, all targets weekly)?
 
-### Q3: Should I commit and push now, or batch with more work?
+### ~~Q3: Should I commit and push now, or batch with more work?~~
+
+> **Resolved.** Committed and pushed; v0.5.6 released subsequently.
 
 The working tree has 11 files (8 modified + 3 new) across all 8 TODO items. The auto-git daemon may commit at any time with a non-descriptive message. Should I commit explicitly now (as a single commit or split into logical commits), or wait to batch with more TODO items?

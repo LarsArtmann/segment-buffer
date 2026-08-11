@@ -1,5 +1,8 @@
 # Status: Code Quality Triple — PartialEq, validate(), Sealed Trait
 
+> **FULLY RESOLVED** — all work shipped. Forward-looking items harvested into
+> `TODO_LIST.md` on 2026-08-10. Archived.
+
 **Date:** 2026-08-10 06:01
 **Session scope:** Three "Code quality" TODO items completed, plus human-readable BufferStats bytes
 **Branch:** `master` (7 files modified, uncommitted — auto-git daemon will commit)
@@ -83,28 +86,28 @@ Nothing is partially done. All three code quality items are fully implemented an
 ## c) NOT STARTED (from TODO_LIST.md, 15 items remain)
 
 ### Durability (release-scoped)
-1. Flip default `DurabilityPolicy` from `Segment` to `Throughput` — **highest-impact remaining TODO**, changes default behavior, needs release scope.
+1. ~~Flip default `DurabilityPolicy` from `Segment` to `Throughput`~~ done — shipped in v0.6.0 — **highest-impact remaining TODO**, changes default behavior, needs release scope.
 
 ### Testing & concurrency coverage
-2. Loom coverage for `for_each_from` snapshot-then-release-lock pattern
-3. Loom test for `iter_from`
-4. Property test for `publish_disk_stats` correctness
-5. Property test for `delete_acked` idempotency under concurrent `append`
-6. Stress test for `segment_size_stats` under concurrent `flush` + `delete_acked`
-7. Fuzz target for `for_each_from`
+2. ~~Loom coverage for `for_each_from` snapshot-then-release-lock pattern~~ done — shipped in v0.5.6
+3. ~~Loom test for `iter_from`~~ done — shipped in v0.5.6
+4. ~~Property test for `publish_disk_stats` correctness~~ done — shipped in v0.5.6
+5. ~~Property test for `delete_acked` idempotency under concurrent `append`~~ done — shipped in v0.5.6
+6. ~~Stress test for `segment_size_stats` under concurrent `flush` + `delete_acked`~~ done — shipped in v0.5.6
+7. ~~Fuzz target for `for_each_from`~~ done — shipped in v0.5.6 (not in CI fuzz matrix — tracked in TODO_LIST)
 
 ### Benchmarks
-8. `bench_segment_size_stats` (O(n_segments) scan cost)
-9. `bench_cipher` (encryption overhead vs no-cipher baseline)
+8. ~~`bench_segment_size_stats` (O(n_segments) scan cost)~~ done — shipped in v0.5.6 (never run — tracked in TODO_LIST)
+9. ~~`bench_cipher` (encryption overhead vs no-cipher baseline)~~ done — shipped in v0.5.6 (never run — tracked in TODO_LIST)
 
 ### Documentation
-10. Visually verify README rendering (standing item, user action)
+10. ~~Visually verify README rendering (standing item, user action)~~ done — verified by user 2026-08-10
 
 ### CI / process
-11. Audit CI vs local gate parity
-12. Add clippy with full lint stack to MSRV CI job
-13. Improve `check-changelog-links.sh` robustness (rate-limit + GITHUB_TOKEN)
-14. Add `--list` and `--only=` options to `verify-gate.sh`
+11. ~~Audit CI vs local gate parity~~ done — shipped in v0.5.7
+12. ~~Add clippy with full lint stack to MSRV CI job~~ done — shipped in v0.5.7
+13. ~~Improve `check-changelog-links.sh` robustness (rate-limit + GITHUB_TOKEN)~~ done — shipped in v0.5.7
+14. ~~Add `--list` and `--only=` options to `verify-gate.sh`~~ done — shipped in v0.5.7
 
 ---
 
@@ -141,6 +144,9 @@ Nothing is partially done. All three code quality items are fully implemented an
 ---
 
 ## f) Up to 50 things to get done next
+
+> **Harvested (2026-08-10).** Actionable items extracted into `TODO_LIST.md`.
+> Remaining items are aspirational brainstorm, not tracked work.
 
 ### High impact (ship value or close risk gaps)
 1. **Flip `DurabilityPolicy` default to `Throughput`** — highest-impact TODO, release-scoped
@@ -212,7 +218,7 @@ Nothing is partially done. All three code quality items are fully implemented an
 
 ## g) Questions (cannot figure out myself)
 
-### 1. Should the next release be v0.5.6 (additive-only) or v0.6.0 (bundle DurabilityPolicy default flip)?
+### ~~1. Should the next release be v0.5.6 (additive-only) or v0.6.0 (bundle DurabilityPolicy default flip)?~~ done — resolved: v0.5.6 and v0.6.0 both shipped
 
 The `[Unreleased]` changes are purely additive: Display impls, PartialEq/Eq, validate(), sealed trait, human-readable bytes, property tests, doc sections. These are all patch-level (semver-compatible). But TODO item #1 (DurabilityPolicy default flip) is the highest-impact remaining item and changes default behavior (minor-level). Should we:
 
@@ -220,7 +226,7 @@ The `[Unreleased]` changes are purely additive: Display impls, PartialEq/Eq, val
 - **(b)** Bundle everything into v0.6.0? (One release, but the DurabilityPolicy flip hasn't been written yet.)
 - **(c)** Ship v0.5.6 now, defer the DurabilityPolicy flip to v0.6.0 with a deprecation warning in v0.5.6?
 
-### 2. Should the uncommitted working tree changes be committed now, or should I continue with more TODO items first?
+### ~~2. Should the uncommitted working tree changes be committed now, or should I continue with more TODO items first?~~ done — resolved: committed and shipped in subsequent releases
 
 The auto-git daemon is active and will commit eventually. But committing now (or letting the daemon do it) means CI hasn't seen these changes yet. Should I:
 
@@ -228,7 +234,7 @@ The auto-git daemon is active and will commit eventually. But committing now (or
 - **(b)** Continue working on more TODO items and let the daemon handle commits?
 - **(c)** Commit now, then immediately start the next TODO item without waiting for CI?
 
-### 3. Should `FlushPolicy::validate()` return `Result<(), SegmentError>` in release builds too?
+### ~~3. Should `FlushPolicy::validate()` return `Result<(), SegmentError>` in release builds too?~~ done — resolved: kept debug-only (matches Rust conventions); future Result variant tracked as aspirational
 
 Currently `validate()` panics in debug, no-ops in release. This matches the pre-existing `debug_assert!` behavior. But a caller who constructs an invalid `BatchOrIntervalMin` in production gets no warning until the policy behaves incorrectly. Should:
 
