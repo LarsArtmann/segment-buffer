@@ -21,7 +21,7 @@
 # Gate names for --only= (use commas, no spaces):
 #   fmt clippy-default clippy-encryption clippy-fuzz
 #   test-default test-encryption doc html-root-url
-#   cargo-lock msrv-consistency
+#   cargo-lock cargo-lock-version msrv-consistency
 #   cargo-deny cargo-audit loom lychee changelog-links actionlint
 #   nix-flake-check
 #
@@ -63,6 +63,7 @@ for arg in "$@"; do
 			doc
 			html-root-url
 			cargo-lock
+			cargo-lock-version
 			msrv-consistency
 			cargo-deny
 			cargo-audit
@@ -80,7 +81,7 @@ for arg in "$@"; do
 		IFS=',' read -ra ONLY_GATES <<<"$raw"
 		# Normalise: trim whitespace, lower-case is unnecessary (names are
 		# already lowercase). Warn on unknown names so typos are caught early.
-		known="fmt clippy-default clippy-encryption clippy-fuzz test-default test-encryption doc html-root-url cargo-lock msrv-consistency cargo-deny cargo-audit loom lychee changelog-links actionlint nix-flake-check"
+		known="fmt clippy-default clippy-encryption clippy-fuzz test-default test-encryption doc html-root-url cargo-lock cargo-lock-version msrv-consistency cargo-deny cargo-audit loom lychee changelog-links actionlint nix-flake-check"
 		for g in "${ONLY_GATES[@]}"; do
 			if [[ " $known " != *" $g "* ]]; then
 				echo "ERROR: unknown gate '$g' in --only." >&2
@@ -179,6 +180,9 @@ if should_run "html-root-url"; then
 fi
 if should_run "cargo-lock"; then
 	run "cargo-lock" cargo fetch --locked
+fi
+if should_run "cargo-lock-version"; then
+	run "cargo-lock-version" scripts/check-cargo-lock-version.sh
 fi
 if should_run "msrv-consistency"; then
 	run "msrv-consistency" scripts/check-msrv.sh

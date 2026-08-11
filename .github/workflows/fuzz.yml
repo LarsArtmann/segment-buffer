@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [fuzz_corrupted_read, fuzz_recovery]
+        target: [fuzz_corrupted_read, fuzz_recovery, fuzz_append_all, fuzz_envelope, fuzz_flush_policy, fuzz_for_each_from, fuzz_parse_filename]
     steps:
       - uses: actions/checkout@v7
       # cargo-fuzz requires the nightly toolchain (libfuzzer-sys depends on

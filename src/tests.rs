@@ -52,6 +52,18 @@ fn test_config(max_size_bytes: u64) -> SegmentConfig {
     }
 }
 
+/// A no-op cipher for testing SegmentConfig PartialEq cipher semantics.
+/// Shared across multiple tests to avoid 3x duplication.
+struct NopCipher;
+impl crate::SegmentCipher for NopCipher {
+    fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+        Ok(plaintext.to_vec())
+    }
+    fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
+        Ok(ciphertext.to_vec())
+    }
+}
+
 fn test_buffer(dir: &Path) -> TestBuffer {
     SegmentBuffer::open(dir, test_config(1024 * 1024)).expect("Failed to create buffer")
 }
@@ -1353,15 +1365,6 @@ fn segment_config_partial_eq_different_flush_policy() {
 #[test]
 fn segment_config_partial_eq_cipher_none_vs_some_not_equal() {
     let plain = SegmentConfig::default();
-    struct NopCipher;
-    impl crate::SegmentCipher for NopCipher {
-        fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
-            Ok(plaintext.to_vec())
-        }
-        fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
-            Ok(ciphertext.to_vec())
-        }
-    }
     let with_cipher = SegmentConfig {
         cipher: Some(std::sync::Arc::new(NopCipher)),
         ..SegmentConfig::default()
@@ -1372,15 +1375,6 @@ fn segment_config_partial_eq_cipher_none_vs_some_not_equal() {
 
 #[test]
 fn segment_config_partial_eq_cipher_same_arc_is_equal() {
-    struct NopCipher;
-    impl crate::SegmentCipher for NopCipher {
-        fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
-            Ok(plaintext.to_vec())
-        }
-        fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
-            Ok(ciphertext.to_vec())
-        }
-    }
     let cipher = std::sync::Arc::new(NopCipher);
     let a = SegmentConfig {
         cipher: Some(cipher.clone()),
@@ -1395,15 +1389,6 @@ fn segment_config_partial_eq_cipher_same_arc_is_equal() {
 
 #[test]
 fn segment_config_partial_eq_cipher_different_arcs_not_equal() {
-    struct NopCipher;
-    impl crate::SegmentCipher for NopCipher {
-        fn encrypt(&self, plaintext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
-            Ok(plaintext.to_vec())
-        }
-        fn decrypt(&self, ciphertext: &[u8]) -> std::result::Result<Vec<u8>, crate::CipherError> {
-            Ok(ciphertext.to_vec())
-        }
-    }
     let a = SegmentConfig {
         cipher: Some(std::sync::Arc::new(NopCipher)),
         ..SegmentConfig::default()
@@ -3727,5 +3712,52 @@ fn segment_size_stats_safe_under_concurrent_flush_and_delete() {
         structural_violations.load(Ordering::SeqCst),
         0,
         "segment_size_stats returned structurally invalid stats during concurrent mutation"
+    );
+}
+
+// =========================================================================
+// format_bytes_human edge-case tests
+// =========================================================================
+
+#[test]
+fn format_bytes_human_zero() {
+    assert_eq!(format_bytes_human(0), "0B");
+}
+
+#[test]
+fn format_bytes_human_just_below_kib() {
+    assert_eq!(format_bytes_human(1023), "1023B");
+}
+
+#[test]
+fn format_bytes_human_exactly_one_kib() {
+    assert_eq!(format_bytes_human(1024), "1.0KB");
+}
+
+#[test]
+fn format_bytes_human_just_above_kib() {
+    assert_eq!(format_bytes_human(1025), "1.0KB");
+}
+
+#[test]
+fn format_bytes_human_u64_max_does_not_panic() {
+    let result = format_bytes_human(u64::MAX);
+    assert!(
+        result.ends_with("PB"),
+        "u64::MAX should format as PB, got: {result}"
+    );
+}
+
+// =========================================================================
+// Compression-level default regression guard
+// =========================================================================
+
+#[test]
+fn compression_level_default_is_one() {
+    assert_eq!(
+        SegmentConfig::default().compression_level,
+        1,
+        "Default compression level must be 1 (changed from 3 in v0.5.7). \
+         If this test fails, the default was unintentionally changed."
     );
 }
