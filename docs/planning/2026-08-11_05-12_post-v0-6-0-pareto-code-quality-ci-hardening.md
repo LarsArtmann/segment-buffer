@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-11 05:12 CEST
 **Author:** Crush docs-health + planning session
-**Status:** Planning — ready for execution
+**Status:** ✅ EXECUTED 2026-08-11 — all phases P0–P6 complete, 18/18 gates green
 **Current release:** v0.6.0 (DurabilityPolicy default = `Throughput`, compression default = level 1)
 
 ---
