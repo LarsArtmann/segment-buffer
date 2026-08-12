@@ -71,14 +71,10 @@ for the full layout, migration path, and trigger conditions.
 
 ### Tooling direction
 
-- **Nightly benchmark CI workflow.** Run `cargo bench` on a schedule and persist
-  criterion results so perf regressions surface. Deferred until a regression-
-  detection strategy (result storage, comparison baseline, alert thresholds) is
-  defined — running benches without a comparison story is noise.
-- **Code-duplication gate (jscpd).** Wire jscpd (or equivalent) into
-  `scripts/verify-gate.sh` with a threshold. Deferred until the crate grows
-  enough duplication to make the gate signal-out-of-noise worthwhile; today the
-  dedup refactor has already eliminated the major hotspots.
+- **Result-diff benchmark reporting.** The nightly benchmark workflow
+  persists criterion baselines and uploads reports as artifacts. A richer
+  story (trend charts, PR-comment regression summaries, alert thresholds)
+  would make regressions more visible to humans, not just archived.
 
 ---
 

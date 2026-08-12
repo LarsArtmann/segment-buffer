@@ -163,6 +163,20 @@ jobs:
           args: --config .github/lychee.toml --no-progress '*.md' 'docs/**/*.md' 'fuzz/README.md'
           fail: true
 
+  duplication:
+    name: Code duplication gate (jscpd)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install jscpd
+        run: npm install -g jscpd@3
+      - name: Check for code duplication in library code
+        # jscpd scans src/*.rs for copy-paste blocks. The 2% threshold
+        # accommodates the ~1% baseline (intentional clones: function
+        # signatures in segment.rs, AEAD output assembly in cipher.rs).
+        # Mirrors scripts/check-duplication.sh so local runs match CI.
+        run: bash scripts/check-duplication.sh
+
   actionlint:
     name: GitHub workflow lint (actionlint)
     runs-on: ubuntu-latest

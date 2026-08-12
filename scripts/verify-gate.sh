@@ -13,6 +13,7 @@
 #   scripts/verify-gate.sh --no-lychee         # skip the markdown link check
 #   scripts/verify-gate.sh --no-actionlint     # skip the GitHub workflow lint
 #   scripts/verify-gate.sh --no-changelog-links # skip the CHANGELOG tag-link check
+#   scripts/verify-gate.sh --no-jscpd         # skip the jscpd duplication gate
 #
 # Selective run:
 #   scripts/verify-gate.sh --list               # print all gate names, exit 0
@@ -23,7 +24,7 @@
 #   test-default test-encryption doc html-root-url
 #   cargo-lock cargo-lock-version msrv-consistency
 #   cargo-deny cargo-audit loom lychee changelog-links actionlint
-#   nix-flake-check
+#   jscpd nix-flake-check
 #
 # Tool availability: cargo fmt/clippy/test/doc come with the toolchain.
 # cargo-deny, cargo-audit, lychee, and actionlint are invoked via
@@ -41,6 +42,7 @@ RUN_LOOM=1
 RUN_LYCHEE=1
 RUN_ACTIONLINT=1
 RUN_CHANGELOG_LINKS=1
+RUN_JSCPD=1
 ONLY_MODE=0
 ONLY_GATES=()
 
@@ -52,6 +54,7 @@ for arg in "$@"; do
 	--no-lychee) RUN_LYCHEE=0 ;;
 	--no-actionlint) RUN_ACTIONLINT=0 ;;
 	--no-changelog-links) RUN_CHANGELOG_LINKS=0 ;;
+	--no-jscpd) RUN_JSCPD=0 ;;
 	--list)
 		cat <<-'LIST'
 			fmt
@@ -71,6 +74,7 @@ for arg in "$@"; do
 			lychee
 			changelog-links
 			actionlint
+			jscpd
 			nix-flake-check
 		LIST
 		exit 0
@@ -81,7 +85,7 @@ for arg in "$@"; do
 		IFS=',' read -ra ONLY_GATES <<<"$raw"
 		# Normalise: trim whitespace, lower-case is unnecessary (names are
 		# already lowercase). Warn on unknown names so typos are caught early.
-		known="fmt clippy-default clippy-encryption clippy-fuzz test-default test-encryption doc html-root-url cargo-lock cargo-lock-version msrv-consistency cargo-deny cargo-audit loom lychee changelog-links actionlint nix-flake-check"
+		known="fmt clippy-default clippy-encryption clippy-fuzz test-default test-encryption doc html-root-url cargo-lock cargo-lock-version msrv-consistency cargo-deny cargo-audit loom lychee changelog-links actionlint jscpd nix-flake-check"
 		for g in "${ONLY_GATES[@]}"; do
 			if [[ " $known " != *" $g "* ]]; then
 				echo "ERROR: unknown gate '$g' in --only." >&2
@@ -226,6 +230,13 @@ if should_run "actionlint" && [[ "$RUN_ACTIONLINT" == "1" ]]; then
 	# `needs:` cycle detection, deprecated/outdated action versions, and runner/os
 	# typos that the YAML parser accepts silently. Mirrors the CI `actionlint` job.
 	run "actionlint" nix run nixpkgs#actionlint -- .github/workflows/*.yml
+fi
+
+if should_run "jscpd" && [[ "$RUN_JSCPD" == "1" ]]; then
+	# jscpd: copy-paste duplication gate. Fails if library-code duplication
+	# exceeds the threshold in .jscpd.json (2%). The script skips gracefully
+	# if jscpd or jq is not installed locally. CI installs jscpd via npm.
+	run "jscpd" scripts/check-duplication.sh
 fi
 
 if should_run "nix-flake-check"; then

@@ -1,0 +1,13 @@
+{
+  "threshold": 2,
+  "reporters": ["console", "json"],
+  "output": "./jscpd-report",
+  "format": ["rust"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/target/**",
+    "**/*.lock"
+  ],
+  "min-lines": 5,
+  "min-tokens": 60
+}

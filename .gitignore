@@ -58,6 +58,7 @@ workflow-audit-log.*
 ## Reports and coverage
 /coverage
 reports/
+jscpd-report/
 
 ## Nix
 .envrc

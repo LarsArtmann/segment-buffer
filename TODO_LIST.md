@@ -21,7 +21,7 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## Testing & code quality
 
-- `[ ]` **`Hash` for `FlushPolicy` + `DurabilityPolicy`.** Both are `Copy`
+- `[x]` **`Hash` for `FlushPolicy` + `DurabilityPolicy`.** Both are `Copy`
   enums with no interior data. Adding `#[derive(Hash, Eq)]` enables them as
   `HashMap` keys for callers that bucket by policy. Low-effort derive, no
   behavior change.
@@ -31,21 +31,19 @@ Status legend: `[ ]` pending · `[~]` in progress.
 
 ## Benchmarks & performance
 
-- `[ ]` **Nightly benchmark CI workflow.** A scheduled GitHub Actions job that
-  runs `cargo bench --features encryption` on the main branch and commits the
-  criterion baseline. Enables regression detection between releases without
-  manual re-benching. Currently the baseline lives only as a point-in-time
-  snapshot in PERFORMANCE.md.
+- `[x]` **Nightly benchmark CI workflow.** A scheduled GitHub Actions job
+  (`.github/workflows/bench-nightly.yml`) that runs `cargo bench --features
+  encryption` on master with criterion baseline caching between runs.
+  Enables regression detection between releases without manual re-benching.
   Source: Pareto plan D5.
 
 ---
 
 ## CI / process
 
-- `[ ]` **jscpd duplication gate in CI.** Add a `jscpd` step to CI that fails
-  on new code duplication above a threshold. The crate is currently
-  duplication-free in library code (NopCipher extraction completed); this
-  gate prevents regression.
+- `[x]` **jscpd duplication gate in CI.** A `jscpd` step in CI that fails
+  on code duplication above 2% (current baseline: ~1%). Configured via
+  `.jscpd.json`, wired into both `ci.yml` and `scripts/verify-gate.sh`.
   Source: Pareto plan D6.
 
 ---
@@ -55,7 +53,7 @@ Status legend: `[ ]` pending · `[~]` in progress.
 - [ROADMAP.md](ROADMAP.md) — long-term direction: async I/O, envelope v2
   (streaming CBOR early-stop, Blake3 checksum, compression negotiation,
   metadata block, cipher auto-detection), streaming cipher, second
-  `SegmentStore` impl, nightly benchmark CI workflow, jscpd duplication gate.
+  `SegmentStore` impl.
 - [CHANGELOG.md](CHANGELOG.md) — shipped work.
 - [FEATURES.md](FEATURES.md) — current capability inventory by status.
 - [`docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md`](docs/planning/2026-07-20_05-50_envelope-v2-design-and-v0.6-deferrals.md)

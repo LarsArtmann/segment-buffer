@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Hash` derive on `FlushPolicy` and `DurabilityPolicy`.** Both enums now
+  implement `Hash`, enabling them as `HashMap`/`HashSet` keys for callers that
+  bucket or deduplicate by policy.
+- **Nightly benchmark CI workflow** (`.github/workflows/bench-nightly.yml`).
+  Scheduled GitHub Actions job that runs `cargo bench --features encryption` on
+  master with criterion baseline caching between runs, enabling performance
+  regression detection between releases.
+- **jscpd code-duplication gate.** A `duplication` job in CI
+  (`.github/workflows/ci.yml`) that fails when library-code duplication exceeds
+  2%. Configured via `.jscpd.json`; wired into `scripts/verify-gate.sh` as the
+  `jscpd` gate.
+
+### Changed
+
+- `scripts/verify-gate.sh` now includes a `jscpd` gate (19 gates total).
+
+
 ## [0.6.0] - 2026-08-10
 
 **Default durability policy flipped to `Throughput`.** Since v0.5.0 the
