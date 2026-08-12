@@ -1,0 +1,47 @@
+name: Nightly Benchmarks
+
+# Nightly criterion benchmark run on master. Caches the criterion baseline
+# between runs so each night's results compare against the previous night,
+# surfacing performance regressions automatically. Manual trigger available
+# for ad-hoc runs (e.g., after a performance-sensitive PR).
+#
+# The baseline lives in the GitHub Actions cache keyed by run ID, with a
+# prefix-based restore-keys fallback that always finds the most recent
+# previous run. If the cache is evicted (GitHub limits ~10 GB per repo),
+# the next run establishes a fresh baseline with no comparison.
+
+on:
+  schedule:
+    # 04:00 UTC daily — offset from fuzz.yml's 03:00 to spread CI load.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: Criterion benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      # Restore the previous night's criterion baseline so tonight's run
+      # compares against it and flags regressions. The restore-keys prefix
+      # match finds the most recent previous entry even if the full key
+      # (which includes the unique run ID) doesn't match.
+      - name: Restore criterion baseline
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: target/criterion
+          key: criterion-baseline-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            criterion-baseline-${{ runner.os }}-
+      - name: Run all criterion benchmarks
+        run: cargo bench --features encryption
+      - name: Upload criterion report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: criterion-results
+          path: target/criterion/
+          if-no-files-found: error

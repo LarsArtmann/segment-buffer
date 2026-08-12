@@ -19,20 +19,20 @@ jobs:
       matrix:
         target: [fuzz_corrupted_read, fuzz_recovery, fuzz_append_all, fuzz_envelope, fuzz_flush_policy, fuzz_for_each_from, fuzz_parse_filename]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # cargo-fuzz requires the nightly toolchain (libfuzzer-sys depends on
       # -Z sanitizer options).
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
       - name: Run ${{ matrix.target }} for 300s
         run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=300
       - name: Upload any crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: fuzz/artifacts/

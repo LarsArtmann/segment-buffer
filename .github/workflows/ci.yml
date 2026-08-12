@@ -27,13 +27,13 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         rust: [stable, "1.86"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # Pinned to commit hash for supply-chain hygiene (vs @master which drifts).
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install zstd (macos)
         if: matrix.os == 'macos-latest'
         run: brew install zstd
@@ -64,12 +64,12 @@ jobs:
     name: Verify MSRV (1.86)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: "1.86"
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       # Type-check AND lint on the MSRV toolchain. The `test` matrix already
       # runs clippy on 1.86, but this job gives faster feedback (no test
       # compilation) and makes the MSRV job self-contained — a regression in
@@ -86,7 +86,7 @@ jobs:
     name: MSRV consistency guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Check MSRV is consistent across all declarations
         run: bash scripts/check-msrv.sh
 
@@ -94,7 +94,7 @@ jobs:
     name: html_root_url ↔ Cargo.toml version match
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Assert html_root_url pin matches Cargo.toml version
         # Catches the recurring rot where a release bumps Cargo.toml version
         # but forgets to bump `#![doc(html_root_url = "...")]` in src/lib.rs,
@@ -106,7 +106,7 @@ jobs:
     name: CHANGELOG tag-link check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate CHANGELOG version links resolve to real tags
         # Catches the drift where a CHANGELOG entry references a tag that was
         # never pushed (or was renamed). Mirrors the scripts/verify-gate.sh
@@ -121,7 +121,7 @@ jobs:
     name: cargo audit + cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
@@ -138,11 +138,11 @@ jobs:
     name: Loom concurrency model
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       # Loom requires `--cfg loom` so parking_lot 0.12 swaps in
       # `loom::sync::Mutex`. `--release` is required: loom's exhaustive
       # exploration is too slow on debug builds. Without this job the
@@ -156,9 +156,9 @@ jobs:
     name: Markdown link check (lychee)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Run lychee
-        uses: lycheeverse/lychee-action@v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
         with:
           args: --config .github/lychee.toml --no-progress '*.md' 'docs/**/*.md' 'fuzz/README.md'
           fail: true
@@ -167,7 +167,7 @@ jobs:
     name: GitHub workflow lint (actionlint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # YAML parse is the floor. actionlint catches ${{ }} expression syntax
       # errors, `needs:` cycles, deprecated action versions, and runner/os
       # typos that YAML accepts silently. Mirrors the scripts/verify-gate.sh

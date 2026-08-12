@@ -262,7 +262,7 @@ const LOCK_FILE_NAME: &str = ".segment-buffer.lock";
 /// pre-v0.4.0 silent combination of two separate fields (`max_batch_events`
 /// and `flush_interval_secs`) that OR'd together without telling the caller
 /// which trigger fired.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum FlushPolicy {
     /// Flush as soon as `batch_size` items are buffered. No interval trigger.
@@ -473,7 +473,7 @@ impl FlushPolicy {
 /// `Mutex<Compressor>` invariant ("never held across I/O") is preserved
 /// because the fsync happens after compression is done and the mutex is
 /// released.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[non_exhaustive]
 pub enum DurabilityPolicy {
     /// Fsync the segment file's data **and** the parent directory inode
