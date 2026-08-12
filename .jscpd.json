@@ -1,4 +1,5 @@
 {
+  "_comment": "Threshold (2%) is calibrated against CONFIG-FILE behavior. jscpd v3 reports 0 clones when the equivalent settings are passed as CLI flags (--format/--min-lines/--min-tokens) instead of via this file; the config-file run finds the real ~1% baseline. Always invoke with --config, never bare CLI flags. Also: jscpd v3 --exitCode is broken (always exits 0); enforcement lives in scripts/check-duplication.sh via jq on the JSON report.",
   "threshold": 2,
   "reporters": ["console", "json"],
   "output": "./jscpd-report",

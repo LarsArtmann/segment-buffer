@@ -3,6 +3,14 @@
 Fuzz targets verify the crash-recovery and error-handling contracts: arbitrary
 bytes on disk must never cause a panic.
 
+**Toolchain drift:** the nightly Fuzz CI workflow tracks `nightly` (not a
+pinned date), so fuzz targets can break when nightly removes a language
+feature. 2026-08-12: nightly removed `&u8 as usize` casts (E0606), breaking
+`fuzz_flush_policy` until the casts were replaced with `usize::from(*b)`.
+When the nightly Fuzz CI run goes red, first check for
+`error[E0606]: casting '&u8' as 'usize' is invalid` and similar cast
+cleanups.
+
 ## Running
 
 Fuzzing requires a nightly Rust toolchain (for the sanitizers `libfuzzer-sys`

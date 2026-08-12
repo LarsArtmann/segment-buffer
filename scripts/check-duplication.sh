@@ -13,6 +13,21 @@
 # CI runs this via npm-installed jscpd@3. Locally, install jscpd and jq:
 #   npm install -g jscpd@3
 # The verify-gate skips this check if jscpd is not installed.
+#
+# KNOWN GOTCHA: jscpd v3's --exitCode flag is broken. It always exits 0 even
+# when duplication is found, so DO NOT "simplify" the jq threshold check at
+# the bottom into a bare `jscpd --exitCode 2` call — that silently disables
+# the gate. The jq check below is the actual enforcement.
+#
+# KNOWN GOTCHA: jscpd behaves differently with CLI flags vs the config file.
+# Running `jscpd src/ --format rust --min-lines 5 --min-tokens 60` reports
+# 0 clones, while the equivalent settings in .jscpd.json report the real
+# ~1% baseline (2 intentional clones: the segment encode signatures and the
+# AEAD output assembly). The tokenizer/format resolution differs between the
+# two invocation paths. The 2% threshold is calibrated against CONFIG-FILE
+# behavior, so ALWAYS run jscpd the way this script does (--config
+# .jscpd.json). Do not trust a raw-CLI-flag run's 0% as evidence that the
+# gate is unnecessary.
 
 set -euo pipefail
 

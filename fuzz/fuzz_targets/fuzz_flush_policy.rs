@@ -29,10 +29,10 @@ fuzz_target!(|data: &[u8]| {
     let elapsed = Duration::from_nanos(elapsed_nanos);
 
     let policy = match variant {
-        0 => FlushPolicy::Batch(data.get(17).map_or(0, |b| b as usize)),
+        0 => FlushPolicy::Batch(data.get(17).map_or(0, |b| usize::from(*b))),
         1 => FlushPolicy::Interval(elapsed),
         2 => {
-            let batch = data.get(17).map_or(256, |b| b as usize);
+            let batch = data.get(17).map_or(256, |b| usize::from(*b));
             let interval_nanos = data
                 .get(18..26)
                 .and_then(|s| s.try_into().ok())
@@ -44,8 +44,8 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         3 => {
-            let batch = data.get(17).map_or(256, |b| b as usize);
-            let min_batch = data.get(18).map_or(10, |b| b as usize);
+            let batch = data.get(17).map_or(256, |b| usize::from(*b));
+            let min_batch = data.get(18).map_or(10, |b| usize::from(*b));
             let interval_nanos = data
                 .get(19..27)
                 .and_then(|s| s.try_into().ok())

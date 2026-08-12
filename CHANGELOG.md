@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2%. Configured via `.jscpd.json`; wired into `scripts/verify-gate.sh` as the
   `jscpd` gate.
 
+### Fixed
+
+- **`fuzz_flush_policy` no longer fails to compile on current nightly.**
+  The `&u8 as usize` casts in the fuzz target's parameter decoding were
+  removed by a recent nightly toolchain (E0606). Replaced with
+  `usize::from(*b)`. The nightly Fuzz CI job was red because of this.
+
 ### Changed
 
 - `scripts/verify-gate.sh` now includes a `jscpd` gate (19 gates total).
