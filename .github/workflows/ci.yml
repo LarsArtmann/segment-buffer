@@ -169,7 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install jscpd
-        run: npm install -g jscpd@3
+        run: pnpm add -g jscpd@3
       - name: Check for code duplication in library code
         # jscpd scans src/*.rs for copy-paste blocks. The 2% threshold
         # accommodates the ~1% baseline (intentional clones: function

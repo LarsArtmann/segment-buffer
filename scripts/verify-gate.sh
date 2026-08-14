@@ -235,7 +235,7 @@ fi
 if should_run "jscpd" && [[ "$RUN_JSCPD" == "1" ]]; then
 	# jscpd: copy-paste duplication gate. Fails if library-code duplication
 	# exceeds the threshold in .jscpd.json (2%). The script skips gracefully
-	# if jscpd or jq is not installed locally. CI installs jscpd via npm.
+	# if jscpd or jq is not installed locally. CI installs jscpd via pnpm.
 	run "jscpd" scripts/check-duplication.sh
 fi
 

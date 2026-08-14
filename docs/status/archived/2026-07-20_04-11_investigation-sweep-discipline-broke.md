@@ -85,7 +85,7 @@ encryption` builds; `cargo doc` succeeds even with README.md **absent**
 - Documented the local command in `AGENTS.md` commands block.
 - **Why:** publisher attribution is the one supply-chain axis neither
   `cargo audit` (CVEs) nor `cargo deny` (policy) covers — surfaces the
-  npm-style compromised-maintainer vector.
+  pnpm-style compromised-maintainer vector.
 - **Verified:** workflow YAML parses; `cargo supply-chain publishers
 --features encryption` flag is valid per `--help`.
 

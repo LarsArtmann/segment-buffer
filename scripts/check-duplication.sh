@@ -10,8 +10,8 @@
 # threshold accommodates this baseline while catching significant new
 # duplication.
 #
-# CI runs this via npm-installed jscpd@3. Locally, install jscpd and jq:
-#   npm install -g jscpd@3
+# CI runs this via pnpm-installed jscpd@3. Locally, install jscpd and jq:
+#   pnpm add -g jscpd@3
 # The verify-gate skips this check if jscpd is not installed.
 #
 # KNOWN GOTCHA: jscpd v3's --exitCode flag is broken. It always exits 0 even
@@ -34,7 +34,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 if ! command -v jscpd &>/dev/null; then
-	echo "SKIP: jscpd not installed (npm install -g jscpd@3)" >&2
+	echo "SKIP: jscpd not installed (pnpm add -g jscpd@3)" >&2
 	exit 0
 fi
 

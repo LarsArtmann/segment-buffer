@@ -221,7 +221,7 @@ External (GitHub rate limit), not a code or config issue.
 9. Process item 6: checklist so gate-count changes update AGENTS.md everywhere
 10. CI hardening: add `cargo-nextest` to CI as optional faster runner
 11. Add a `typos` spelling gate for markdown + doc comments
-12. Pin npm/jscpd version in CI (lockfile or package.json)
+12. Pin pnpm/jscpd version in CI (lockfile or package.json)
 13. Add dependency-review-action to PR workflow
 14. Consider `cargo-bisect-rustc` integration for regressions
 

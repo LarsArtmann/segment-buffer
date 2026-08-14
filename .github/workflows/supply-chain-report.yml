@@ -11,7 +11,7 @@ name: Supply-chain provenance
 # Neither audit nor deny surfaces publisher identity or ownership
 # concentration. cargo-supply-chain makes that trust surface visible (which
 # accounts can push updates, how concentrated ownership is, when a new
-# publisher or ownership transfer appears) — exactly the npm-style
+# publisher or ownership transfer appears) — exactly the pnpm-style
 # compromised-maintainer vector that the other two tools cannot detect.
 #
 # This workflow is INTENTIONALLY non-gating: every step uses

@@ -42,7 +42,7 @@ D9 (Hash derives), D5 (nightly benchmark CI), D6 (jscpd duplication gate).
 
 - `.jscpd.json`: 2% threshold, `min-lines: 5`, `min-tokens: 60`, format `["rust"]`.
 - `scripts/check-duplication.sh`: runs jscpd on `src/`, parses JSON with jq, fails if duplication > 2%. Skips gracefully if jscpd/jq not installed.
-- `ci.yml`: added `duplication` job that installs jscpd via npm and runs the script.
+- `ci.yml`: added `duplication` job that installs jscpd via pnpm and runs the script.
 - `scripts/verify-gate.sh`: added `jscpd` as gate #19 (new `--no-jscpd` flag, updated `--list`, `--only=` known list, help text).
 - `.gitignore`: added `jscpd-report/`.
 - Current baseline: **1.05% duplication** (2 intentional clones in `segment.rs` and `cipher.rs`).
@@ -152,7 +152,7 @@ Nothing from the assigned scope was left unstarted.
 
 15. Add `cargo-nextest` to CI as an optional faster test runner
 16. Add a `typos` (spelling) gate to CI for markdown + Rust doc comments
-17. Pin npm/jscpd version in CI with a lockfile or `package.json` for reproducibility
+17. Pin pnpm/jscpd version in CI with a lockfile or `package.json` for reproducibility
 18. Add a dependency-review-action to PR workflow
 19. Consider `cargo-bisect-rustc` integration for regressions
 
