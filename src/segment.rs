@@ -172,9 +172,10 @@ pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
 /// flamegraph on 2026-07-20 showed 66% of `flush` time was inside the
 /// `__memset` that `zstd::encode_all` triggers when it constructs a fresh
 /// `CCtx` per call; pooling drops that cost to a one-time `open` expense. The
-/// trade-off is one extra `Mutex` acquisition per flush (`segment-buffer`
-/// already serialises flushes via the re-entrancy guard, so this is
-/// uncontended in practice). See `docs/perf/2026-07-20_hot-path-flamegraph.md`.
+/// trade-off is one extra `Mutex` acquisition per flush (concurrent
+/// `flush` calls already serialise on the inner mutex when draining the
+/// batch, so this is uncontended in practice). See
+/// `docs/perf/2026-07-20_hot-path-flamegraph.md`.
 pub fn encode_payload<T: Serialize>(
     cipher: Option<&(dyn SegmentCipher + Send + Sync)>,
     compressor: &mut zstd::bulk::Compressor<'static>,
@@ -287,7 +288,18 @@ pub fn decode_segment<T: DeserializeOwned>(
     raw: &[u8],
     path: &Path,
 ) -> Result<Vec<T>> {
-    let (_version, payload) = unwrap_envelope(raw);
+    let (version, payload) = unwrap_envelope(raw);
+
+    // Forward-compat guard: a file whose magic and reserved bytes match but
+    // whose version byte differs was written by a different (future) crate
+    // version. Decoding its payload as v1 would only surface as a confusing
+    // cipher or zstd error downstream, so reject it with a precise reason.
+    if version.is_some_and(|v| v != ENVELOPE_VERSION) {
+        return Err(SegmentError::Integrity {
+            path: path.to_path_buf(),
+            reason: "envelope version not supported by this crate",
+        });
+    }
 
     if cipher.is_some() && payload.len() < NONCE_LEN {
         return Err(SegmentError::Integrity {

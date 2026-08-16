@@ -1508,6 +1508,27 @@ fn envelope_detection_requires_zero_reserved_bytes() {
     );
 }
 
+#[test]
+fn decode_segment_rejects_future_envelope_version() {
+    use super::segment;
+
+    // A file with the right magic and zero reserved bytes but a version byte
+    // other than 1 comes from a newer crate. It must be rejected as Integrity
+    // with a precise reason instead of being misdecoded as v1 (which would
+    // only surface as a confusing cipher or zstd error downstream).
+    let mut future = vec![b'S', b'B', b'F', b'1', 2, 0, 0, 0];
+    future.extend_from_slice(b"opaque payload bytes");
+    let mut decompressor = zstd::bulk::Decompressor::new().unwrap();
+    let path = Path::new("seg_000000000000_000000000000.zst");
+    let result: Result<Vec<u8>> = segment::decode_segment(None, &mut decompressor, &future, path);
+    match result {
+        Err(SegmentError::Integrity { reason, .. }) => {
+            assert_eq!(reason, "envelope version not supported by this crate");
+        }
+        other => panic!("expected Integrity for future envelope version, got {other:?}"),
+    }
+}
+
 #[cfg(feature = "encryption")]
 #[test]
 fn legacy_encrypted_file_without_envelope_still_reads() {
