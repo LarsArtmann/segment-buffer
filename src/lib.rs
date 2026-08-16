@@ -31,9 +31,13 @@
 //!
 //! # Guarantees
 //!
-//! - **Panic-free public API.** No public method calls `panic!`, `unwrap`,
-//!   `expect`, direct indexing, or string slicing — enforced in CI by
-//!   `pedantic` + `nursery` + restriction Clippy lints at `deny`.
+//! - **Panic-free public API** (release builds). No public method calls
+//!   `panic!`, `unwrap`, `expect`, direct indexing, or string slicing —
+//!   enforced in CI by `pedantic` + `nursery` + restriction Clippy lints at
+//!   `deny`. One deliberate exception, debug builds only:
+//!   [`FlushPolicy::validate`] panics via `debug_assert!` on internally
+//!   inconsistent `BatchOrIntervalMin` parameters (see its `# Panics`
+//!   section); `SegmentConfigBuilder::build` and `open` invoke it.
 //!   `for_each_from` never holds the mutex across the user callback (pending
 //!   items are snapshotted under the lock then released), so re-entrant calls
 //!   are safe and cannot deadlock.
@@ -266,6 +270,10 @@ const LOCK_FILE_NAME: &str = ".segment-buffer.lock";
 #[non_exhaustive]
 pub enum FlushPolicy {
     /// Flush as soon as `batch_size` items are buffered. No interval trigger.
+    /// A `batch_size` of `0` or `1` means flush on every `append` (write-
+    /// through mode — one segment file per item); both behave identically
+    /// because the policy is only consulted after at least one item is
+    /// pending.
     Batch(usize),
     /// Flush as soon as `interval` has elapsed since the last flush. No batch
     /// trigger.
@@ -698,19 +706,14 @@ impl SegmentConfigBuilder {
         interval: std::time::Duration,
         max_interval: std::time::Duration,
     ) -> Self {
-        FlushPolicy::BatchOrIntervalMin {
+        let policy = FlushPolicy::BatchOrIntervalMin {
             batch_size,
             min_batch,
             interval,
             max_interval,
-        }
-        .validate();
-        self.flush_policy(FlushPolicy::BatchOrIntervalMin {
-            batch_size,
-            min_batch,
-            interval,
-            max_interval,
-        })
+        };
+        policy.validate();
+        self.flush_policy(policy)
     }
 
     /// Convenience: install a `FlushPolicy::Manual` (no auto-flush).
@@ -1502,6 +1505,11 @@ where
     }
 
     /// Flush buffered items to a segment file. No-op if nothing is buffered.
+    ///
+    /// Note for interval-based [`FlushPolicy`]s: every call to `flush()` —
+    /// including a no-op — resets the interval clock, so an item appended
+    /// right after a no-op `flush()` waits a full `interval` before the next
+    /// auto-flush.
     ///
     /// Flushing is also triggered automatically by [`append`](Self::append)
     /// according to the configured [`FlushPolicy`] (batch threshold, interval,
@@ -2427,7 +2435,10 @@ where
             let mut last_seq = inner.next_seq.saturating_sub(1);
             for item in items {
                 inner.unflushed.push(item);
-                inner.next_seq = inner.next_seq.wrapping_add(1);
+                // Saturating (not wrapping) to match `append`: at the u64
+                // sequence ceiling the counter freezes instead of wrapping to
+                // 0, which would break filename monotonicity.
+                inner.next_seq = inner.next_seq.saturating_add(1);
                 last_seq = inner.next_seq.saturating_sub(1);
                 count = count.saturating_add(1);
             }
