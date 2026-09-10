@@ -8,7 +8,11 @@
     "**/flake.lock",
     "**/proptest-regressions/**",
     "**/Cargo.toml",
-    "**/*.md"
+    "**/*.md",
+    "**/*.yaml",
+    "**/*.yml"
   ],
-  "plugins": ["https://plugins.dprint.dev/json-0.23.0.wasm"]
+  "plugins": [
+    "https://plugins.dprint.dev/json-0.23.0.wasm"
+  ]
 }
