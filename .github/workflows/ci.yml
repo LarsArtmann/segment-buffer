@@ -33,7 +33,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Install zstd (macos)
         if: matrix.os == 'macos-latest'
         run: brew install zstd
@@ -69,7 +69,7 @@ jobs:
         with:
           toolchain: "1.86"
           components: clippy
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       # Type-check AND lint on the MSRV toolchain. The `test` matrix already
       # runs clippy on 1.86, but this job gives faster feedback (no test
       # compilation) and makes the MSRV job self-contained — a regression in
@@ -142,7 +142,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       # Loom requires `--cfg loom` so parking_lot 0.12 swaps in
       # `loom::sync::Mutex`. `--release` is required: loom's exhaustive
       # exploration is too slow on debug builds. Without this job the
