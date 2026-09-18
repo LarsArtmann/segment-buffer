@@ -231,7 +231,7 @@
             let
               mkFuzzApp = target: {
                 type = "app";
-                program = pkgs.writeShellScriptBin "fuzz-${target}" ''
+                program = "${pkgs.writeShellScriptBin "fuzz-${target}" ''
                   set -euo pipefail
                   export PATH="${
                     pkgs.lib.makeBinPath [
@@ -249,7 +249,7 @@
                   export PATH="$HOME/.cargo/bin:$PATH"
                   cd "$PWD"
                   exec cargo-fuzz run ${target} -- -max_total_time="''${1:-60}" "''${@:2}"
-                '';
+                ''}/bin/fuzz-${target}";
               };
             in
             {
